@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace CakeDC\OAuth\Server;
 
+use CakeDC\OAuth\Server\Bridge\McpSdk\TokenValidator as McpTokenValidator;
 use CakeDC\OAuth\Server\Client\Cimd\CurlTransport;
 use CakeDC\OAuth\Server\Client\Cimd\DnsResolverInterface;
 use CakeDC\OAuth\Server\Client\Cimd\HttpTransportInterface;
@@ -27,6 +28,7 @@ use CakeDC\OAuth\Server\Http\Handler\RegisterHandler;
 use CakeDC\OAuth\Server\Http\Handler\RevokeHandler;
 use CakeDC\OAuth\Server\Http\Handler\TokenHandler;
 use CakeDC\OAuth\Server\Http\HttpResponder;
+use CakeDC\OAuth\Server\Http\Middleware\BearerTokenMiddleware;
 use CakeDC\OAuth\Server\Maintenance\Pruner;
 use CakeDC\OAuth\Server\Owner\UserContextInterface;
 use CakeDC\OAuth\Server\Owner\UserProviderInterface;
@@ -47,6 +49,7 @@ use CakeDC\OAuth\Server\View\Html\HtmlConsentRenderer;
 use CakeDC\OAuth\Server\View\Html\HtmlErrorPageRenderer;
 use CakeDC\OAuth\Server\View\Messages;
 use Closure;
+use InvalidArgumentException;
 use LogicException;
 use Psr\Clock\ClockInterface;
 use Psr\EventDispatcher\EventDispatcherInterface;
@@ -492,7 +495,52 @@ final class AuthorizationServer
         );
     }
 
-    // Task 22: bearerMiddleware(), mcpTokenValidator().
+    /**
+     * Middleware that protects a PSR-15 route belonging to $resource.
+     *
+     * @param string $resource Resource identifier.
+     * @param string|null $resourceMetadataUrl Protected resource metadata URL named in challenges.
+     * @param list<string> $requiredScopes Scopes every request needs.
+     * @throws \InvalidArgumentException When the resource is not declared.
+     */
+    public function bearerMiddleware(
+        string $resource,
+        ?string $resourceMetadataUrl = null,
+        array $requiredScopes = [],
+    ): BearerTokenMiddleware {
+        $this->assertResource($resource);
+
+        return new BearerTokenMiddleware(
+            $this->tokenValidator(),
+            $this->responder,
+            $resource,
+            $resourceMetadataUrl,
+            $requiredScopes,
+        );
+    }
+
+    /**
+     * The validator for the MCP SDK's AuthorizationMiddleware (requires mcp/sdk).
+     *
+     * @param string $resource Resource identifier.
+     * @throws \InvalidArgumentException When the resource is not declared.
+     */
+    public function mcpTokenValidator(string $resource): McpTokenValidator
+    {
+        $this->assertResource($resource);
+
+        return new McpTokenValidator($this->tokenValidator(), $resource);
+    }
+
+    /**
+     * Fails fast on a resource the configuration does not declare.
+     */
+    private function assertResource(string $resource): void
+    {
+        if ($this->config->resources->get($resource) === null) {
+            throw new InvalidArgumentException(sprintf('Resource "%s" is not declared.', $resource));
+        }
+    }
 
     /**
      * GET and POST {routePrefix}/connections: the connections page.
