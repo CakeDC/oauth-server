@@ -44,9 +44,13 @@ What `prune()` deletes:
 | --- | --- |
 | Authorization codes | Expired |
 | Tokens | Revoked, or expired, more than `retentionDays` ago (default 7 days) |
-| Clients | Dynamic or metadata document clients created more than `unusedClientSeconds` ago (24 hours), unused for `retentionDays`, and without live tokens. Their codes, tokens and consents go with them. Registered clients are never deleted |
+| Clients | Dynamic or metadata document clients created more than `unusedClientSeconds` ago (24 hours), unused for `retentionDays`, and without live tokens. Their codes, tokens and consents go with them. Registered clients and revoked clients are never deleted |
 
 `PruneResult` has `codes`, `tokens` and `clients`, counting cascaded rows as well.
+
+A revoked client stays as a tombstone, whatever its type: its row is what keeps the revocation sticky,
+because a pruned revoked metadata document client would be fetched again and come back to life. Its tokens, codes and
+consents are still pruned by the normal rules.
 
 A pruned dynamic client is gone. If its program comes back it gets `invalid_client` and must register
 again, which well-behaved clients do. A pruned metadata document client is fetched again at the next
@@ -111,7 +115,8 @@ if ($client !== null) {
 
 Revocation of a client is permanent in storage: `saveClient()` never clears `revokedAt`, so a metadata
 refresh or a stale copy cannot bring the client back. Its tokens are rejected at once
-(`The client of this access token was revoked.`).
+(`The client of this access token was revoked.`). Pruning never deletes a revoked client, so the revocation
+also survives the daily prune.
 
 To revoke all tokens of a client but let it work again, call `revokeAllForClient()` alone.
 

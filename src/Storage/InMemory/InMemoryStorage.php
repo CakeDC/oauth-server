@@ -307,7 +307,11 @@ final class InMemoryStorage implements StorageInterface
         $clients = 0;
         $createdCutoff = Time::plus($now, -$unusedClientSeconds);
         foreach ($this->clients as $id => $client) {
-            if ($client->type === ClientType::Registered || $client->createdAt >= $createdCutoff) {
+            if (
+                $client->type === ClientType::Registered
+                || $client->isRevoked()
+                || $client->createdAt >= $createdCutoff
+            ) {
                 continue;
             }
             if ($client->lastUsedAt !== null && $client->lastUsedAt >= $cutoff) {

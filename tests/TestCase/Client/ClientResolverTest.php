@@ -120,6 +120,20 @@ class ClientResolverTest extends TestCase
         $this->assertCount(1, $this->transport->requests);
     }
 
+    public function testPruningKeepsARevokedClientRevoked(): void
+    {
+        $client = $this->resolver()->resolve(self::CLAUDE);
+        $this->assertNotNull($client);
+        $this->storage->saveClient($client->withRevokedAt($this->clock->now()));
+        $this->clock->advance(8 * 86400);
+
+        $result = $this->storage->prune($this->clock->now(), 7 * 86400, 86400);
+
+        $this->assertSame(0, $result->clients);
+        $this->assertTrue($this->resolver()->resolve(self::CLAUDE)?->isRevoked());
+        $this->assertCount(1, $this->transport->requests);
+    }
+
     public function testMetadataDocumentsAreIgnoredWhenDisabled(): void
     {
         $this->assertNull($this->resolver(false)->resolve(self::CLAUDE));

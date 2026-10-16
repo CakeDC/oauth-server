@@ -437,7 +437,7 @@ final class PdoStorage implements StorageInterface
             [$cutoff, $cutoff],
         );
         $candidates = $this->select(
-            "SELECT c.id FROM {$this->clients} c WHERE c.type IN (?, ?) AND c.created < ?"
+            "SELECT c.id FROM {$this->clients} c WHERE c.type IN (?, ?) AND c.revoked_at IS NULL AND c.created < ?"
             . ' AND (c.last_used_at IS NULL OR c.last_used_at < ?)'
             . " AND NOT EXISTS (SELECT 1 FROM {$this->tokens} t WHERE t.oauth_client_id = c.id"
             . ' AND t.revoked_at IS NULL AND (t.expires_at IS NULL OR t.expires_at > ?))',

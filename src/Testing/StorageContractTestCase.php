@@ -542,6 +542,35 @@ abstract class StorageContractTestCase extends TestCase
     }
 
     /**
+     * A revoked client is never pruned: the row is the tombstone that keeps the revocation sticky.
+     */
+    public function testPruneKeepsRevokedClients(): void
+    {
+        $day = 86400;
+        $storage = $this->createStorage();
+        $revokedDynamic = $this->makeClient(ClientType::Dynamic);
+        $revokedMetadata = $this->makeClient(ClientType::MetadataDocument, 'https://gone.example/client.json');
+        $unused = $this->makeClient(ClientType::Dynamic);
+        foreach ([$revokedDynamic, $revokedMetadata, $unused] as $client) {
+            $storage->saveClient($client);
+        }
+        $storage->saveClient($revokedDynamic->withRevokedAt($this->at(2 * $day)));
+        $storage->saveClient($revokedMetadata->withRevokedAt($this->at(2 * $day)));
+        $oldToken = $this->makeToken($revokedDynamic, expiresIn: null);
+        $storage->saveToken($oldToken);
+        $storage->revokeToken($oldToken->id, $this->at(2 * $day));
+
+        $result = $storage->prune($this->at(20 * $day), 2 * $day, $day);
+
+        $this->assertSame(1, $result->clients);
+        $this->assertSame(1, $result->tokens);
+        $this->assertNotNull($storage->findClientById($revokedDynamic->id)?->revokedAt);
+        $this->assertNotNull($storage->findClientByClientId('https://gone.example/client.json')?->revokedAt);
+        $this->assertNull($storage->findClientById($unused->id));
+        $this->assertNull($storage->findTokenById($oldToken->id));
+    }
+
+    /**
      * Subjects are compared case-sensitively.
      */
     public function testSubjectsAreCaseSensitive(): void
