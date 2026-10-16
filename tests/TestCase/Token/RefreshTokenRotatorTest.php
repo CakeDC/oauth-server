@@ -9,6 +9,7 @@ use CakeDC\OAuth\Server\Event\RefreshTokenReused;
 use CakeDC\OAuth\Server\Event\TokenIssued;
 use CakeDC\OAuth\Server\Event\TokenRevoked;
 use CakeDC\OAuth\Server\Exception\OAuthException;
+use CakeDC\OAuth\Server\Owner\ResourceOwner;
 use CakeDC\OAuth\Server\Owner\SubjectType;
 use CakeDC\OAuth\Server\Scope\ScopeResolver;
 use CakeDC\OAuth\Server\Storage\InMemory\InMemoryStorage;
@@ -504,6 +505,77 @@ class RefreshTokenRotatorTest extends TestCase
             $this->assertInstanceOf(OAuthException::class, $e);
             $this->assertSame('invalid_scope', $e->error);
         }
+    }
+
+    public function testAnOwnerWithNoScopeLeftCannotRefreshAndNothingIsConsumed(): void
+    {
+        $initial = $this->initial();
+        $this->users->scopes['42'] = [];
+
+        $this->assertInvalidGrant(
+            fn() => $this->rotator()->rotate($this->client, (string)$initial->refreshToken, null, []),
+            'no longer allows any scope',
+        );
+        $this->assertNull($this->storage->findTokenById((string)$initial->refresh?->id)?->usedAt);
+        $this->assertCount(2, $this->live());
+
+        $this->users->scopes['42'] = null;
+        $this->assertSame(['content:write'], $this->rotator()->rotate($this->client, (string)$initial->refreshToken, null, [])->access->scopes);
+    }
+
+    public function testARefreshCarriesTheScopesTheOwnerStillAllows(): void
+    {
+        $initial = $this->initial(['content:read', 'content:write']);
+        $this->users->scopes['42'] = ['content:read'];
+
+        $rotated = $this->rotator()->rotate($this->client, (string)$initial->refreshToken, null, []);
+
+        $this->assertSame(['content:read'], $rotated->access->scopes);
+        $this->assertSame(['content:read'], $rotated->refresh?->scopes);
+        $this->assertSame('content:read', $rotated->toResponse()['scope']);
+    }
+
+    public function testTheOwnerAllowanceIsExpandedForTheCheckButNeverStored(): void
+    {
+        $initial = $this->initial(['content:read']);
+        $this->users->scopes['42'] = ['content:publish'];
+
+        $rotated = $this->rotator()->rotate($this->client, (string)$initial->refreshToken, null, []);
+
+        $this->assertSame(['content:read'], $rotated->access->scopes);
+    }
+
+    public function testNarrowingToNothingKeepsInvalidScope(): void
+    {
+        $initial = $this->initial(['content:read']);
+
+        try {
+            $this->rotator()->rotate($this->client, (string)$initial->refreshToken, null, ['content:write']);
+            $this->fail('Rotated');
+        } catch (OAuthException $e) {
+            $this->assertSame('invalid_scope', $e->error);
+        }
+    }
+
+    public function testAClientIdentityWithNoScopeLeftCannotRefresh(): void
+    {
+        $robot = new ResourceOwner('robot', 'Reporting job', null, SubjectType::Client);
+        $this->users->clientIdentity = $robot;
+        $initial = $this->issuer->issue(
+            $this->client,
+            'robot',
+            SubjectType::Client,
+            Fixtures::resources()->defaultResource(),
+            ['content:read'],
+            'family-1',
+            true,
+        );
+        $this->users->scopes['robot'] = [];
+
+        $this->assertInvalidGrant(
+            fn() => $this->rotator()->rotate($this->client, (string)$initial->refreshToken, null, []),
+            'no longer allows any scope',
+        );
     }
 
     public function testARevokedClientCannotRotate(): void

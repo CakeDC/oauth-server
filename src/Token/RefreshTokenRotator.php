@@ -153,11 +153,12 @@ final class RefreshTokenRotator
         if ($owner === null) {
             throw OAuthException::invalidGrant('The owner of this refresh token no longer has access.');
         }
-        $scopes = $this->grantable(
-            $client,
-            $target,
-            $this->scopes->narrow($target, $token->scopes, $requestedScopes),
-        );
+        // The owner's allowance of today, for people and for client identities alike (null: unrestricted).
+        $held = $this->scopes->withinOwnerAllowance($target, $token->scopes, $this->users->scopesFor($owner, $target));
+        if ($held === []) {
+            throw OAuthException::invalidGrant('The grant no longer allows any scope.');
+        }
+        $scopes = $this->grantable($client, $target, $this->scopes->narrow($target, $held, $requestedScopes));
         if ($scopes === []) {
             throw OAuthException::invalidScope('None of the scopes of this token can be granted any more.');
         }

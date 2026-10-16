@@ -168,8 +168,18 @@ final class TokenHandler implements RequestHandlerInterface
         ) {
             throw OAuthException::invalidTarget('The code was issued for another resource.');
         }
-        if ($this->users->findBySubject($code->subject) === null) {
+        $owner = $this->users->findBySubject($code->subject);
+        if ($owner === null) {
             throw OAuthException::invalidGrant('The person who approved this code no longer has access.');
+        }
+        // What the person may hold now, not what they could at /authorize. Nothing left: the code is not consumed.
+        $scopes = $this->scopes->withinOwnerAllowance(
+            $resource,
+            array_values(array_diff($code->scopes, [Scopes::OFFLINE_ACCESS])),
+            $this->users->scopesFor($owner, $resource),
+        );
+        if ($scopes === []) {
+            throw OAuthException::invalidGrant('The grant no longer allows any scope.');
         }
         // Issue first, consume second: any family recorded on a used code already has its tokens,
         // so a concurrent replay can always revoke them.
@@ -181,7 +191,7 @@ final class TokenHandler implements RequestHandlerInterface
                 $code->subject,
                 SubjectType::User,
                 $resource,
-                array_values(array_diff($code->scopes, [Scopes::OFFLINE_ACCESS])),
+                $scopes,
                 $familyId,
                 $this->config->issuesRefreshTokens($offlineAccess) && $client->allowsGrant(GrantType::REFRESH_TOKEN),
             );

@@ -94,6 +94,9 @@ final class TokenValidator
             $client?->scopes,
             $this->users->scopesFor($owner, $target),
         );
+        if ($scopes === []) {
+            return new ValidationFailure('The token no longer grants any scope.');
+        }
         $idle = $stored->lastUsedAt === null ? null : $now->getTimestamp() - $stored->lastUsedAt->getTimestamp();
         if ($touch && ($idle === null || $idle >= $this->touchInterval)) {
             $this->tokens->touchToken($stored->id, $now);

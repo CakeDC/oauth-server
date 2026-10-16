@@ -176,6 +176,18 @@ class TokenValidatorTest extends TestCase
         $this->assertInstanceOf(ValidatedToken::class, $off->validate($token, Fixtures::MCP));
     }
 
+    public function testATokenWhoseOwnerHoldsNoScopeAnymoreIsRefused(): void
+    {
+        $token = $this->token(['content:write']);
+        $this->users->scopes['42'] = [];
+
+        $failure = $this->failure($token);
+
+        $this->assertSame('The token no longer grants any scope.', $failure->description);
+        $this->users->scopes['42'] = null;
+        $this->assertInstanceOf(ValidatedToken::class, $this->validator->validate($token, Fixtures::MCP));
+    }
+
     public function testRecordsUseAtMostOnceAMinute(): void
     {
         $token = $this->token();

@@ -38,7 +38,7 @@ new ResourceOwner(
 | --- | --- | --- |
 | `findBySubject(string $subject): ?ResourceOwner` | On every protected request, on code exchange, on refresh | The person, or `null` when they are gone or no longer active |
 | `canAuthorize(ResourceOwner $owner, Client $client, ProtectedResource $resource): bool` | At `/authorize` | Whether this person may let this client act on this resource |
-| `scopesFor(ResourceOwner $owner, ProtectedResource $resource): ?array` | At consent, at refresh and on every protected request | The scopes the person may hold on the resource, or `null` for all of them |
+| `scopesFor(ResourceOwner $owner, ProtectedResource $resource): ?array` | At consent, when a code is exchanged, at refresh and on every protected request | The scopes the person may hold on the resource, or `null` for all of them |
 | `forClient(Client $client, ProtectedResource $resource): ?ResourceOwner` | For the client credentials grant, and when such a token is used | The identity the client acts as, or `null` to refuse |
 
 ### `findBySubject`
@@ -67,8 +67,12 @@ Return the list of scopes this person may hold on the resource, or `null` for ev
 resource declares. The list may name implying scopes: a person with `['content:publish']` also holds
 what `content:publish` implies.
 
-The answer is checked when the person approves and again on every request, so a role change applies
-immediately. A person who loses a scope loses it on all existing tokens.
+The answer is checked when the person approves, when the code is exchanged, at every refresh and on
+every request, so a role change applies immediately. A person who loses a scope loses it on all existing
+tokens, and a refresh issues a pair with only the scopes that are still allowed (the stored scopes are
+never widened). Returning `[]` means no access at all: tokens stop validating (`The token no longer
+grants any scope.`), a code exchange or refresh answers `invalid_grant`, and a code is not consumed by a
+refused exchange.
 
 ```php
 public function scopesFor(ResourceOwner $owner, ProtectedResource $resource): ?array

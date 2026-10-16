@@ -82,6 +82,8 @@ The `error_description` of an `invalid_token` answer tells the developer why:
 - `The access token was issued for another resource.`
 - `The client of this access token was revoked.`
 - `The owner of this access token no longer has access.`
+- `The token no longer grants any scope.` (the computed scopes are empty, see below)
+- `Personal access tokens are disabled.` (a personal token while `personalTokens` is off)
 
 ### Protected resource metadata URL
 
@@ -155,6 +157,11 @@ a minute per token). Pass `false` to look without recording, as introspection do
 3. Keep only what the client may hold (its registered scopes, if it has a limit).
 4. Keep only what the person may hold now (`scopesFor()`).
 5. Keep only what the resource still declares.
+
+If the result is empty the token is refused outright (`invalid_token`, `The token no longer grants any
+scope.`): a token that holds nothing is not an authenticated request with no permissions. A refresh applies
+the same person allowance (step 4) to the stored scopes, so the new pair carries the intersection and
+`invalid_grant` is answered when nothing is left.
 
 So a role change, a removed scope in the configuration or a narrowed client takes effect at the next
 request, without revoking anything. A token for `content:publish` that implies `content:write` passes a

@@ -104,6 +104,31 @@ class TokenHandlerTest extends TestCase
         $this->assertError($this->harness->exchange($client, $code), 'invalid_grant');
     }
 
+    public function testACodeNeverGrantsMoreThanThePersonMayHoldAtExchange(): void
+    {
+        $client = $this->harness->publicClient();
+        $code = $this->harness->authorizationCode($client, ['scope' => 'content:read content:write']);
+        $this->harness->users->scopes['42'] = ['content:read'];
+
+        $body = $this->harness->json($this->harness->exchange($client, $code));
+
+        $this->assertSame('content:read', $body['scope']);
+    }
+
+    public function testACodeWithNoScopeLeftIsRefusedAndNotConsumed(): void
+    {
+        $client = $this->harness->publicClient();
+        $code = $this->harness->authorizationCode($client);
+        $this->harness->users->scopes['42'] = [];
+
+        $this->assertError($this->harness->exchange($client, $code), 'invalid_grant');
+        $this->assertNull($this->harness->storage->findCodeByHash(TokenGenerator::hash($code))?->usedAt);
+        $this->assertSame([], $this->harness->events->ofType(TokenIssued::class));
+
+        $this->harness->users->scopes['42'] = null;
+        $this->assertSame(200, $this->harness->exchange($client, $code)->getStatusCode());
+    }
+
     public function testRefreshTokenPolicy(): void
     {
         $harness = new ServerHarness(['refreshTokens' => 'offline_access']);

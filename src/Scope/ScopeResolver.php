@@ -62,6 +62,25 @@ final class ScopeResolver
     }
 
     /**
+     * The $scopes the owner may still hold. The allowance is compared with what it implies, but the
+     * scopes returned are the given ones, never expanded: a token keeps the scopes it was granted.
+     *
+     * @param \CakeDC\OAuth\Server\Resource\ProtectedResource $resource The resource.
+     * @param list<string> $scopes Candidate scopes.
+     * @param list<string>|null $ownerAllowed The owner's scopes; null for any.
+     * @return list<string>
+     */
+    public function withinOwnerAllowance(ProtectedResource $resource, array $scopes, ?array $ownerAllowed): array
+    {
+        if ($ownerAllowed === null) {
+            return $scopes;
+        }
+        $allowed = $resource->expand($ownerAllowed);
+
+        return array_values(array_filter($scopes, fn(string $scope): bool => in_array($scope, $allowed, true)));
+    }
+
+    /**
      * The scopes of a refreshed token: the current ones, or a subset the client asks for.
      *
      * @param \CakeDC\OAuth\Server\Resource\ProtectedResource $resource The resource.
