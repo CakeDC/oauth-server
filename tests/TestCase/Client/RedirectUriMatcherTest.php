@@ -34,6 +34,18 @@ class RedirectUriMatcherTest extends TestCase
         $this->assertFalse(RedirectUriMatcher::matches('http://127.0.0.1:3000/callback#f', $registered));
     }
 
+    public function testLoopbackRejectsControlCharactersInTheRequestedUri(): void
+    {
+        $registered = ['http://127.0.0.1/auth_callback'];
+
+        foreach (["\n", "\r", "\0", '\\'] as $char) {
+            $this->assertFalse(RedirectUriMatcher::matches("http://127.0.0.1:3000/auth{$char}callback", $registered));
+        }
+        $this->assertFalse(RedirectUriMatcher::matches("http://127.0.0.1:3000/auth_callback\n", $registered));
+        $this->assertFalse(RedirectUriMatcher::matches('http://u@127.0.0.1:3000/auth_callback', $registered));
+        $this->assertTrue(RedirectUriMatcher::matches('http://127.0.0.1:3000/auth_callback', $registered));
+    }
+
     /**
      * @return array<string, array{string, \CakeDC\OAuth\Server\Client\ApplicationType, bool, string|null}>
      */
@@ -58,6 +70,15 @@ class RedirectUriMatcherTest extends TestCase
             'relative' => ['/cb', ApplicationType::Web, true, 'absolute URI'],
             'spaces' => ['https://app.example.com/a b', ApplicationType::Web, true, 'spaces'],
             'trailing newline' => ["https://app.example.com/cb\n", ApplicationType::Web, true, 'control characters'],
+            'backslash' => [
+                'https://evil.example\\@claude.ai/api/mcp/auth_callback',
+                ApplicationType::Web,
+                true,
+                'RFC 3986',
+            ],
+            'homograph' => ["https://cl\u{0430}ude.ai/cb", ApplicationType::Web, true, 'RFC 3986'],
+            'userinfo' => ['https://claude.ai@evil.example/cb', ApplicationType::Web, true, 'user information'],
+            'userinfo with password' => ['https://a:b@evil.example/cb', ApplicationType::Web, true, 'user information'],
             'too long' => ['https://app.example.com/' . str_repeat('a', 2000), ApplicationType::Web, true, '2000'],
         ];
     }

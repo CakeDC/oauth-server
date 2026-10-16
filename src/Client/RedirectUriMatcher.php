@@ -10,6 +10,8 @@ use CakeDC\OAuth\Server\Resource\ResourceIdentifier;
  */
 final class RedirectUriMatcher
 {
+    private const URI_CHARACTERS = '/^[A-Za-z0-9\-._~:\/?\[\]@!$&\'()*+,;=%]+\z/';
+
     private const FORBIDDEN_SCHEMES = ['javascript', 'data', 'file', 'vbscript', 'about', 'blob'];
 
     /**
@@ -25,6 +27,13 @@ final class RedirectUriMatcher
         }
         if (str_contains($uri, '#')) {
             return 'must not contain a fragment';
+        }
+        if (preg_match(self::URI_CHARACTERS, $uri) !== 1) {
+            return 'must only contain RFC 3986 URI characters (no backslashes or non-ASCII characters)';
+        }
+        $parts = parse_url($uri);
+        if (is_array($parts) && (isset($parts['user']) || isset($parts['pass']))) {
+            return 'must not contain user information';
         }
         $scheme = parse_url($uri, PHP_URL_SCHEME);
         if (!is_string($scheme) || preg_match('/^[a-z][a-z0-9+.-]*\z/i', $scheme) !== 1) {
@@ -72,7 +81,7 @@ final class RedirectUriMatcher
      */
     private static function isLoopbackMatch(string $requested, string $registered): bool
     {
-        if (str_contains($requested, '#')) {
+        if (preg_match(self::URI_CHARACTERS, $requested) !== 1) {
             return false;
         }
         $a = parse_url($requested);
