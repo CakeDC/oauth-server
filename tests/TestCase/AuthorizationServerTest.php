@@ -67,27 +67,18 @@ class AuthorizationServerTest extends TestCase
         }
     }
 
-    public function testEnabledPrivateSchemesMustBeReverseDomainsEverywhere(): void
+    public function testEnabledPrivateSchemesWorkEverywhere(): void
     {
         $harness = new ServerHarness(['registration' => ['allowPrivateSchemes' => true]]);
         $native = ['application_type' => 'native'];
+        $uris = ['cursor://anysphere.cursor/oauth', 'com.example.app:/oauth'];
 
-        $client = $harness->server->clientRegistrar()->register($native + ['redirect_uris' => ['com.example.app:/oauth']]);
-        $this->assertSame(['com.example.app:/oauth'], $client['client']->redirectUris);
-        try {
-            $harness->server->clientRegistrar()->register($native + ['redirect_uris' => ['myapp:/oauth']]);
-            $this->fail('Registered a scheme without a dot.');
-        } catch (OAuthException $e) {
-            $this->assertSame('invalid_redirect_uri', $e->error);
-        }
+        $client = $harness->server->clientRegistrar()->register($native + ['redirect_uris' => $uris]);
+        $this->assertSame($uris, $client['client']->redirectUris);
 
         $url = 'https://claude.ai/oauth/native';
-        $harness->transport->serve($url, [
-            'client_id' => $url,
-            'client_name' => 'Native',
-            'redirect_uris' => ['myapp:/oauth', 'com.example.app:/oauth'],
-        ] + $native);
-        $this->assertSame(['com.example.app:/oauth'], $harness->server->clientResolver()->resolve($url)?->redirectUris);
+        $harness->transport->serve($url, ['client_id' => $url, 'client_name' => 'Native', 'redirect_uris' => $uris] + $native);
+        $this->assertSame($uris, $harness->server->clientResolver()->resolve($url)?->redirectUris);
     }
 
     public function testDisabledCimdNeverFetches(): void

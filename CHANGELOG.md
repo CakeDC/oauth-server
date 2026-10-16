@@ -18,17 +18,17 @@ First release.
   Public loopback and private-scheme clients (Claude Code among them) see the page on every new
   connection, with a line saying they were approved before.
 - Redirect URI policy: `registration.allowPrivateSchemes` now defaults to `false` (the MCP
-  authorization spec requires localhost or https redirect URIs); when enabled, a private-use scheme must
-  be a reverse domain name with a dot (RFC 8252 section 7.1), also for `ClientRegistrar::create()` and
-  metadata documents. A dynamically registered `web` client can no longer register loopback `http`
-  URIs; it must send `"application_type": "native"`.
+  authorization spec requires localhost or https redirect URIs); a host that enables it accepts any
+  private-use scheme the matcher does not refuse (such as `cursor://`). At dynamic registration, a
+  client that says `"application_type": "web"` can no longer register loopback `http` URIs, and a client
+  that omits `application_type` is registered as `native` when none of its redirect URIs is https (what
+  MCP clients such as MCP Inspector, VS Code, Cursor and Claude Code send).
 - New, optional extension point: `View\RedirectNoticeRendererInterface` with `View\RedirectNoticeView`,
   implemented by `HtmlErrorPageRenderer`. A custom `ErrorPageRendererInterface` that does not implement
   it shows its plain error page (no link) where the built-in one offers the link. New `Messages` keys
   `error.untrusted`, `error.continue` and `consent.approvedBefore`; new `ConsentView::$approvedBefore`;
   new `ConsentService::hasConsented()` and `ConsentService::identityIsAssured()`;
-  `AuthorizationError` carries the `Client` (`$client`); new
-  `RedirectUriMatcher::dynamicRegistrationError()`. The constructor defaults of `ClientRegistrar` and
+  `AuthorizationError` carries the `Client` (`$client`). The constructor defaults of `ClientRegistrar` and
   `ClientResolver` for private schemes are now `false`.
 - Standalone example: `setup.php` no longer records a consent, and `OAUTH_EXAMPLE_AUTO_APPROVE=1`
   (unsafe, used only by `tests/Conformance/run.sh`) answers the consent page with "Allow".

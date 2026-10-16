@@ -34,16 +34,15 @@ document needs at least one usable URI, or the client is refused with `invalid_c
   are never allowed.
 - `https`: the host must be a plain host name (letters, digits and hyphens, at least two labels, the last
   one starting with a letter, no `%`, no trailing dot), an IP address, or a loopback name.
-- `http`: only for loopback hosts (`127.0.0.1`, `[::1]` and `localhost`). At dynamic registration
-  only for clients whose `application_type` is `native` (RFC 9700 section 2.6: a web client uses
-  https). Metadata documents and `create()` keep accepting loopback `http` for web clients.
-- Any other scheme (a private-use scheme such as `com.example.app:/cb`): only for clients whose
-  `application_type` is `native`, only if `registration.allowPrivateSchemes` is `true` (it is `false`
-  by default, because the MCP authorization spec requires localhost or https redirect URIs), and only
-  when the scheme is a reverse domain name, so it contains a dot (RFC 8252 section 7.1):
-  `com.example.app:/cb` is accepted, `myapp:/cb` and `cursor://...` are not. The setting applies to
-  dynamic registration and metadata documents; `create()` always allows private-use schemes, but the
-  reverse domain rule applies there too.
+- `http`: only for loopback hosts (`127.0.0.1`, `[::1]` and `localhost`). A dynamic registration that
+  says `"application_type": "web"` may not use it (RFC 9700 section 2.6: a web client uses https).
+  Without `application_type` it is accepted, see below. Metadata documents and `create()` accept
+  loopback `http` for web clients too.
+- Any other scheme (a private-use scheme such as `cursor://anysphere.cursor/oauth` or
+  `com.example.app:/cb`): only for native clients, and only if `registration.allowPrivateSchemes` is
+  `true`. It is `false` by default, because the MCP authorization spec requires localhost or https
+  redirect URIs. The setting applies to dynamic registration and metadata documents; `create()` always
+  allows private-use schemes. The dangerous schemes above stay refused either way.
 
 How a requested `redirect_uri` is matched against the registered ones:
 
@@ -55,9 +54,10 @@ How a requested `redirect_uri` is matched against the registered ones:
 - If a client has exactly one redirect URI it may leave `redirect_uri` out of `/authorize`. With
   more than one it must send it, at `/authorize` and again at `/token`.
 
-A native client that does not say `application_type` at dynamic registration is registered as `web`.
-The server does not guess, so a client that registers loopback `http` or a private-use scheme must send
-`"application_type": "native"`. A metadata document that omits
+A dynamic registration that omits `application_type` is registered as `native` when none of its
+redirect URIs is `https` (only loopback `http` or private-use schemes, which is what MCP clients such as
+MCP Inspector, VS Code, Cursor and Claude Code send), and as `web` otherwise. A `web` client inferred
+that way keeps any loopback `http` URI it lists next to its https ones. A metadata document that omits
 `application_type` is treated as `native` when all its redirect URIs are `http` (loopback), and as
 `web` otherwise.
 
@@ -230,9 +230,9 @@ redirect, the loopback rule applies.
 ## Other clients
 
 - **Editors and desktop tools with a private-use scheme redirect** (for example
-  `com.example.editor:/callback`): the server accepts it when you set `registration.allowPrivateSchemes`
-  to `true`, the client registers with `application_type` `native`, and the scheme is a reverse domain
-  name. A scheme without a dot (such as `cursor://`) is refused even then.
+  `cursor://anysphere.cursor/oauth`): the server accepts it when you set
+  `registration.allowPrivateSchemes` to `true` and the client is native (it says so, or it lists no
+  https redirect URI).
 - **Tools with a loopback or https redirect**: both are accepted under the
   [redirect URI rules](#redirect-uri-rules).
 - **Your own CLI or desktop tool**: register it as a native public client, use a loopback redirect

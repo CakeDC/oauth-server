@@ -240,7 +240,7 @@ Dynamic client registration (RFC 7591). The body is JSON (`Content-Type: applica
 | --- | --- |
 | `redirect_uris` | Required. List of 1 to 10 URIs. See [clients](clients.md#redirect-uri-rules) |
 | `client_name` | Display name, 1 to 255 characters, no control characters. Default: the host of the first redirect URI |
-| `application_type` | `web` (default) or `native` |
+| `application_type` | `web` or `native`. When omitted: `native` if no redirect URI is https, otherwise `web`. A client that says `web` may not register loopback `http` |
 | `token_endpoint_auth_method` | `none`, `client_secret_basic` (default) or `client_secret_post` |
 | `grant_types` | Default `["authorization_code"]`. May add `refresh_token`. `client_credentials` is refused |
 | `response_types` | Must be `["code"]` |

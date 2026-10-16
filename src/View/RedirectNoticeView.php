@@ -28,8 +28,8 @@ final class RedirectNoticeView
     }
 
     /**
-     * The host the person would be sent to; for a private-use scheme, the scheme (the app's reverse domain
-     * name), since what follows it is chosen by the app.
+     * The host the person would be sent to; for a private-use scheme, the scheme, since what follows it
+     * is chosen by the app.
      */
     public function redirectHost(): string
     {

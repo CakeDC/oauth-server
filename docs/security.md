@@ -23,7 +23,7 @@ item are in `tests/Security/`.
 
 | Item | How the library handles it | Test class |
 | --- | --- | --- |
-| Insufficient redirect URI validation | Exact matching, no normalisation. For loopback `http` redirects only the port may differ. Dangerous schemes and odd characters are refused at registration. Loopback `http` is for native clients at dynamic registration; private-use schemes are off by default and, when enabled, must be reverse domain names (RFC 8252 section 7.1). Nothing is ever sent to an unregistered URI | `RedirectUriValidationTest` |
+| Insufficient redirect URI validation | Exact matching, no normalisation. For loopback `http` redirects only the port may differ. Dangerous schemes and odd characters are refused at registration. A dynamic registration that says it is a `web` client may not register loopback `http`; private-use schemes are off by default. Nothing is ever sent to an unregistered URI | `RedirectUriValidationTest` |
 | Credential leakage through Referer, browser history, and access token leakage | Pages are `no-store` with `Referrer-Policy: no-referrer`. Only the authorization code travels in a redirect. A token in a query string is ignored. Logs never contain secrets | `CredentialLeakageTest` |
 | Mix-up attacks | Every authorization answer, errors included, carries `iss` (RFC 9207). The issuer always comes from your configuration, never from the request's `Host` | `MixUpTest` |
 | Authorization code injection, PKCE downgrade | PKCE with S256 is mandatory for all clients, confidential ones too. A code is bound to its client, its redirect URI and its challenge. Codes live 60 seconds and work once. The verifier is checked before the server reacts to a used code | `AuthorizationCodeInjectionTest` |
@@ -52,7 +52,7 @@ person), all in `tests/Security/`.
 | `lifetimes.personalMax` | 90 days | Raised. Long-lived tokens in scripts | Lowered |
 | `refreshTokens` | `always` | | `offline_access`: refresh tokens only for clients that ask, and the person sees "Stay connected" |
 | `registration.mode` | `open` | | `token` or `closed` |
-| `registration.allowPrivateSchemes` | `false` | `true`: custom schemes can be claimed by any app on a device, and MCP requires localhost or https redirect URIs. Even then only reverse domain names (`com.example.app:/cb`) are accepted | Kept `false` |
+| `registration.allowPrivateSchemes` | `false` | `true`: custom schemes can be claimed by any app on a device, and MCP requires localhost or https redirect URIs. Dangerous schemes stay refused | Kept `false` |
 | `cimd.allowedHosts` | any host | | A list of hosts you expect |
 | `rateLimit.cimd` | `[10, 60]` | | Lower it if you only expect a few clients |
 | `rateLimit.*` | 30, 60 and 10 per window | Raised or no cache: no limiting at all | Lowered |

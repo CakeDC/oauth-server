@@ -82,17 +82,20 @@ class RedirectUriValidationTest extends TestCase
         $this->assertSame('invalid_redirect_uri', $this->register(new ServerHarness(), 'native', 'com.example.app:/cb'));
 
         $enabled = new ServerHarness(['registration' => ['allowPrivateSchemes' => true]]);
-        // RFC 8252 section 7.1: a reverse domain name, so it contains a dot.
-        $this->assertSame('invalid_redirect_uri', $this->register($enabled, 'native', 'myapp:/cb'));
-        $this->assertNull($this->register($enabled, 'native', 'com.example.app:/cb'));
+        $this->assertNull($this->register($enabled, 'native', 'myapp:/cb'));
+        $this->assertNull($this->register($enabled, 'native', 'cursor://anysphere.cursor/oauth'));
+        $this->assertNull($this->register($enabled, null, 'com.example.app:/cb'));
+        // Dangerous schemes stay refused.
+        $this->assertSame('invalid_redirect_uri', $this->register($enabled, 'native', 'javascript:alert(1)'));
     }
 
-    public function testOnlyNativeClientsRegisterLoopbackHttp(): void
+    public function testAClientThatSaysWebCannotRegisterLoopbackHttp(): void
     {
         $harness = new ServerHarness();
 
         $this->assertSame('invalid_redirect_uri', $this->register($harness, 'web', 'http://127.0.0.1:1234/cb'));
-        $this->assertSame('invalid_redirect_uri', $this->register($harness, null, 'http://127.0.0.1:1234/cb'));
+        // Without application_type, loopback-only registrations are native clients.
+        $this->assertNull($this->register($harness, null, 'http://127.0.0.1:1234/cb'));
         $this->assertNull($this->register($harness, 'native', 'http://127.0.0.1:1234/cb'));
     }
 

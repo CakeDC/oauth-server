@@ -60,7 +60,7 @@ negative.
 | --- | --- | --- | --- |
 | `mode` | string | `open` | `open`: anyone may register. `token`: only callers with `Authorization: Bearer <initialAccessToken>`. `closed`: the endpoint answers `access_denied` and is left out of the metadata |
 | `initialAccessToken` | string | `null` | Required when `mode` is `token`. Choose a long random value |
-| `allowPrivateSchemes` | bool | `false` | `true` lets native clients use private-use URI schemes, but only reverse domain names such as `com.example.app:/cb` (RFC 8252 section 7.1; `myapp:/cb` or `cursor://...` are refused). `false` limits redirect URIs to https and loopback http, as the MCP authorization spec requires. It applies to dynamic registration and to metadata documents. Clients you create with `ClientRegistrar::create()` may always use reverse domain schemes. Enable it on purpose, for example for mobile apps |
+| `allowPrivateSchemes` | bool | `false` | `true` lets native clients use private-use URI schemes such as `cursor://anysphere.cursor/oauth` or `com.example.app:/cb` (the dangerous schemes `javascript`, `data`, `file`, `vbscript`, `about` and `blob` stay refused). `false` limits redirect URIs to https and loopback http, as the MCP authorization spec requires. It applies to dynamic registration and to metadata documents. Clients you create with `ClientRegistrar::create()` may always use them. Enable it on purpose, for example for desktop editors or mobile apps |
 
 ## `cimd`
 

@@ -44,14 +44,13 @@ fails with `invalid_redirect_uri`.
 `http` against `https`, or an uppercase letter in the path all fail. The only flexibility is the port of
 a loopback `http` URI. At registration, the URI may break the [redirect URI
 rules](clients.md#redirect-uri-rules): no fragment, no non-ASCII characters (use punycode), plain
-host name, https, or loopback http (only for native clients at dynamic registration), and private
-schemes only for native clients, only when enabled, and only as reverse domain names.
+host name, https, or loopback http (not for a dynamic registration that says `"application_type":
+"web"`), and private schemes only for native clients and only when enabled.
 
 **Fix.** Register the exact URI the client sends. For local tools register a loopback URI without a
-port, such as `http://127.0.0.1/callback`, and send `"application_type": "native"` at dynamic
-registration. For a private scheme, set `registration.allowPrivateSchemes` to `true`, send
-`"application_type": "native"` and use a reverse domain scheme such as `com.example.app:/cb`. A client
-with several registered redirect URIs must send `redirect_uri` at `/authorize` and at `/token`.
+port, such as `http://127.0.0.1/callback`, and send `"application_type": "native"` or leave it out (never
+`"web"`). For a private scheme, set `registration.allowPrivateSchemes` to `true`. A client with several
+registered redirect URIs must send `redirect_uri` at `/authorize` and at `/token`.
 
 ## The person sees an error page with a "Continue to" link
 

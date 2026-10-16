@@ -67,13 +67,14 @@ class RedirectUriMatcherTest extends TestCase
                 false,
                 'not allowed',
             ],
-            // RFC 8252 section 7.1: a reverse domain name the app controls.
-            'private scheme without a dot' => ['myapp:/cb', ApplicationType::Native, true, 'reverse domain'],
-            'private scheme without a dot, with authority' => [
-                'cursor://anysphere.cursor/oauth',
+            // A host that enables private schemes accepts any scheme that is not a dangerous one.
+            'private scheme without a dot' => ['myapp:/cb', ApplicationType::Native, true, null],
+            'cursor scheme' => ['cursor://anysphere.cursor/oauth', ApplicationType::Native, true, null],
+            'dangerous scheme even when enabled' => [
+                'blob:https://app.example.com/x',
                 ApplicationType::Native,
                 true,
-                'reverse domain',
+                'must not use the "blob"',
             ],
             'private scheme web' => ['com.example.app:/oauth', ApplicationType::Web, true, 'web clients'],
             'percent-encoded host' => [

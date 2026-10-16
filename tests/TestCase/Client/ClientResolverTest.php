@@ -492,8 +492,7 @@ class ClientResolverTest extends TestCase
         );
         $client = $enabled->resolve($url);
         $this->assertSame(ApplicationType::Native, $client?->applicationType);
-        // The scheme without a dot is not a reverse domain name (RFC 8252 section 7.1).
-        $this->assertSame(['com.example.app:/oauth'], $client?->redirectUris);
+        $this->assertSame(['com.example.app:/oauth', 'cursor://anysphere.cursor/oauth'], $client?->redirectUris);
 
         $this->expectExceptionMessage('no usable redirect_uris');
         $this->resolver()->resolve($url);

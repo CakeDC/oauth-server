@@ -28,7 +28,7 @@ final class ClientRegistrar
      * @param \Psr\Clock\ClockInterface $clock Clock.
      * @param \CakeDC\OAuth\Server\Resource\ResourceRegistry $resources Known scopes.
      * @param \Psr\EventDispatcher\EventDispatcherInterface $events Events.
-     * @param bool $allowPrivateSchemes Native clients may use private-use URI schemes (reverse domain names).
+     * @param bool $allowPrivateSchemes Native clients may use private-use URI schemes.
      */
     public function __construct(
         private readonly ClientRepositoryInterface $clients,
@@ -49,8 +49,8 @@ final class ClientRegistrar
      */
     public function register(array $metadata): array
     {
-        $applicationType = ApplicationType::tryFrom(self::optionalString($metadata, 'application_type') ?? 'web');
-        if ($applicationType === null) {
+        $declared = self::optionalString($metadata, 'application_type');
+        if ($declared !== null && ApplicationType::tryFrom($declared) === null) {
             throw OAuthException::invalidClientMetadata('application_type must be "web" or "native".');
         }
         $redirectUris = $metadata['redirect_uris'] ?? null;
@@ -62,10 +62,17 @@ final class ClientRegistrar
                 sprintf('Register at most %d redirect_uris.', self::MAX_REDIRECT_URIS),
             );
         }
+        $applicationType = $declared !== null
+            ? ApplicationType::from($declared)
+            : self::inferredApplicationType($redirectUris);
         foreach ($redirectUris as $index => $uri) {
             $error = is_string($uri)
-                ? RedirectUriMatcher::dynamicRegistrationError($uri, $applicationType, $this->allowPrivateSchemes)
+                ? RedirectUriMatcher::registrationError($uri, $applicationType, $this->allowPrivateSchemes)
                 : 'must be a string';
+            // RFC 9700 section 2.6: a client that says it is a web application registers https.
+            if ($error === null && $declared === 'web' && self::scheme((string)$uri) === 'http') {
+                $error = 'must use https for a web client; loopback http needs "application_type": "native"';
+            }
             if ($error !== null) {
                 throw OAuthException::invalidRedirectUri(sprintf('redirect_uris[%d] %s.', $index, $error));
             }
@@ -260,6 +267,32 @@ final class ClientRegistrar
         }
 
         return $body;
+    }
+
+    /**
+     * The application type of a registration that omits `application_type`: native when no redirect URI
+     * is https (only loopback http or private-use schemes, which is what MCP clients such as editors and
+     * command line tools register), otherwise web. Metadata documents follow a similar rule.
+     *
+     * @param array<mixed> $redirectUris The registered redirect URIs.
+     */
+    private static function inferredApplicationType(array $redirectUris): ApplicationType
+    {
+        foreach ($redirectUris as $uri) {
+            if (!is_string($uri) || self::scheme($uri) === 'https') {
+                return ApplicationType::Web;
+            }
+        }
+
+        return ApplicationType::Native;
+    }
+
+    /**
+     * The lowercase scheme of $uri, or an empty string.
+     */
+    private static function scheme(string $uri): string
+    {
+        return strtolower((string)parse_url($uri, PHP_URL_SCHEME));
     }
 
     /**

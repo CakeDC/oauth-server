@@ -23,14 +23,14 @@ class OtherClientFlowsTest extends TestCase
             'https://example.com/oauth/register',
             ['Content-Type' => 'application/json'],
             (string)json_encode([
-                'client_name' => 'Desktop',
+                'client_name' => 'Cursor',
                 'application_type' => 'native',
-                'redirect_uris' => ['com.example.desktop:/oauth'],
+                'redirect_uris' => ['cursor://anysphere.cursor/oauth'],
                 'token_endpoint_auth_method' => 'none',
             ]),
         )));
         $this->assertNotEmpty($registered['client_id']);
-        $this->assertSame(['com.example.desktop:/oauth'], $registered['redirect_uris']);
+        $this->assertSame(['cursor://anysphere.cursor/oauth'], $registered['redirect_uris']);
         $this->assertSame('none', $registered['token_endpoint_auth_method']);
         $client = $harness->storage->findClientByClientId($registered['client_id']);
         $this->assertNotNull($client);

@@ -35,8 +35,8 @@ final class ServerConfig
      * @param string $refreshTokens `always`, or `offline_access` to issue them only when asked.
      * @param string $registrationMode `open`, `token` or `closed`.
      * @param string|null $initialAccessToken Required to register in `token` mode.
-     * @param bool $allowPrivateSchemes Native clients may register private-use URI schemes (reverse domain
-     *   names such as `com.example.app`). Off by default: MCP requires localhost or https redirect URIs.
+     * @param bool $allowPrivateSchemes Native clients may register private-use URI schemes. Off by default:
+     *   MCP requires localhost or https redirect URIs.
      * @param bool $cimdEnabled Accept Client ID Metadata Documents.
      * @param list<string>|null $cimdAllowedHosts Only these client_id hosts; null for any.
      * @param int $cimdTimeout Fetch timeout, seconds.
