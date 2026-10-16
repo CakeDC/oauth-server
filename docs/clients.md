@@ -92,7 +92,7 @@ create(
 
 | Argument | Meaning |
 | --- | --- |
-| `name` | 1 to 255 characters (counted as characters, not bytes), with a letter, number, punctuation or symbol, and no control, bidirectional or other invisible characters (see [security](security.md#authorization-codes-and-consent)); the joiners U+200C and U+200D between visible characters, tag characters inside a flag sequence and the soft hyphen are allowed |
+| `name` | 1 to 255 characters (counted as characters, not bytes), with a letter, number, punctuation or symbol, and no control, bidirectional or other invisible characters (see [security](security.md#authorization-codes-and-consent)); the joiners U+200C and U+200D between visible characters, tag characters inside a flag sequence (at most seven) and the soft hyphen are allowed |
 | `redirectUris` | Up to 10. May be empty only without the authorization code grant |
 | `confidential` | `true` gives the client a secret (`<prefix>_cs_...`) and `client_secret_basic` authentication. `false` makes it public |
 | `grantTypes` | Any of `GrantType::AUTHORIZATION_CODE`, `GrantType::REFRESH_TOKEN`, `GrantType::CLIENT_CREDENTIALS` |
@@ -229,10 +229,16 @@ redirect, the loopback rule applies.
 
 - **Editors and desktop tools with a private-use scheme redirect** (a `cursor://`-style scheme, for
   example): the server accepts the redirect URI only when you set `registration.allowPrivateSchemes` to
-  `true` and the client is native (it says so, or it lists no https redirect URI). This page does not
-  claim that any particular tool works: check what the tool really sends at registration, and test it
-  against your server. Every such connection shows the consent page, with the warning that any program
-  on the computer can use that redirect.
+  `true` and the client is native. A dynamic registration is native when it says so
+  (`"application_type": "native"`) or lists no https redirect URI. A metadata document must say
+  `"application_type": "native"`: without it, a document is native only when all its redirect URIs
+  are loopback `http`. This page does not claim that any particular tool works: check what the tool
+  really sends at registration, and test it against your server. A public client with such a redirect
+  (a metadata document client, or a registration with `"token_endpoint_auth_method": "none"`) sees the
+  consent page on every new connection, with the warning that any program on the computer can use that
+  redirect. A dynamic registration that omits `token_endpoint_auth_method` is confidential
+  (`client_secret_basic`): once the person approved it, its remembered consent skips the page, because
+  it proves itself with its secret at `/token`.
 - **Tools with a loopback or https redirect**: both are accepted under the
   [redirect URI rules](#redirect-uri-rules).
 - **Your own CLI or desktop tool**: register it as a native public client, use a loopback redirect

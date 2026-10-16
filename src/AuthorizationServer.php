@@ -522,6 +522,7 @@ final class AuthorizationServer
             $this->logger,
             $this->clientIp,
             $this->users,
+            $this->scopeResolver(),
         );
     }
 

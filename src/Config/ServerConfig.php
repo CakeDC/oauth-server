@@ -196,7 +196,6 @@ final class ServerConfig
             throw new InvalidArgumentException('"lifetimes" must be an array.');
         }
 
-        /** @var array<string, mixed> $lifetimes */
         return new self(
             issuer: ResourceIdentifier::canonicalize(self::string($config, 'issuer')),
             resources: ResourceRegistry::fromArray($resources, $default),
@@ -281,6 +280,11 @@ final class ServerConfig
         $section = $config[$name] ?? [];
         if (!is_array($section)) {
             throw new InvalidArgumentException(sprintf('"%s" must be an array.', $name));
+        }
+        if ($section !== [] && array_is_list($section)) {
+            throw new InvalidArgumentException(
+                sprintf('"%s" must map setting names to values, not a list.', $name),
+            );
         }
         $unknown = array_diff(array_keys($section), $known);
         if ($unknown !== []) {

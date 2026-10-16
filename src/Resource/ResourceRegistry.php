@@ -43,8 +43,9 @@ final class ResourceRegistry
     }
 
     /**
-     * Builds the registry from `identifier => settings` (see ProtectedResource::fromArray()). Settings that
-     * are not an array (a resource given as a name, or a list of URLs) are refused by resource.
+     * Builds the registry from `identifier => settings` (see ProtectedResource::fromArray()). A list (of URLs
+     * or of settings) is refused, and so are settings that are not an array (a resource given as a name),
+     * naming the resource.
      *
      * @param array<mixed> $config Resources.
      * @param string|null $default Default resource identifier.
@@ -52,6 +53,11 @@ final class ResourceRegistry
      */
     public static function fromArray(array $config, ?string $default = null): self
     {
+        if ($config !== [] && array_is_list($config)) {
+            throw new InvalidArgumentException(
+                '"resources" must map each resource URL to its settings, not a list (the entry "0" has no URL).',
+            );
+        }
         $resources = [];
         foreach ($config as $identifier => $settings) {
             if (!is_array($settings)) {
@@ -62,7 +68,6 @@ final class ResourceRegistry
                     get_debug_type($settings),
                 ));
             }
-            /** @var array<string, mixed> $settings */
             $resources[] = ProtectedResource::fromArray((string)$identifier, $settings);
         }
 

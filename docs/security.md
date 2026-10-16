@@ -86,9 +86,13 @@ Related rules:
   the client's registered scopes and the person's `scopesFor()` of today narrow only the new access
   token. So a down-scoped refresh, a demotion or a narrowed client loses nothing for good: a person
   promoted again gets the scopes back at the next refresh. Nothing is widened either, because every use
-  of a token recomputes its scopes ([protecting resources](protecting-resources.md)).
+  of a token recomputes its scopes ([protecting resources](protecting-resources.md)), and introspecting a
+  refresh token reports what an access token refreshed from it would hold today, not the stored grant
+  (inactive when nothing is left).
 - A refresh token is never a bearer token: a resource refuses it as `invalid_token` ("The access token is
-  invalid.") whatever scopes it carries.
+  invalid.") whatever scopes it carries. A resource server that introspects must do the same: accept
+  only `"token_type": "Bearer"`, never `refresh_token`
+  ([introspection](endpoints.md#post-oauthintrospect)).
 - Clients must serialize refreshes per token. See the known issue below.
 
 ### Known issue: concurrent refreshes
@@ -155,7 +159,8 @@ that, set it to `0`. Then a lost response costs one re-authorization.
   containing quote characters cannot close the quote. Client and token names must contain a letter,
   number, punctuation or symbol and reject control characters, line and paragraph separators,
   bidirectional controls, every other format character (`Cf`) except the soft hyphen, tag characters
-  inside an emoji tag sequence (subdivision flags) and U+200C/U+200D between two visible characters
+  inside an emoji tag sequence (a subdivision flag, at most seven tag characters, so a flag cannot carry
+  a hidden text) and U+200C/U+200D between two visible characters
   (Persian, Indic scripts, emoji sequences), characters that draw nothing (fillers, U+034F, U+FFFC,
   unassigned default-ignorable code points) and runs of more than four combining marks.
   A name that looks like a host is accepted: it never headlines the page. Length limits count
@@ -165,11 +170,13 @@ that, set it to `0`. Then a lost response costs one re-authorization.
 - Revoking a person (`revokeAllForSubject()`), a connection (the connections page) or a client
   (`revokeAllForClient()`) also deletes the codes issued to them that were not exchanged yet (for a
   connection: the person's codes for that client, on every resource), so a code issued a moment before
-  the revocation cannot open a new connection afterwards. The codes are deleted
-  before the tokens are revoked: a code being exchanged at that moment is either deleted before it is
-  consumed (the exchange fails and revokes what it issued) or consumed with its tokens already stored,
-  which the revocation then reaches. Exchanged codes are kept, so a replayed code still revokes what it
-  issued.
+  the revocation cannot open a new connection afterwards. For a person and for a client the codes are
+  deleted before the tokens are revoked: a code being exchanged at that moment is either deleted before
+  it is consumed (the exchange fails and revokes what it issued) or consumed with its tokens already
+  stored, which the revocation then reaches. A connection revocation goes the other way round: it
+  revokes the family first and then deletes the codes, so a code exchanged in between opens a new
+  family, which the connections page lists as a connection of its own that the person can revoke.
+  Exchanged codes are kept, so a replayed code still revokes what it issued.
 
 ## Secrets and tokens at rest
 

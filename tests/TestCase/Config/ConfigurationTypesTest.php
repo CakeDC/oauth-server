@@ -106,10 +106,11 @@ class ConfigurationTypesTest extends TestCase
             'string' => [1, 1.5, true, false, [], ['a'], $object],
             'bool' => [1, 0, 'true', 1.5, [], $object],
             'int' => ['5', 5.0, true, [], [5], $object],
-            'map' => ['x', 1, true, 1.5, $object],
+            // A list where a map is expected: its keys would become names "0", "1", ...
+            'map' => ['x', 1, true, 1.5, $object, ['read', 'write'], [['read']], [5, 60]],
             'list' => ['x', 1, true, $object, [1], [[]], [$object], [null]],
             'pair' => ['x', 5, [5], [5, '60'], [5, 6, 7], ['max' => 5, 'window' => 6], [5.0, 60], $object],
-            'resource' => ['Example MCP', 1, true, null, $object],
+            'resource' => ['Example MCP', 1, true, null, $object, ['Example MCP', ['read' => 'Read']]],
         ];
     }
 
@@ -169,6 +170,41 @@ class ConfigurationTypesTest extends TestCase
 
         $this->assertInstanceOf(InvalidArgumentException::class, $error);
         $this->assertStringContainsString('"0"', $error->getMessage());
+    }
+
+    /**
+     * The mistake of the review: scopes written as a list declared the scopes "0" and "1".
+     */
+    public function testAListWhereAMapIsExpectedIsRefusedByName(): void
+    {
+        $cases = [
+            '"scopes" of the resource' => fn() => ProtectedResource::fromArray(
+                self::MCP,
+                ['scopes' => ['content:read', 'content:write']],
+            ),
+            '"implies" of the resource' => fn() => ProtectedResource::fromArray(
+                self::MCP,
+                ['scopes' => ['read' => 'Read', 'write' => 'Write'], 'implies' => [['read']]],
+            ),
+            'settings of the resource "' . self::MCP => fn() => ProtectedResource::fromArray(self::MCP, ['Example']),
+            '"resources"' => fn() => ResourceRegistry::fromArray([['name' => 'Example MCP']]),
+            '"lifetimes"' => fn() => Lifetimes::fromArray([3600, 60]),
+        ];
+        foreach ($cases as $named => $build) {
+            $error = $this->failureOf($build);
+
+            $this->assertInstanceOf(InvalidArgumentException::class, $error, $named);
+            $this->assertStringContainsString($named, $error->getMessage());
+            $this->assertStringContainsString('not a list', $error->getMessage());
+        }
+    }
+
+    public function testAnEmptyListIsAnEmptyMap(): void
+    {
+        $config = self::valid() + ['registration' => [], 'cimd' => [], 'rateLimit' => [], 'lifetimes' => []];
+        $config['resources'][self::MCP]['implies'] = [];
+
+        $this->assertSame([], ServerConfig::fromArray($config)->resources->get(self::MCP)?->expand([]));
     }
 
     public function testProtectedResourceRefusesWronglyTypedSettingsByName(): void

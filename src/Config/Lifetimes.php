@@ -45,13 +45,16 @@ final class Lifetimes
     }
 
     /**
-     * Builds lifetimes from settings with the property names as keys.
+     * Builds lifetimes from settings with the property names as keys. A list is refused.
      *
-     * @param array<string, mixed> $values Settings.
+     * @param array<mixed> $values Settings, as read from a configuration file.
      * @throws \InvalidArgumentException
      */
     public static function fromArray(array $values): self
     {
+        if ($values !== [] && array_is_list($values)) {
+            throw new InvalidArgumentException('"lifetimes" must map lifetime names to seconds, not a list.');
+        }
         $known = ['code', 'access', 'refresh', 'family', 'personalMax', 'refreshReuseGrace'];
         $unknown = array_diff(array_keys($values), $known);
         if ($unknown !== []) {

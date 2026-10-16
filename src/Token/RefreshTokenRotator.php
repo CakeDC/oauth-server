@@ -165,43 +165,20 @@ final class RefreshTokenRotator
         if ($owner === null) {
             throw OAuthException::invalidGrant('The owner of this refresh token no longer has access.');
         }
-        $scopes = $this->grantable(
-            $client,
+        // The owner's allowance of today, for people and client identities alike (null: unrestricted).
+        $scopes = $this->scopes->refreshed(
             $target,
-            $this->scopes->narrow($target, $token->scopes, $requestedScopes),
+            $token->scopes,
+            $requestedScopes,
+            $client->scopes,
+            $this->users->scopesFor($owner, $target),
         );
-        if ($scopes === []) {
-            throw OAuthException::invalidScope('None of the scopes of this token can be granted any more.');
-        }
-        // The owner's allowance of today, for people and client identities alike (null: unrestricted). A
-        // demotion narrows the grant; only when nothing is left is it refused.
-        $scopes = $this->scopes->withinOwnerAllowance($target, $scopes, $this->users->scopesFor($owner, $target));
-        if ($scopes === []) {
-            throw OAuthException::invalidGrant('The grant no longer allows any scope.');
-        }
         $grant = array_values(array_unique(array_filter(
             $token->scopes,
             fn(string $scope): bool => $target->hasScope($scope),
         )));
 
         return [$target, $scopes, $grant];
-    }
-
-    /**
-     * Drops the scopes the resource no longer declares or the client may no longer hold, and duplicates.
-     *
-     * @param list<string> $scopes Scopes after narrowing.
-     * @return list<string>
-     */
-    private function grantable(Client $client, ProtectedResource $target, array $scopes): array
-    {
-        $allowed = $client->scopes === null ? null : $target->expand($client->scopes);
-
-        return array_values(array_unique(array_filter(
-            $scopes,
-            fn(string $scope): bool => $target->hasScope($scope)
-                && ($allowed === null || in_array($scope, $allowed, true)),
-        )));
     }
 
     /**

@@ -79,8 +79,9 @@ final class HostClass
     }
 
     /**
-     * What names the destination of a redirect to $uri: the host of an http(s) URI, the scheme of a
-     * private-use one (the scheme is chosen by the client, and so is what follows it), the whole string when it
+     * What names the destination of a redirect to $uri: the host of an http(s) URI; the scheme of a
+     * private-use one followed by its colon (`claude.ai:`), so a scheme that looks like a host never reads as
+     * that host (the scheme is chosen by the client, and so is what follows it); the whole string when it
      * has neither.
      */
     public static function redirectTarget(string $uri): string
@@ -91,7 +92,7 @@ final class HostClass
         }
         $scheme = strtolower((string)parse_url($uri, PHP_URL_SCHEME));
 
-        return $scheme !== '' && $scheme !== 'http' && $scheme !== 'https' ? $scheme : $uri;
+        return $scheme !== '' && $scheme !== 'http' && $scheme !== 'https' ? $scheme . ':' : $uri;
     }
 
     /**

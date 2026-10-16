@@ -82,4 +82,25 @@ class ScopeResolverTest extends TestCase
         $this->expectException(OAuthException::class);
         $this->resolver->narrow($this->resource, ['write'], ['publish']);
     }
+
+    /**
+     * What a refresh issues today, which the introspection of a refresh token reports too.
+     */
+    public function testRefreshedScopes(): void
+    {
+        $this->assertSame(['write', 'media'], $this->resolver->refreshed($this->resource, ['write', 'media'], [], null, null));
+        $this->assertSame(['read'], $this->resolver->refreshed($this->resource, ['write', 'media'], ['read'], null, null));
+        $this->assertSame(['write'], $this->resolver->refreshed($this->resource, ['write', 'gone'], [], ['publish'], null));
+        $this->assertSame(['read'], $this->resolver->refreshed($this->resource, ['write'], [], null, ['read', 'media']));
+
+        $errors = [];
+        foreach ([[['media'], null], [null, ['media']]] as [$client, $owner]) {
+            try {
+                $this->resolver->refreshed($this->resource, ['write'], [], $client, $owner);
+            } catch (OAuthException $e) {
+                $errors[] = $e->error;
+            }
+        }
+        $this->assertSame(['invalid_scope', 'invalid_grant'], $errors);
+    }
 }

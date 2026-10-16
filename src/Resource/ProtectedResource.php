@@ -56,15 +56,23 @@ final class ProtectedResource
     }
 
     /**
-     * Builds a resource from settings: `name`, `scopes`, `implies`, `defaultScopes`.
+     * Builds a resource from settings: `name`, `scopes`, `implies`, `defaultScopes`. The settings, `scopes`
+     * and `implies` are maps: a list given for one of them is refused, naming it (a list of scopes would
+     * declare the scopes "0", "1", ...).
      *
      * @param string $identifier The resource URL, in any spelling.
-     * @param array<string, mixed> $config Settings.
+     * @param array<mixed> $config Settings, as read from a configuration file.
      * @throws \InvalidArgumentException
      */
     public static function fromArray(string $identifier, array $config): self
     {
         $identifier = ResourceIdentifier::canonicalize($identifier);
+        if ($config !== [] && array_is_list($config)) {
+            throw new InvalidArgumentException(sprintf(
+                'The settings of the resource "%s" must map setting names to values, not a list.',
+                $identifier,
+            ));
+        }
         $unknown = array_diff(array_keys($config), ['name', 'scopes', 'implies', 'defaultScopes']);
         if ($unknown !== []) {
             throw new InvalidArgumentException(sprintf(
@@ -83,6 +91,15 @@ final class ProtectedResource
             if (!is_array($value)) {
                 throw new InvalidArgumentException(
                     sprintf('"%s" of the resource "%s" must be an array.', $key, $identifier),
+                );
+            }
+        }
+        // A list would declare the scopes "0", "1", ...
+        $maps = ['scopes' => 'scope names to descriptions', 'implies' => 'scopes to lists of scopes'];
+        foreach ($maps as $key => $shape) {
+            if ($settings[$key] !== [] && array_is_list($settings[$key])) {
+                throw new InvalidArgumentException(
+                    sprintf('"%s" of the resource "%s" must map %s, not a list.', $key, $identifier, $shape),
                 );
             }
         }

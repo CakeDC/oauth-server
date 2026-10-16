@@ -9,9 +9,12 @@ use CakeDC\OAuth\Server\Config\ServerConfig;
 use CakeDC\OAuth\Server\Exception\OAuthException;
 use CakeDC\OAuth\Server\Http\FormBody;
 use CakeDC\OAuth\Server\Http\HttpResponder;
+use CakeDC\OAuth\Server\Owner\ResourceOwner;
 use CakeDC\OAuth\Server\Owner\SubjectType;
 use CakeDC\OAuth\Server\Owner\UserProviderInterface;
 use CakeDC\OAuth\Server\RateLimit\RateLimiter;
+use CakeDC\OAuth\Server\Resource\ProtectedResource;
+use CakeDC\OAuth\Server\Scope\ScopeResolver;
 use CakeDC\OAuth\Server\Scope\Scopes;
 use CakeDC\OAuth\Server\Storage\ClientRepositoryInterface;
 use CakeDC\OAuth\Server\Storage\TokenRepositoryInterface;
@@ -49,6 +52,7 @@ final class IntrospectHandler implements RequestHandlerInterface
      * @param \Psr\Log\LoggerInterface $logger Logger.
      * @param \Closure $clientIp `fn (ServerRequestInterface $request): string`.
      * @param \CakeDC\OAuth\Server\Owner\UserProviderInterface $users The application's people.
+     * @param \CakeDC\OAuth\Server\Scope\ScopeResolver $scopes Scopes, for what a refresh token is worth today.
      */
     public function __construct(
         private readonly ServerConfig $config,
@@ -62,6 +66,7 @@ final class IntrospectHandler implements RequestHandlerInterface
         private readonly LoggerInterface $logger,
         private readonly Closure $clientIp,
         private readonly UserProviderInterface $users,
+        private readonly ScopeResolver $scopes,
     ) {
     }
 
@@ -117,24 +122,7 @@ final class IntrospectHandler implements RequestHandlerInterface
             return $inactive;
         }
         if ($stored->type === TokenType::Refresh) {
-            $client = $stored->clientInternalId === null
-                ? null
-                : $this->clients->findClientById($stored->clientInternalId);
-            $dead = !$stored->isActive($this->clock->now()) || $stored->usedAt !== null;
-            if ($dead || $client === null || $client->isRevoked() || !$this->ownerExists($stored, $client)) {
-                return $inactive;
-            }
-
-            return array_filter([
-                'active' => true,
-                'scope' => Scopes::format($stored->scopes),
-                'client_id' => $client->clientId,
-                'sub' => $stored->subject,
-                'aud' => $stored->resource,
-                'exp' => $stored->expiresAt?->getTimestamp(),
-                'iat' => $stored->createdAt->getTimestamp(),
-                'token_type' => 'refresh_token',
-            ], fn(mixed $item): bool => $item !== null);
+            return $this->describeRefreshToken($stored) ?? $inactive;
         }
         try {
             $result = $this->validator->validate($value, $stored->resource, false);
@@ -159,15 +147,58 @@ final class IntrospectHandler implements RequestHandlerInterface
     }
 
     /**
-     * Whether the person (or client identity) a refresh token belongs to still exists.
+     * The introspection response for a live refresh token, or null when it is inactive.
+     *
+     * The stored scopes are the grant, which a refresh keeps even when the client or the owner may hold less
+     * today. A refresh token is described with what an access token refreshed from it would hold today (the
+     * same computation as the refresh, reported the way an access token is), so a resource server that wrongly
+     * checks only `active` and `scope` is never shown more than the person has. A refresh token that could
+     * not be refreshed (its owner, resource or every scope gone) is inactive.
+     *
+     * @return array<string, mixed>|null
      */
-    private function ownerExists(Token $token, Client $client): bool
+    private function describeRefreshToken(Token $stored): ?array
+    {
+        $client = $stored->clientInternalId === null
+            ? null
+            : $this->clients->findClientById($stored->clientInternalId);
+        $dead = !$stored->isActive($this->clock->now()) || $stored->usedAt !== null;
+        $resource = $this->config->resources->get($stored->resource);
+        if ($dead || $client === null || $client->isRevoked() || $resource === null) {
+            return null;
+        }
+        $owner = $this->owner($stored, $client, $resource);
+        if ($owner === null) {
+            return null;
+        }
+        $ownerAllowed = $this->users->scopesFor($owner, $resource);
+        try {
+            $scopes = $this->scopes->refreshed($resource, $stored->scopes, [], $client->scopes, $ownerAllowed);
+        } catch (OAuthException) {
+            return null;
+        }
+
+        return array_filter([
+            'active' => true,
+            'scope' => Scopes::format($this->scopes->effective($resource, $scopes, $client->scopes, $ownerAllowed)),
+            'client_id' => $client->clientId,
+            'sub' => $stored->subject,
+            'aud' => $resource->identifier,
+            'exp' => $stored->expiresAt?->getTimestamp(),
+            'iat' => $stored->createdAt->getTimestamp(),
+            'token_type' => 'refresh_token',
+        ], fn(mixed $item): bool => $item !== null);
+    }
+
+    /**
+     * The person (or client identity) a refresh token belongs to, or null when they no longer exist.
+     */
+    private function owner(Token $token, Client $client, ProtectedResource $resource): ?ResourceOwner
     {
         if ($token->subjectType === SubjectType::User) {
-            return $this->users->findBySubject($token->subject) !== null;
+            return $this->users->findBySubject($token->subject);
         }
-        $resource = $this->config->resources->get($token->resource);
 
-        return $resource !== null && $this->users->forClient($client, $resource) !== null;
+        return $this->users->forClient($client, $resource);
     }
 }

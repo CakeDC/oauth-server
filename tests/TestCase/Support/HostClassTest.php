@@ -70,9 +70,10 @@ class HostClassTest extends TestCase
             'https unspecified IPv6' => ['https://[::]/cb', true, '[::]'],
             'http loopback' => ['http://127.0.0.1:51000/cb', true, '127.0.0.1'],
             'http remote (never registrable)' => ['http://app.example.com/cb', true, 'app.example.com'],
-            'private scheme' => ['com.example.app:/cb', true, 'com.example.app'],
-            'private scheme with authority' => ['com.example.app://oauth/cb', true, 'com.example.app'],
-            'uppercase private scheme' => ['Cursor://anysphere/cb', true, 'cursor'],
+            'private scheme' => ['com.example.app:/cb', true, 'com.example.app:'],
+            'private scheme with authority' => ['com.example.app://oauth/cb', true, 'com.example.app:'],
+            'uppercase private scheme' => ['Cursor://anysphere/cb', true, 'cursor:'],
+            'private scheme named like a host' => ['claude.ai:/callback', true, 'claude.ai:'],
         ];
     }
 

@@ -55,7 +55,8 @@ registered redirect URIs must send `redirect_uri` at `/authorize` and at `/token
 ## The person sees an error page with a "Continue to" link
 
 **Symptom.** Instead of going back to the application, `/oauth/authorize` shows "Authorization failed"
-with a link "Continue to {host}".
+with a link "Continue to {host}" (for a private-use redirect, the scheme with its colon, for example
+"Continue to com.example.app:").
 
 **Cause.** The request had an error (for example a missing `code_challenge` or an unknown scope) and the
 client's redirect URI is not trusted: the client registered itself (dynamic registration) or is a

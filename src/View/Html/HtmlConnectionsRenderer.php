@@ -9,6 +9,7 @@ use CakeDC\OAuth\Server\View\ConnectionsRendererInterface;
 use CakeDC\OAuth\Server\View\ConnectionsView;
 use CakeDC\OAuth\Server\View\Messages;
 use DateTimeImmutable;
+use SensitiveParameter;
 
 /**
  * The built-in connections page.
@@ -168,9 +169,9 @@ final class HtmlConnectionsRenderer implements ConnectionsRendererInterface
     }
 
     /**
-     * A hidden input.
+     * A hidden input. Its value can be the form token, so it stays out of traces.
      */
-    private function hidden(string $name, string $value): string
+    private function hidden(string $name, #[SensitiveParameter] string $value): string
     {
         return sprintf('<input type="hidden" name="%s" value="%s">', Html::e($name), Html::e($value));
     }

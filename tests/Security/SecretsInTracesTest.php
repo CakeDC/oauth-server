@@ -7,6 +7,8 @@ use CakeDC\OAuth\Server\AuthorizationServer;
 use CakeDC\OAuth\Server\Client\Client;
 use CakeDC\OAuth\Server\Client\ClientAuthMethod;
 use CakeDC\OAuth\Server\Config\ServerConfig;
+use CakeDC\OAuth\Server\Grant\RedirectUrl;
+use CakeDC\OAuth\Server\Http\HttpResponder;
 use CakeDC\OAuth\Server\Storage\Pdo\PdoStorage;
 use CakeDC\OAuth\Server\Test\Support\FakeDns;
 use CakeDC\OAuth\Server\Test\Support\FakeTransport;
@@ -18,13 +20,19 @@ use CakeDC\OAuth\Server\Test\Support\RecordingLogger;
 use CakeDC\OAuth\Server\Test\Support\ServerHarness;
 use CakeDC\OAuth\Server\Testing\ArrayCache;
 use CakeDC\OAuth\Server\Testing\FrozenClock;
+use CakeDC\OAuth\Server\View\ConnectionsView;
+use CakeDC\OAuth\Server\View\ConsentView;
+use CakeDC\OAuth\Server\View\Html\HtmlConnectionsRenderer;
 use Nyholm\Psr7\Factory\Psr17Factory;
 use Nyholm\Psr7\Response;
 use Nyholm\Psr7\ServerRequest;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\RequestHandlerInterface;
+use ReflectionMethod;
 use RuntimeException;
 use SensitiveParameter;
 use Throwable;
@@ -76,13 +84,19 @@ class SecretsInTracesTest extends TestCase
         $this->userContext = new FakeUserContext();
         $this->users = new FakeUsers();
         $this->factory = new Psr17Factory();
+        $this->server = $this->buildServer($this->factory);
+    }
+
+    private function buildServer(ResponseFactoryInterface $responses): AuthorizationServer
+    {
         $clock = new FrozenClock();
-        $this->server = new AuthorizationServer(
+
+        return new AuthorizationServer(
             Fixtures::config(['secret' => self::SECRET]),
             new PdoStorage($this->pdo),
             $this->users,
             $this->userContext,
-            $this->factory,
+            $responses,
             $this->factory,
             cache: new ArrayCache($clock),
             clock: $clock,
@@ -214,6 +228,85 @@ class SecretsInTracesTest extends TestCase
         } catch (RuntimeException $e) {
             $this->assertTraceHides($e, [$tokens['access_token']]);
         }
+    }
+
+    /**
+     * The code is issued, then the redirect that carries it is built: a failure there (a response factory
+     * that throws) happens with the code-carrying URL in the arguments of `HttpResponder::redirect()`.
+     */
+    public function testAFailedAuthorizationRedirectDoesNotPutTheCodeInTheTrace(): void
+    {
+        $responses = new class implements ResponseFactoryInterface {
+            public ?int $failOn = null;
+
+            private Psr17Factory $factory;
+
+            public function __construct()
+            {
+                $this->factory = new Psr17Factory();
+            }
+
+            public function createResponse(int $code = 200, string $reasonPhrase = ''): ResponseInterface
+            {
+                if ($code === $this->failOn) {
+                    $this->failOn = null;
+                    throw new RuntimeException('The response could not be built.');
+                }
+
+                return $this->factory->createResponse($code, $reasonPhrase);
+            }
+        };
+        $this->server = $this->buildServer($responses);
+        $client = $this->confidentialClient();
+        $this->userContext->owner = $this->users->users['42'];
+        $page = $this->server->authorizeHandler()->handle($this->request('GET', (new ServerHarness())->authorizeUrl($client)));
+        $fields = ServerHarness::formFields((string)$page->getBody()) + ['decision' => 'approve'];
+
+        $responses->failOn = 303;
+        $answer = $this->server->authorizeHandler()->handle($this->form('https://example.com/oauth/authorize', $fields));
+
+        $this->assertSame(500, $answer->getStatusCode());
+        $this->assertSame(1, (int)$this->pdo->query('SELECT COUNT(*) FROM oauth_authorization_codes')?->fetchColumn());
+        $failure = $this->loggedFailure();
+        $this->assertStringContainsString('HttpResponder->redirect(', $failure->getTraceAsString());
+        $this->assertTraceHides($failure, ['oauth_ac_', $fields['consent_token']]);
+    }
+
+    /**
+     * Parameters that carry a code, a token or a form token but whose frames no test can catch on the stack
+     * of a failure (a URL builder or a renderer helper that cannot fail today) are pinned here: removing the
+     * attribute fails this test.
+     *
+     * @return array<string, array{class-string, string, string}>
+     */
+    public static function sensitiveParameters(): array
+    {
+        return [
+            'RedirectUrl::build() $params' => [RedirectUrl::class, 'build', 'params'],
+            'HttpResponder::redirect() $url' => [HttpResponder::class, 'redirect', 'url'],
+            'HttpResponder::page() $html' => [HttpResponder::class, 'page', 'html'],
+            'HttpResponder::json() $data' => [HttpResponder::class, 'json', 'data'],
+            'ConsentView $fields (consent_token)' => [ConsentView::class, '__construct', 'fields'],
+            'ConnectionsView $formToken' => [ConnectionsView::class, '__construct', 'formToken'],
+            'ConnectionsView $newToken' => [ConnectionsView::class, '__construct', 'newToken'],
+            'HtmlConnectionsRenderer::hidden() $value (form_token)' => [HtmlConnectionsRenderer::class, 'hidden', 'value'],
+        ];
+    }
+
+    /**
+     * @param class-string $class
+     */
+    #[DataProvider('sensitiveParameters')]
+    public function testTheParameterIsSensitive(string $class, string $method, string $parameter): void
+    {
+        foreach ((new ReflectionMethod($class, $method))->getParameters() as $candidate) {
+            if ($candidate->getName() === $parameter) {
+                $this->assertNotSame([], $candidate->getAttributes(SensitiveParameter::class));
+
+                return;
+            }
+        }
+        $this->fail(sprintf('%s::%s() has no parameter $%s.', $class, $method, $parameter));
     }
 
     public function testAConfigurationErrorDoesNotPutTheSecretsInTheTrace(): void

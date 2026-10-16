@@ -49,10 +49,13 @@ final class HtmlConsentRenderer implements ConsentRendererInterface
         }
         // A name is self-asserted, so the title and the heading use a host the client cannot choose freely.
         $client = $view->clientLabel() !== '' ? $view->clientLabel() : $m->get('client.local');
-        $from = $view->clientHost() !== '' ? $view->clientHost() : $view->redirectHost();
+        $from = $m->get('consent.from', [
+            'host' => $view->clientHost() !== '' ? $view->clientHost() : $view->redirectHost(),
+            'redirect' => $view->redirectHost(),
+        ]);
         if ($view->client->type === ClientType::Dynamic && $view->clientHost() === '') {
             // The scheme of a private-use redirect is chosen by the client: it is shown only as the destination.
-            $from = $client;
+            $from = $m->get('consent.fromLocal', ['redirect' => $view->redirectHost()]);
         }
         $declared = $view->declaredName();
         if ($declared !== null) {
@@ -63,10 +66,7 @@ final class HtmlConsentRenderer implements ConsentRendererInterface
                 'client' => $client,
                 'resource' => $view->resource->name,
             ])) . '</h1>'
-            . '<p class="muted">' . Html::e($m->get('consent.from', [
-                'host' => $from,
-                'redirect' => $view->redirectHost(),
-            ])) . '</p>'
+            . '<p class="muted">' . Html::e($from) . '</p>'
             . $notes
             . '<p>' . Html::e($m->get('consent.user', ['user' => $view->owner->displayName])) . '</p>'
             . '<p>' . Html::e($m->get('consent.scopes')) . '</p><ul>' . $items . '</ul>'

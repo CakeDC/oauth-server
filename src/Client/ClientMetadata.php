@@ -30,14 +30,16 @@ final class ClientMetadata
      * combining grapheme joiner, the object replacement character, unassigned default-ignorable code points)
      * or runs of more than four combining marks (format characters between the marks do not break a run).
      * Allowed although they are format characters: the soft hyphen, tag characters only inside an emoji tag
-     * sequence (a subdivision flag: U+1F3F4, tags, U+E007F), and U+200C and U+200D between two visible
-     * characters (Persian, Indic scripts, emoji sequences). Variation selectors are allowed after a letter,
-     * number, punctuation or symbol.
+     * sequence (a subdivision flag: U+1F3F4, one to seven tags, U+E007F; seven is the longest Unicode
+     * subdivision id, and the cap keeps a flag from carrying a hidden text), and U+200C and U+200D between
+     * two visible characters (Persian, Indic scripts, emoji sequences). Variation selectors are allowed after
+     * a letter, number, punctuation or symbol.
      */
     public static function isUsableName(string $name): bool
     {
-        // Tag characters are an ASCII-smuggling carrier: only a flag sequence may keep them.
-        $work = preg_replace('/(\x{1F3F4})[\x{E0020}-\x{E007E}]+\x{E007F}/u', '$1', $name);
+        // Tag characters are an ASCII-smuggling carrier: only a flag sequence may keep them, and only as many
+        // as a subdivision code needs.
+        $work = preg_replace('/(\x{1F3F4})[\x{E0020}-\x{E007E}]{1,7}\x{E007F}/u', '$1', $name);
         if ($work === null || preg_match('/\p{Cc}|\p{Zl}|\p{Zp}/u', $work) !== 0) {
             return false;
         }

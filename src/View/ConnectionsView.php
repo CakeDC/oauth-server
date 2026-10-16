@@ -33,6 +33,7 @@ final class ConnectionsView
         public readonly array $creatable,
         public readonly array $resourceNames,
         public readonly string $formAction,
+        #[SensitiveParameter]
         public readonly string $formToken,
         public readonly int $maxDays,
         public readonly bool $personalTokensEnabled,

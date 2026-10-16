@@ -28,14 +28,16 @@ consent cannot vouch for (see [endpoints](endpoints.md#get-start)). It shows:
   is self-asserted: anyone can register a client called `claude.ai`. A dynamic client whose answer goes
   to a private-use scheme has no host at all (anyone can claim the scheme `claude.ai:`), so it gets the
   fixed text of the `client.local` message, "An application on this computer"; the scheme appears only
-  as the destination. A dynamic client's own name appears below as a quoted (`<q>`), unverified line
-  ("It calls itself ..."), always for the private-scheme case and otherwise when it differs from the
-  host.
+  as the destination, with its colon (`claude.ai:`), so it never reads as a host. A dynamic client's
+  own name appears below as a quoted (`<q>`), unverified line ("It calls itself ..."), always for the
+  private-scheme case and otherwise when it differs from the host.
 - Where the request comes from and where the answer goes: "The request comes from {host}. Your answer
   is sent to {redirect}." For a metadata document the host is the `client_id` host; for a client that
-  registered itself it is the host the answer goes to (never a redirect URI it merely listed), or the
-  fixed text above for a private-use scheme; for an administrator's client, the host of its first
-  redirect URI.
+  registered itself it is the host the answer goes to (never a redirect URI it merely listed); for an
+  administrator's client, the host of its first redirect URI. A client that registered itself with a
+  private-use redirect gets a sentence of its own, `consent.fromLocal`: "The request comes from an
+  application on this computer. Your answer is sent to {redirect}." The destination of a private-use
+  redirect is its scheme with the colon, `claude.ai:`.
 - An **unverified** notice for dynamically registered clients: they chose their own name.
 - A **loopback** warning when the answer goes to the person's own computer: a loopback or unspecified
   address (`127.0.0.0/8`, `::1`, `0.0.0.0`, `::`), a `.localhost` name, or a private-use scheme. It does
@@ -113,11 +115,11 @@ interface ConsentRendererInterface
 | `offlineAccess` | Whether the client will stay connected (a refresh token will be issued) |
 | `redirectUri` | Where the answer goes |
 | `formAction` | The path the form must post to |
-| `fields` | Hidden fields to post back, as `name => value` |
+| `fields` | Hidden fields to post back, as `name => value`. They carry the signed `consent_token`; the constructor parameter is a `#[\SensitiveParameter]` |
 | `clientHost()` | The host that names the client: the `client_id` host of a metadata document, the host the answer goes to for a self-registered client (empty for a private-use scheme), the first redirect URI host for an administrator's client |
 | `clientLabel()` | What the title and heading call the client: its name for an administrator's client, a host for the others. Empty for a self-registered client that redirects to a private-use scheme: show a fixed text then (the built-in pages use the `client.local` message) |
 | `declaredName()` | The name a self-registered client declared, to show as a quoted unverified line, or `null`. Always set for a private-use redirect, otherwise only when it differs from the host |
-| `redirectHost()` | The host of the redirect URI (the scheme for a private-use URI), the same rule as `RedirectNoticeView::redirectHost()` |
+| `redirectHost()` | The host of the redirect URI; for a private-use URI, the scheme with its colon (`com.example.app:`), so a scheme such as `claude.ai:` never reads as a host. The same rule as `RedirectNoticeView::redirectHost()` |
 | `isUnverified()` | `true` for a dynamically registered client |
 | `isLoopbackOnly()` | `true` when the answer goes to this computer (loopback or unspecified address, `.localhost` name, private-use scheme) |
 | `approvedBefore` | `true` when a remembered consent covers the request but the page is shown again (public loopback or private-scheme client) |
@@ -229,7 +231,7 @@ back to the client.
 | `client` | The `Client`, or null |
 | `redirectUri` | The client's redirect URI |
 | `continueUrl` | The redirect URI with the error parameters: the link that continues |
-| `redirectHost()` | The host the person would be sent to (the scheme for a private-use URI) |
+| `redirectHost()` | The host the person would be sent to; for a private-use URI, the scheme with its colon (`com.example.app:`) |
 
 Show the error and the destination host, and offer `continueUrl` as a plain link. Never follow it by
 yourself: no script, no `<meta http-equiv="refresh">`.
@@ -263,6 +265,7 @@ Every key, with its default text:
 | `consent.heading` | {client} wants to access {resource} | `{client}`, `{resource}` |
 | `consent.from` | The request comes from {host}. Your answer is sent to {redirect}. | `{host}`, `{redirect}` |
 | `client.local` | An application on this computer |  |
+| `consent.fromLocal` | The request comes from an application on this computer. Your answer is sent to {redirect}. | `{redirect}` (used instead of `consent.from` for a self-registered client with a private-use redirect) |
 | `connections.hostsAndLocal` | {hosts} and an application on this computer | `{hosts}` |
 | `consent.declaredName` | It calls itself {name}. Anyone can choose that name. | `{name}` (the page puts the escaped name in a `<q>` element; a text without `{name}` gets the name appended in one) |
 | `consent.unverified` | This application registered itself; its name is not verified. |  |

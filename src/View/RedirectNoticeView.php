@@ -29,8 +29,9 @@ final class RedirectNoticeView
     }
 
     /**
-     * The host the person would be sent to; for a private-use scheme, the scheme, since what follows it
-     * is chosen by the app.
+     * The host the person would be sent to; for a private-use scheme, the scheme with its colon
+     * (`com.example.app:`), since what follows it is chosen by the app, and so that a scheme such as
+     * `claude.ai:` never reads as the host claude.ai.
      */
     public function redirectHost(): string
     {

@@ -11,8 +11,11 @@ $config = ServerConfig::fromArray([...]);
 Types are strict: a number must be an integer (`3600`, not `"3600"` or `3600.0`), a flag must be
 `true` or `false`, and a section or a resource must be an array. A value of the wrong type throws an
 `InvalidArgumentException` that names the setting (`"cimd.timeout" must be an integer.`, `The settings
-of the resource "https://example.com/mcp" must be an array ...`), never a `TypeError`. An unknown key
-anywhere (top level, or inside `lifetimes`, `registration`, `cimd`, `rateLimit` or a resource) throws
+of the resource "https://example.com/mcp" must be an array ...`), never a `TypeError`. A map (`resources`,
+`lifetimes`, `registration`, `cimd`, `rateLimit`, a resource's settings, its `scopes` and its `implies`)
+given as a non-empty list is refused the same way: `'scopes' => ['content:read', 'content:write']` would
+otherwise declare the scopes `0` and `1`. An empty array is an empty map. An unknown key anywhere (top
+level, or inside `lifetimes`, `registration`, `cimd`, `rateLimit` or a resource) throws
 `InvalidArgumentException` too, so a typo does not go unnoticed.
 
 The same object can be built directly with `new ServerConfig(...)`, using named arguments
@@ -63,7 +66,7 @@ negative.
 | --- | --- | --- | --- |
 | `mode` | string | `open` | `open`: anyone may register. `token`: only callers with `Authorization: Bearer <initialAccessToken>`. `closed`: the endpoint answers `access_denied` and is left out of the metadata |
 | `initialAccessToken` | string | `null` | Required when `mode` is `token`. Choose a long random value |
-| `allowPrivateSchemes` | bool | `false` | `true` lets native clients use private-use URI schemes such as `com.example.app:/oauth/callback` (the dangerous schemes `javascript`, `data`, `file`, `vbscript`, `about` and `blob` stay refused). `false` limits redirect URIs to https and loopback http, as the MCP authorization spec requires. It applies to dynamic registration and to metadata documents. Clients you create with `ClientRegistrar::create()` may always use them. Enable it on purpose, for example for mobile apps or desktop tools that use such a scheme; every such client sees the consent page on each connection |
+| `allowPrivateSchemes` | bool | `false` | `true` lets native clients use private-use URI schemes such as `com.example.app:/oauth/callback` (the dangerous schemes `javascript`, `data`, `file`, `vbscript`, `about` and `blob` stay refused). `false` limits redirect URIs to https and loopback http, as the MCP authorization spec requires. It applies to dynamic registration and to metadata documents. Clients you create with `ClientRegistrar::create()` may always use them. Enable it on purpose, for example for mobile apps or desktop tools that use such a scheme. A public client with such a redirect sees the consent page on each new connection; a confidential one (a dynamic registration is confidential unless it sends `"token_endpoint_auth_method": "none"`) skips it once the person approved it |
 
 ## `cimd`
 
@@ -160,6 +163,7 @@ Invalid settings throw `InvalidArgumentException` when the config is built. The 
 | A value of the wrong type | `"cimd.timeout" must be an integer.`, `"registration.allowPrivateSchemes" must be true or false.`, `"lifetimes.access" must be an integer (seconds).`, `"defaultResource" must be a resource URL (a string).` and so on: always the setting's full name |
 | A resource that is not an array (for example `'https://example.com/mcp' => 'Example MCP'`) | `The settings of the resource "https://example.com/mcp" must be an array like ['name' => ..., 'scopes' => [...]]; got string. ...` |
 | A wrongly typed resource setting | `"scopes" of the resource "..." must be an array.` (same for `name`, `implies`, `defaultScopes`, a scope description or an implied list) |
+| A list where a map is expected | `"scopes" of the resource "..." must map scope names to descriptions, not a list.`, `"implies" of the resource "..." must map scopes to lists of scopes, not a list.`, `"cimd" must map setting names to values, not a list.` (same for `registration` and `rateLimit`), `"lifetimes" must map lifetime names to seconds, not a list.`, `"resources" must map each resource URL to its settings, not a list (the entry "0" has no URL).`, `The settings of the resource "..." must map setting names to values, not a list.` |
 | Unknown top level key | `Unknown OAuth server setting "..."`. |
 | Missing required key | `The OAuth server setting "issuer" is required.` |
 | Unknown nested key | `Unknown setting "cimd.foo".` |

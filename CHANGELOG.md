@@ -4,6 +4,55 @@
 
 First release.
 
+- OAuth 2.1 authorization server library for PHP 8.2 and newer, built on PSR-7, PSR-15, PSR-14,
+  PSR-16, PSR-17, PSR-20 and PSR-3.
+- Authorization code flow with mandatory PKCE (S256), exact redirect URI matching and loopback
+  redirects on any port (RFC 8252).
+- Refresh tokens with rotation, reuse detection that revokes the token family, a configurable grace
+  window for lost responses and a hard family lifetime.
+- Client credentials grant.
+- Client ID Metadata Documents with SSRF protection (pinned connection, address checks, no redirects,
+  size and time limits) and stale-if-error caching.
+- Dynamic client registration (RFC 7591) in `open`, `token` and `closed` modes, and clients registered
+  by hand with `ClientRegistrar::create()`.
+- Resource indicators (RFC 8707), the `iss` authorization response parameter (RFC 9207) and
+  authorization server metadata (RFC 8414).
+- Token revocation (RFC 7009) and introspection (RFC 7662).
+- Consent page and connections page, with replaceable renderers and translatable texts (`Messages`).
+- Personal access tokens.
+- Scopes and scope hierarchies, checked on every request.
+- `PdoStorage` for SQLite, MySQL/MariaDB and PostgreSQL, `InMemoryStorage` and
+  `StorageContractTestCase` for custom storages.
+- `BearerTokenMiddleware` for PSR-15 stacks and a bridge for the official MCP PHP SDK
+  (`AuthorizationServer::mcpTokenValidator()`).
+- PSR-14 events: `TokenIssued`, `TokenRevoked`, `ConsentGranted`, `ClientRegistered`,
+  `RefreshTokenReused` and `AuthorizationDenied`.
+- Rate limiting through any PSR-16 cache, and a `Pruner` for housekeeping.
+- A standalone example in `examples/standalone/` and a run of the official MCP conformance suite for
+  authorization servers (`tests/Conformance/run.sh`).
+- Documentation in `docs/`.
+- `@internal`: `ClientResolver`, `ClientAuthenticator`, `CodeIssuer`, `TokenIssuer`,
+  `RefreshTokenRotator`, `AuthorizationRequestValidator`, `ScopeResolver`, `RateLimit\RateLimiter`,
+  `Http\HttpResponder`, `Http\Params`, `Http\FormBody`, `Http\RequestPath`, `Http\BasicCredentials`,
+  `Http\Handler\GuardsErrors`, `View\Html\Html`, `Grant\AuthorizationRequest`, `Grant\AuthorizationError`,
+  `Grant\RedirectUrl`, `Client\ClientMetadata`, `Bridge\McpSdk\SdkRequirement` and every class in
+  `Support\` (`Base64Url`, `HostName`, `HostClass`, `Time`, `Uuid`) are internal classes that may change
+  in any 1.x release. So are the `AuthorizationServer` getters that return them: `responder()`,
+  `scopeResolver()`, `clientResolver()`, `clientAuthenticator()`, `authorizationRequestValidator()`,
+  `codeIssuer()`, `tokenIssuer()`, `refreshTokenRotator()` and `rateLimiter()`. The constructors of the
+  other service, handler and view classes (`TokenRevoker`, `ClientRegistrar`, `TokenValidator`, the HTTP
+  handlers, `BearerTokenMiddleware`, the MCP bridge `Bridge\McpSdk\TokenValidator`, `ConsentService`,
+  `ConnectionService`, `MetadataDocumentFetcher`, `ConsentView`, `ConnectionsView`) are internal: build
+  them through `AuthorizationServer`. Their documented methods and properties follow semantic
+  versioning. `Http\ClientIp` stays public (it is the documented default of the `$clientIp` closure).
+- Schema changes after 1.0.0 ship as SQL files under `schema/upgrades/`; see `docs/storage.md`.
+
+### Changes since the first review
+
+The release was reviewed before it was tagged. These entries describe what changed against earlier,
+unreleased commits. They matter to code built against such a commit (a custom renderer or storage, the
+CakePHP plugin) and to a database created from one.
+
 - Storage contract: saving a code or a token whose id already exists throws and leaves the stored row
   unchanged (`InMemoryStorage` used to overwrite it).
 - `/authorize` is no longer an open redirector (RFC 9700 section 4.11.2): a redirectable error is never
@@ -81,11 +130,13 @@ First release.
 - Revocation reaches pending codes: `TokenRevoker::revokeAllForSubject()` (for people), revoking a
   connection (`ConnectionService::revokeConnection()`, the connections page) and
   `TokenRevoker::revokeAllForClient()` delete the authorization codes that were not exchanged yet, so a
-  code issued just before can no longer open a new family. Codes are deleted before tokens are revoked, so
-  an exchange in flight either fails or has its tokens revoked. Exchanged codes are kept for replay
-  detection. `revokeAllForSubject()` with `SubjectType::Client` deletes no codes (codes belong to people).
-  The internal constructors of `TokenRevoker` (new second argument) and `ConnectionService` (new fourth
-  argument) take the `AuthorizationCodeRepositoryInterface`.
+  code issued just before can no longer open a new family. For a person and for a client, codes are
+  deleted before tokens are revoked, so an exchange in flight either fails or has its tokens revoked. A
+  connection revocation revokes the family first and deletes the codes after, so a code exchanged in
+  between opens a new family, which the connections page lists and the person can revoke. Exchanged codes
+  are kept for replay detection. `revokeAllForSubject()` with `SubjectType::Client` deletes no codes
+  (codes belong to people). The internal constructors of `TokenRevoker` (new second argument) and
+  `ConnectionService` (new fourth argument) take the `AuthorizationCodeRepositoryInterface`.
 - Storage interface additions (every storage must implement them; `InMemoryStorage` and `PdoStorage` do,
   and `StorageContractTestCase` covers them):
   `AuthorizationCodeRepositoryInterface::deleteCodesBySubject(string $subject, ?string $clientInternalId = null): int`
@@ -110,7 +161,10 @@ First release.
   `prune()` runs) on PostgreSQL and MySQL/MariaDB when their DSNs are set; on PostgreSQL it fails without
   the row lock. `docs/storage.md` says which races the tests replay and which they do not.
 - Schema: `oauth_authorization_codes` gains an index on `subject` (`oauth_authorization_codes_subject`).
-  Beta databases created earlier work without it; recreate the tables or add the index.
+  Beta databases created earlier work without it; recreate the tables or add the index. On SQLite and
+  PostgreSQL `PdoStorage::createTables()` adds it. On MySQL and MariaDB the index sits inside
+  `CREATE TABLE IF NOT EXISTS`, which skips an existing table, so add it by hand (`docs/storage.md`):
+  `CREATE INDEX oauth_authorization_codes_subject ON oauth_authorization_codes (subject);`
 - Client ID Metadata Documents: a temporary fetch failure (network error, timeout, HTTP 5xx or 429) is no
   longer remembered as a rejection for 60 seconds (the CIMD draft forbids caching error responses), so a
   new client works as soon as its host is back. It is remembered only while a stored copy of the client is
@@ -118,50 +172,9 @@ First release.
 - Docs: how to undo a metadata document client revocation with SQL, and `cimd.allowedHosts` as the
   reversible switch (`docs/operations.md`); the refresh grace window absorbs a lost response, not
   concurrent refreshes (`docs/security.md`).
-- OAuth 2.1 authorization server library for PHP 8.2 and newer, built on PSR-7, PSR-15, PSR-14,
-  PSR-16, PSR-17, PSR-20 and PSR-3.
-- Authorization code flow with mandatory PKCE (S256), exact redirect URI matching and loopback
-  redirects on any port (RFC 8252).
-- Refresh tokens with rotation, reuse detection that revokes the token family, a configurable grace
-  window for lost responses and a hard family lifetime.
-- Client credentials grant.
-- Client ID Metadata Documents with SSRF protection (pinned connection, address checks, no redirects,
-  size and time limits) and stale-if-error caching.
-- Dynamic client registration (RFC 7591) in `open`, `token` and `closed` modes, and clients registered
-  by hand with `ClientRegistrar::create()`.
-- Resource indicators (RFC 8707), the `iss` authorization response parameter (RFC 9207) and
-  authorization server metadata (RFC 8414).
-- Token revocation (RFC 7009) and introspection (RFC 7662).
-- Consent page and connections page, with replaceable renderers and translatable texts (`Messages`).
-- Personal access tokens.
-- Scopes and scope hierarchies, checked on every request.
-- `PdoStorage` for SQLite, MySQL/MariaDB and PostgreSQL, `InMemoryStorage` and
-  `StorageContractTestCase` for custom storages.
-- `BearerTokenMiddleware` for PSR-15 stacks and a bridge for the official MCP PHP SDK
-  (`AuthorizationServer::mcpTokenValidator()`).
-- PSR-14 events: `TokenIssued`, `TokenRevoked`, `ConsentGranted`, `ClientRegistered`,
-  `RefreshTokenReused` and `AuthorizationDenied`.
-- Rate limiting through any PSR-16 cache, and a `Pruner` for housekeeping.
-- A standalone example in `examples/standalone/` and a run of the official MCP conformance suite for
-  authorization servers (`tests/Conformance/run.sh`).
-- Documentation in `docs/`.
-- `@internal`: `ClientResolver`, `ClientAuthenticator`, `CodeIssuer`, `TokenIssuer`,
-  `RefreshTokenRotator`, `AuthorizationRequestValidator`, `ScopeResolver`, `RateLimit\RateLimiter`,
-  `Http\HttpResponder`, `Http\Params`, `Http\FormBody`, `Http\RequestPath`, `Http\BasicCredentials`,
-  `Http\Handler\GuardsErrors`, `View\Html\Html`, `Grant\AuthorizationRequest`, `Grant\AuthorizationError`,
-  `Grant\RedirectUrl`, `Client\ClientMetadata`, `Bridge\McpSdk\SdkRequirement` and every class in
-  `Support\` (`Base64Url`, `HostName`, `HostClass`, `Time`, `Uuid`) are internal classes that may change
-  in any 1.x release. So are the `AuthorizationServer` getters that return them: `responder()`,
-  `scopeResolver()`, `clientResolver()`, `clientAuthenticator()`, `authorizationRequestValidator()`,
-  `codeIssuer()`, `tokenIssuer()`, `refreshTokenRotator()` and `rateLimiter()`. The constructors of the
-  other service, handler and view classes (`TokenRevoker`, `ClientRegistrar`, `TokenValidator`, the HTTP
-  handlers, `BearerTokenMiddleware`, the MCP bridge `Bridge\McpSdk\TokenValidator`, `ConsentService`,
-  `ConnectionService`, `MetadataDocumentFetcher`, `ConsentView`, `ConnectionsView`) are internal: build
-  them through `AuthorizationServer`. Their documented methods and properties follow semantic
-  versioning. `Http\ClientIp` stays public (it is the documented default of the `$clientIp` closure).
-  For the CakePHP plugin: it uses `Support\Time` in `OrmStorage` and `new HttpResponder()` to read the
-  core's page CSP; both still work but are now internal, so the plugin should stop depending on them.
-- Schema changes after 1.0.0 ship as SQL files under `schema/upgrades/`; see `docs/storage.md`.
+- `@internal` and the CakePHP plugin: the plugin uses `Support\Time` in `OrmStorage` and
+  `new HttpResponder()` to read the core's page CSP; both still work but are now internal, so the plugin
+  should stop depending on them.
 - Error descriptions follow RFC 6749 sections 4.1.2.1 and 5.2 and RFC 6750 section 3: only %x20-21 /
   %x23-5B / %x5D-7E (printable ASCII without `"` and `\`), in JSON bodies, redirects and
   `WWW-Authenticate`. Messages now quote parameter names with `'` (`'code_verifier' is missing.`,
@@ -226,6 +239,46 @@ First release.
   named at all); security notes on secrets in traces and on error descriptions; the DNS lookup is not
   bounded by `cimd.timeout` (`docs/security.md`, `docs/configuration.md`); `docs/storage.md` states
   exactly which races the tests replay.
+- Introspection of a refresh token reports, as `scope`, what an access token refreshed from it would hold
+  today (the grant narrowed by the client's scopes and the owner's `scopesFor()`, the same computation as
+  a refresh, expanded the way an access token's scopes are), not the grant it stores. A refresh keeps the
+  grant, so after a demotion the stored scopes can be wider than what the person has, and a resource
+  server that wrongly checked only `active` and `scope` could have accepted the refresh token as a bearer
+  with them. A refresh token that could not be refreshed any more (no scope left for the client or the
+  owner, or its resource no longer declared) answers `{"active": false}`. `docs/endpoints.md` and
+  `docs/security.md` now say that a resource server must accept only `"token_type": "Bearer"` and never a
+  refresh token. New internal `ScopeResolver::refreshed()`, used by the refresh and by introspection;
+  the internal `IntrospectHandler` constructor takes the `ScopeResolver` as a new last argument.
+- A private-use redirect is named by its scheme with the colon: `ConsentView::redirectHost()` and
+  `RedirectNoticeView::redirectHost()` return `claude.ai:` for `claude.ai:/callback` (they returned
+  `claude.ai`), so a dynamic client with that redirect no longer gets "send this answer to claude.ai"
+  and "Continue to claude.ai" on the redirect notice, and the consent page says "Your answer is sent to
+  claude.ai:.". Custom templates that print `redirectHost()` show the colon too.
+- Consent page wording: a self-registered client with a private-use redirect gets its own sentence, the
+  new `Messages` key `consent.fromLocal` ("The request comes from an application on this computer. Your
+  answer is sent to {redirect}."), instead of the `client.local` label dropped into `consent.from`
+  ("The request comes from An application on this computer.").
+- Secrets in traces: `ConsentView`'s `$fields` (they carry the `consent_token`), `ConnectionsView`'s
+  `$formToken` and the connections renderer's hidden field value are `#[\SensitiveParameter]` too.
+  `SecretsInTracesTest` now fails a code-carrying `/authorize` redirect whose response cannot be built
+  (the code stays out of the trace of `HttpResponder::redirect()`), and pins the attribute by reflection
+  on the parameters no failure can reach today (`RedirectUrl::build()`, `HttpResponder::redirect()`,
+  `page()` and `json()`, the two view constructors, the hidden field helper).
+- Names: a flag tag sequence keeps at most seven tag characters (U+1F3F4, one to seven of U+E0020 to
+  U+E007E, U+E007F; seven is the longest Unicode subdivision id). The flags of England, Scotland and
+  Wales stay accepted; a longer sequence, which could carry a hidden text, is refused.
+- Configuration: a non-empty list where a map is expected is refused with an `InvalidArgumentException`
+  naming the setting, in `resources`, `lifetimes`, `registration`, `cimd`, `rateLimit`, a resource's
+  settings, its `scopes` and its `implies` (`'scopes' => ['content:read', 'content:write']` used to
+  declare the scopes `0` and `1`). An empty array stays an empty map; a map whose keys are exactly 0,
+  1, 2, ... in order is a list to PHP and is refused as well. `ProtectedResource::fromArray()` and
+  `Lifetimes::fromArray()` now document `array<mixed>`. `ConfigurationTypesTest` feeds a list to every
+  map.
+- Docs: the CIMD rule for native clients is stated apart from the dynamic registration one (a metadata
+  document must say `"application_type": "native"` to use a private-use scheme), and a private-use
+  client shows the consent page on every new connection only when it is public: a dynamic registration
+  that omits `token_endpoint_auth_method` is confidential and its remembered consent skips the page
+  (`docs/clients.md`, `docs/configuration.md`).
 
 ### Known issues
 

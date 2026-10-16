@@ -133,6 +133,47 @@ final class ScopeResolver
     }
 
     /**
+     * The scopes of the access token a refresh issues today: the refresh token's grant (or the subset the
+     * client asks for, {@see narrow()}), without the scopes the resource no longer declares or the client
+     * may no longer hold, then narrowed to the owner's allowance of today ({@see withinOwnerAllowance()}).
+     * The refresh and the introspection of a refresh token both use it, so they agree on what a grant is
+     * worth today.
+     *
+     * @param \CakeDC\OAuth\Server\Resource\ProtectedResource $resource The resource.
+     * @param list<string> $grant Scopes of the refresh token.
+     * @param list<string> $requested Requested scopes; empty keeps the grant.
+     * @param list<string>|null $clientAllowed The client's scopes; null for any.
+     * @param list<string>|null $ownerAllowed The owner's scopes; null for any.
+     * @return list<string> Never empty.
+     * @throws \CakeDC\OAuth\Server\Exception\OAuthException invalid_scope for a requested scope that was not
+     *   granted or when the client may hold none of the scopes, invalid_grant when the owner may hold none.
+     */
+    public function refreshed(
+        ProtectedResource $resource,
+        array $grant,
+        array $requested,
+        ?array $clientAllowed,
+        ?array $ownerAllowed,
+    ): array {
+        $client = $clientAllowed === null ? null : $resource->expand($clientAllowed);
+        $scopes = array_values(array_unique(array_filter(
+            $this->narrow($resource, $grant, $requested),
+            fn(string $scope): bool => $resource->hasScope($scope)
+                && ($client === null || in_array($scope, $client, true)),
+        )));
+        if ($scopes === []) {
+            throw OAuthException::invalidScope('None of the scopes of this token can be granted any more.');
+        }
+        // A demotion narrows the grant; only when nothing is left is it refused.
+        $scopes = $this->withinOwnerAllowance($resource, $scopes, $ownerAllowed);
+        if ($scopes === []) {
+            throw OAuthException::invalidGrant('The grant no longer allows any scope.');
+        }
+
+        return $scopes;
+    }
+
+    /**
      * The $scopes that the resource declares and that both allowances (expanded) contain.
      *
      * @param \CakeDC\OAuth\Server\Resource\ProtectedResource $resource The resource.

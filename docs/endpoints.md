@@ -339,10 +339,19 @@ An active access token:
 ```
 
 An active refresh token answers the same, without `username`, and with `token_type` `refresh_token`.
-Anything else (unknown, revoked, expired, used, owner gone, client revoked) answers
-`{"active": false}`. Introspecting a token does not count as using it: `last_used_at` does not change.
-This endpoint has its own rate limit, `introspect` (600 a minute per address by default), so a resource
-server that introspects on every request neither runs out of the `token` budget nor has to loosen it.
+Its `scope` is what an access token refreshed from it would hold today, not the grant it stores: a
+refresh keeps the grant on the new refresh token
+([security](security.md#refresh-token-rotation-and-reuse)), so after a demotion the stored scopes can
+be wider than what the person has. A refresh token that could not be refreshed any more (its owner, its
+resource or every one of its scopes gone, for the client or for the person) is inactive. Anything else
+(unknown, revoked, expired, used, owner gone, client revoked) answers `{"active": false}`. Introspecting
+a token does not count as using it: `last_used_at` does not change. This endpoint has its own rate
+limit, `introspect` (600 a minute per address by default), so a resource server that introspects on
+every request neither runs out of the `token` budget nor has to loosen it.
+
+A resource server that introspects must accept only `"token_type": "Bearer"`, the value of every
+access token and personal token. A refresh token is never a bearer token: refuse it like an invalid
+token whatever its `scope` says, as `TokenValidator` and `BearerTokenMiddleware` do.
 
 Errors: `invalid_request`, `invalid_client`, `access_denied` (disabled).
 

@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace CakeDC\OAuth\Server\Test\TestCase\Http\Handler;
 
+use CakeDC\OAuth\Server\AuthorizationServer;
 use CakeDC\OAuth\Server\Owner\ResourceOwner;
 use CakeDC\OAuth\Server\Owner\SubjectType;
 use CakeDC\OAuth\Server\Test\Support\Fixtures;
@@ -132,6 +133,86 @@ class IntrospectHandlerTest extends TestCase
 
         $this->assertNotContains(null, $body, '', false, true);
         $this->assertArrayHasKey('exp', $body);
+    }
+
+    /**
+     * A refresh keeps the grant on the new refresh token, so the stored scopes of a refresh token can be
+     * wider than what the person may hold today. Introspection reports what an access token refreshed from
+     * it would hold today, never the stored grant, so a resource server that wrongly checks only `active`
+     * and `scope` cannot be handed more than the person has.
+     */
+    public function testARefreshTokenIntrospectsWithTheScopesOfToday(): void
+    {
+        $client = $this->harness->publicClient();
+        $pair = $this->harness->json($this->harness->exchange($client, $this->harness->authorizationCode($client)));
+        $this->harness->users->scopes['42'] = ['content:read'];
+
+        $this->assertSame('content:read', $this->harness->json($this->introspect($pair['refresh_token']))['scope']);
+        $rotated = $this->harness->json($this->refresh($client->clientId, $pair['refresh_token']));
+        $access = $this->harness->json($this->introspect($rotated['access_token']));
+        $refresh = $this->harness->json($this->introspect($rotated['refresh_token']));
+
+        $this->assertSame('content:read', $access['scope']);
+        $this->assertTrue($refresh['active']);
+        $this->assertSame('content:read', $refresh['scope']);
+        $this->assertSame('refresh_token', $refresh['token_type']);
+
+        // Promoted again: the grant was kept, and it shows the way an access token would.
+        $this->harness->users->scopes['42'] = null;
+        $this->assertSame(
+            'content:write content:read',
+            $this->harness->json($this->introspect($rotated['refresh_token']))['scope'],
+        );
+    }
+
+    public function testARefreshTokenThatNoLongerGrantsAnyScopeIsInactive(): void
+    {
+        $client = $this->harness->publicClient();
+        $pair = $this->harness->json($this->harness->exchange($client, $this->harness->authorizationCode($client)));
+
+        $this->harness->users->scopes['42'] = [];
+        $this->assertSame(['active' => false], $this->harness->json($this->introspect($pair['refresh_token'])));
+        $this->assertSame(400, $this->refresh($client->clientId, $pair['refresh_token'])->getStatusCode());
+    }
+
+    public function testARefreshTokenOfANarrowedClientIsInactiveWhenNothingIsLeft(): void
+    {
+        $client = $this->harness->publicClient();
+        $pair = $this->harness->json($this->harness->exchange($client, $this->harness->authorizationCode($client)));
+        $this->harness->storage->saveClient(Fixtures::client([
+            'id' => $client->id,
+            'clientId' => $client->clientId,
+            'scopes' => [],
+        ]));
+
+        $this->assertSame(['active' => false], $this->harness->json($this->introspect($pair['refresh_token'])));
+        $this->assertSame(400, $this->refresh($client->clientId, $pair['refresh_token'])->getStatusCode());
+    }
+
+    public function testARefreshTokenForAResourceNoLongerDeclaredIsInactive(): void
+    {
+        $client = $this->harness->publicClient();
+        $pair = $this->harness->json($this->harness->exchange($client, $this->harness->authorizationCode($client)));
+        $settings = Fixtures::resourceSettings();
+        unset($settings[Fixtures::MCP]);
+        $without = new AuthorizationServer(
+            Fixtures::config(['resources' => $settings]),
+            $this->harness->storage,
+            $this->harness->users,
+            $this->harness->userContext,
+            $this->harness->factory,
+            $this->harness->factory,
+            clock: $this->harness->clock,
+        );
+
+        $response = $without->introspectHandler()->handle($this->harness->form(
+            'https://example.com/oauth/introspect',
+            ['token' => $pair['refresh_token']],
+            ['Authorization' => 'Basic ' . base64_encode('resource-server:rs-secret')],
+        ));
+
+        $this->assertSame(['active' => false], $this->harness->json($response));
+        $this->assertTrue($this->harness->json($this->introspect($pair['refresh_token']))['active']);
     }
 
     public function testPersonalTokens(): void

@@ -247,9 +247,10 @@ The pair `(subject, oauth_client_id, resource_hash)` is unique.
 
 ## Upgrading the schema
 
-`PdoStorage::createTables()` runs `CREATE TABLE IF NOT EXISTS` and `CREATE INDEX IF NOT EXISTS`. It
-never alters a table that already exists, so a new version of the library does not change your tables
-by itself. The policy:
+`PdoStorage::createTables()` runs `CREATE TABLE IF NOT EXISTS`, and on SQLite and PostgreSQL also
+`CREATE INDEX IF NOT EXISTS` (MySQL and MariaDB declare their indexes inside `CREATE TABLE`). It never
+alters a table that already exists, so a new version of the library does not change your tables by
+itself. The policy:
 
 - The schema files shipped in `1.0.0` are the baseline. Install them as they are on a new database.
 - A release that needs a schema change ships it as SQL files under `schema/upgrades/`, one per driver
@@ -259,3 +260,12 @@ by itself. The policy:
 - Each upgrade file is meant to run once. Take a backup first.
 - Until `1.0.0` the schema may still change without an upgrade file: recreate the tables of a beta
   database.
+- A database created from a pre-release commit lacks the index `oauth_authorization_codes_subject`
+  (`1.0.0-beta1` added it for the revocation of pending codes). Everything works without it, only
+  slower on a large codes table. On SQLite and PostgreSQL, `createTables()` adds it. On MySQL and
+  MariaDB the index is part of the `CREATE TABLE IF NOT EXISTS` that skips an existing table, so add it
+  once by hand (with your table prefix if it is not `oauth_`):
+
+  ```sql
+  CREATE INDEX oauth_authorization_codes_subject ON oauth_authorization_codes (subject);
+  ```

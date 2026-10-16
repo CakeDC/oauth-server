@@ -107,9 +107,31 @@ class HtmlRenderersTest extends TestCase
         foreach (['com.example.app:/cb', 'com.example.app://oauth/cb'] as $uri) {
             $view = new RedirectNoticeView(OAuthException::accessDenied('No.'), null, $uri, $uri . '?error=access_denied');
 
-            $this->assertSame('com.example.app', $view->redirectHost(), $uri);
-            $this->assertStringContainsString('Seguir a com.example.app</a>', $renderer->renderRedirectNotice($view), $uri);
+            $this->assertSame('com.example.app:', $view->redirectHost(), $uri);
+            $this->assertStringContainsString('Seguir a com.example.app:</a>', $renderer->renderRedirectNotice($view), $uri);
         }
+    }
+
+    /**
+     * Anyone can claim the scheme `claude.ai:`: the notice shows it as a scheme, with its colon, never as
+     * the host claude.ai.
+     */
+    public function testTheRedirectNoticeOfASchemeNamedLikeAHostShowsItAsAScheme(): void
+    {
+        $client = Fixtures::client(['name' => 'claude.ai', 'redirectUris' => ['claude.ai:/callback']]);
+        $view = new RedirectNoticeView(
+            OAuthException::invalidRequest("'code_challenge' is missing."),
+            $client,
+            'claude.ai:/callback',
+            'claude.ai:/callback?error=invalid_request',
+        );
+
+        $html = (new HtmlErrorPageRenderer())->renderRedirectNotice($view);
+
+        $this->assertStringContainsString('send this answer to claude.ai:. This server cannot confirm that claude.ai: belongs', $html);
+        $this->assertStringContainsString('rel="noreferrer">Continue to claude.ai:</a>', $html);
+        $this->assertStringNotContainsString('to claude.ai.', $html);
+        $this->assertStringNotContainsString('Continue to claude.ai<', $html);
     }
 
     public function testADynamicClientCannotPassForAnotherOneByItsName(): void
@@ -168,7 +190,7 @@ class HtmlRenderersTest extends TestCase
         $html = (new HtmlConsentRenderer())->render($this->view(ClientType::Dynamic, ['com.example.app://oauth/cb']));
 
         $this->assertStringContainsString('<h1>An application on this computer wants to access Example MCP</h1>', $html);
-        $this->assertStringContainsString('Your answer is sent to com.example.app.', $html);
+        $this->assertStringContainsString('Your answer is sent to com.example.app:.', $html);
         $this->assertStringNotContainsString('<h1>com.example.app', $html);
     }
 
@@ -190,8 +212,11 @@ class HtmlRenderersTest extends TestCase
 
         $this->assertStringContainsString('<title>Authorize An application on this computer</title>', $html);
         $this->assertStringContainsString('<h1>An application on this computer wants to access', $html);
-        $this->assertStringContainsString('The request comes from An application on this computer.', $html);
-        $this->assertStringContainsString('Your answer is sent to claude.ai.', $html);
+        $this->assertStringContainsString(
+            'The request comes from an application on this computer. Your answer is sent to claude.ai:.',
+            $html,
+        );
+        $this->assertStringNotContainsString('sent to claude.ai.', $html);
         $this->assertStringContainsString('calls itself <q>claude.ai</q>', $html);
         $this->assertSame('', $view->clientHost());
         $this->assertSame('', $view->clientLabel());
@@ -298,7 +323,7 @@ class HtmlRenderersTest extends TestCase
 
             $this->assertSame($notice->redirectHost(), $consent->redirectHost(), $uri);
         }
-        $this->assertSame('com.example.app', $this->view(ClientType::Dynamic, ['com.example.app://oauth/cb'])->redirectHost());
+        $this->assertSame('com.example.app:', $this->view(ClientType::Dynamic, ['com.example.app://oauth/cb'])->redirectHost());
     }
 
     /**
@@ -361,9 +386,36 @@ class HtmlRenderersTest extends TestCase
     {
         $html = (new HtmlConsentRenderer())->render($this->view(ClientType::Dynamic, ['com.example.app:/cb']));
 
-        $this->assertStringContainsString('The request comes from An application on this computer.', $html);
-        $this->assertStringContainsString('Your answer is sent to com.example.app.', $html);
+        $this->assertStringContainsString('The request comes from an application on this computer.', $html);
+        $this->assertStringContainsString('Your answer is sent to com.example.app:.', $html);
         $this->assertStringNotContainsString('comes from .', $html);
+        $this->assertStringNotContainsString('comes from An application', $html);
+    }
+
+    /**
+     * The line for a self-registered client with a private-use redirect is a sentence of its own
+     * (`consent.fromLocal`), not the fixed label dropped into `consent.from`, so it reads well and
+     * translates as a whole.
+     */
+    public function testTheLocalRequesterLineIsItsOwnTranslatableMessage(): void
+    {
+        $view = $this->view(ClientType::Dynamic, ['com.example.app:/cb']);
+        $messages = new Messages([
+            'consent.fromLocal' => 'La solicitud viene de una aplicación de este equipo. Tu respuesta va a {redirect}.',
+            'consent.from' => 'unused {host} {redirect}',
+        ]);
+
+        $html = (new HtmlConsentRenderer($messages))->render($view);
+
+        $this->assertStringContainsString(
+            'La solicitud viene de una aplicación de este equipo. Tu respuesta va a com.example.app:.',
+            $html,
+        );
+        $this->assertStringNotContainsString('unused', $html);
+        $this->assertStringContainsString(
+            'The request comes from app.example.com.',
+            (new HtmlConsentRenderer())->render($this->view()),
+        );
     }
 
     public function testScriptPayloadsAreEscaped(): void

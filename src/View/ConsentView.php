@@ -8,6 +8,7 @@ use CakeDC\OAuth\Server\Client\ClientType;
 use CakeDC\OAuth\Server\Owner\ResourceOwner;
 use CakeDC\OAuth\Server\Resource\ProtectedResource;
 use CakeDC\OAuth\Server\Support\HostClass;
+use SensitiveParameter;
 
 /**
  * What the consent page shows and posts back.
@@ -23,7 +24,7 @@ final class ConsentView
      * @param bool $offlineAccess Whether the client asked to stay connected.
      * @param string $redirectUri Where the answer goes.
      * @param string $formAction Path the form posts to.
-     * @param array<string, string> $fields Hidden fields to post back.
+     * @param array<string, string> $fields Hidden fields to post back; they carry the signed `consent_token`.
      * @param bool $approvedBefore A remembered consent covers the request, but the client's identity cannot
      *   be assured (a public loopback or private-scheme redirect), so the person is asked again.
      */
@@ -35,6 +36,7 @@ final class ConsentView
         public readonly bool $offlineAccess,
         public readonly string $redirectUri,
         public readonly string $formAction,
+        #[SensitiveParameter]
         public readonly array $fields,
         public readonly bool $approvedBefore = false,
     ) {
@@ -55,8 +57,10 @@ final class ConsentView
     }
 
     /**
-     * The host the answer is sent to; for a private-use scheme, the scheme (chosen by the client, like
-     * what follows it, so it only says where the answer goes and never who is asking). The same rule as {@see \CakeDC\OAuth\Server\View\RedirectNoticeView::redirectHost()}.
+     * The host the answer is sent to; for a private-use scheme, the scheme with its colon (`claude.ai:`, so
+     * it never reads as a host). The scheme is chosen by the client, like what follows it, so it only says
+     * where the answer goes and never who is asking. The same rule as
+     * {@see \CakeDC\OAuth\Server\View\RedirectNoticeView::redirectHost()}.
      */
     public function redirectHost(): string
     {
