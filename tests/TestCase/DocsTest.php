@@ -29,7 +29,7 @@ class DocsTest extends TestCase
             // Configuration keys (ServerConfig::fromArray).
             'issuer', 'secret', 'resources', 'defaultResource', 'routePrefix', 'tokenPrefix', 'lifetimes',
             'refreshTokens', 'registration', 'cimd', 'clientCredentials', 'introspection', 'personalTokens',
-            'connections', 'rateLimit', 'retentionDays', 'refreshReuseGrace', 'personalMax', 'initialAccessToken',
+            'connections', 'rateLimit', 'rateLimit.cimd', 'retentionDays', 'refreshReuseGrace', 'personalMax', 'initialAccessToken',
             'allowPrivateSchemes', 'allowedHosts', 'maxBytes', 'cacheMin', 'cacheMax', 'defaultScopes', 'implies',
             // Error codes.
             'invalid_request', 'invalid_client', 'invalid_grant', 'unauthorized_client', 'unsupported_grant_type',

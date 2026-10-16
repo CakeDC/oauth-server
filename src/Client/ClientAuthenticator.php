@@ -28,9 +28,10 @@ final class ClientAuthenticator
      *
      * @param \Psr\Http\Message\ServerRequestInterface $request The request (for Basic credentials).
      * @param array<string, mixed> $body Form parameters; untrusted, so values may be arrays.
+     * @param string|null $requester The client IP, for the metadata document fetch budget.
      * @throws \CakeDC\OAuth\Server\Exception\OAuthException invalid_client or invalid_request.
      */
-    public function authenticate(ServerRequestInterface $request, array $body): Client
+    public function authenticate(ServerRequestInterface $request, array $body, ?string $requester = null): Client
     {
         $basic = BasicCredentials::fromRequest($request);
         $bodySecret = $body['client_secret'] ?? null;
@@ -59,7 +60,7 @@ final class ClientAuthenticator
         }
         $usedBasic = $basic !== null;
         try {
-            $client = $this->clients->resolve($clientId);
+            $client = $this->clients->resolve($clientId, $requester);
         } catch (OAuthException $e) {
             throw $e->error === 'invalid_client' ? OAuthException::invalidClient($e->getMessage(), $usedBasic) : $e;
         }

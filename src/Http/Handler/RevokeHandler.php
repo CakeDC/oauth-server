@@ -67,7 +67,7 @@ final class RevokeHandler implements RequestHandlerInterface
             if ($token === '') {
                 throw OAuthException::invalidRequest('"token" is missing.');
             }
-            $client = $this->clientAuthenticator->authenticate($request, $body);
+            $client = $this->clientAuthenticator->authenticate($request, $body, ($this->clientIp)($request));
             $this->revoker->revokeForClient($client, $token);
 
             return $this->responder->json([]);

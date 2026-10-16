@@ -86,7 +86,7 @@ final class IntrospectHandler implements RequestHandlerInterface
                 );
             }
             [$body] = FormBody::read($request);
-            $client = $this->clientAuthenticator->authenticate($request, $body);
+            $client = $this->clientAuthenticator->authenticate($request, $body, ($this->clientIp)($request));
             if ($client->isPublic() || !$client->allowIntrospection) {
                 throw OAuthException::invalidClient('This client may not introspect tokens.');
             }

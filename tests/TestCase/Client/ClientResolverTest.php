@@ -9,11 +9,13 @@ use CakeDC\OAuth\Server\Client\Cimd\MetadataDocumentFetcher;
 use CakeDC\OAuth\Server\Client\ClientResolver;
 use CakeDC\OAuth\Server\Client\ClientType;
 use CakeDC\OAuth\Server\Exception\OAuthException;
+use CakeDC\OAuth\Server\RateLimit\RateLimiter;
 use CakeDC\OAuth\Server\Storage\InMemory\InMemoryStorage;
 use CakeDC\OAuth\Server\Test\Support\FakeDns;
 use CakeDC\OAuth\Server\Test\Support\FakeTransport;
 use CakeDC\OAuth\Server\Test\Support\Fixtures;
 use CakeDC\OAuth\Server\Test\Support\FlakyClientRepository;
+use CakeDC\OAuth\Server\Testing\ArrayCache;
 use CakeDC\OAuth\Server\Testing\FrozenClock;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -161,6 +163,160 @@ class ClientResolverTest extends TestCase
 
         $this->expectException(OAuthException::class);
         $resolver->resolve(self::CLAUDE);
+    }
+
+    private function limited(int $max = 2, int $window = 60): ClientResolver
+    {
+        $cache = new ArrayCache($this->clock);
+
+        return new ClientResolver(
+            $this->storage,
+            $this->clock,
+            new MetadataDocumentFetcher(new FakeDns(), $this->transport),
+            300,
+            86400,
+            true,
+            new RateLimiter($cache, $this->clock, ['cimd' => [$max, $window]]),
+            $cache,
+        );
+    }
+
+    private function serveClient(int $i): string
+    {
+        $id = 'https://client.example/c/' . $i;
+        $this->transport->serve($id, [
+            'client_id' => $id,
+            'client_name' => 'C' . $i,
+            'redirect_uris' => ['https://client.example/cb'],
+        ]);
+
+        return $id;
+    }
+
+    public function testOneRequesterIsCutOffAfterTheFetchBudget(): void
+    {
+        $resolver = $this->limited(2);
+        $resolver->resolve($this->serveClient(1), '203.0.113.1');
+        $resolver->resolve($this->serveClient(2), '203.0.113.1');
+
+        try {
+            $resolver->resolve($this->serveClient(3), '203.0.113.1');
+            $this->fail('The third fetch of one requester must be refused.');
+        } catch (OAuthException $e) {
+            $this->assertSame(429, $e->status);
+            $this->assertArrayHasKey('Retry-After', $e->headers);
+        }
+        $this->assertCount(2, $this->transport->requests);
+        $this->assertNull($this->storage->findClientByClientId('https://client.example/c/3'));
+    }
+
+    public function testASecondRequesterStillWorks(): void
+    {
+        $resolver = $this->limited(1);
+        $resolver->resolve($this->serveClient(1), '203.0.113.1');
+
+        $this->assertNotNull($resolver->resolve($this->serveClient(2), '203.0.113.2'));
+    }
+
+    public function testCachedClientsAreNotCounted(): void
+    {
+        $resolver = $this->limited(1);
+        for ($i = 0; $i < 5; $i++) {
+            $this->assertNotNull($resolver->resolve(self::CLAUDE, '203.0.113.1'));
+        }
+        $this->assertCount(1, $this->transport->requests);
+        // The budget still has room for no more than the one fetch it counted.
+        $this->expectException(OAuthException::class);
+        $resolver->resolve($this->serveClient(1), '203.0.113.1');
+    }
+
+    public function testAnExpiredCacheEntryCountsAsAFetch(): void
+    {
+        $resolver = $this->limited(1, 86400);
+        $resolver->resolve(self::CLAUDE, '203.0.113.1');
+        $this->clock->advance(601);
+
+        try {
+            $resolver->resolve(self::CLAUDE, '203.0.113.1');
+            $this->fail('The refetch must count against the budget.');
+        } catch (OAuthException $e) {
+            $this->assertSame(429, $e->status);
+        }
+    }
+
+    public function testWithoutARequesterNothingIsCounted(): void
+    {
+        $resolver = $this->limited(1);
+        $resolver->resolve($this->serveClient(1));
+        $resolver->resolve($this->serveClient(2));
+
+        $this->assertCount(2, $this->transport->requests);
+    }
+
+    public function testADefiniteRejectionIsRememberedAndNotRefetched(): void
+    {
+        $resolver = $this->limited(5);
+        $this->transport->responses[self::CLAUDE] = new FetchedResponse(404, [], '');
+
+        for ($i = 0; $i < 3; $i++) {
+            try {
+                $resolver->resolve(self::CLAUDE, '203.0.113.1');
+                $this->fail('Resolved a rejected client.');
+            } catch (OAuthException $e) {
+                $this->assertSame('invalid_client', $e->error);
+            }
+        }
+        $this->assertCount(1, $this->transport->requests);
+
+        $this->clock->advance(61);
+        $this->transport->serve(self::CLAUDE, [
+            'client_id' => self::CLAUDE,
+            'client_name' => 'Claude',
+            'redirect_uris' => ['https://claude.ai/cb'],
+        ]);
+        $this->assertNotNull($resolver->resolve(self::CLAUDE, '203.0.113.1'));
+        $this->assertCount(2, $this->transport->requests);
+    }
+
+    public function testATemporaryFailureIsRememberedToo(): void
+    {
+        $resolver = $this->limited(5);
+        $this->transport->responses[self::CLAUDE] = new RuntimeException('down');
+
+        for ($i = 0; $i < 2; $i++) {
+            try {
+                $resolver->resolve(self::CLAUDE);
+                $this->fail('Resolved an unreachable client.');
+            } catch (OAuthException $e) {
+                $this->assertTrue($e->temporary);
+            }
+        }
+        $this->assertCount(1, $this->transport->requests);
+    }
+
+    public function testRememberedFailuresDoNotConsumeTheBudget(): void
+    {
+        $resolver = $this->limited(1);
+        $this->transport->responses[self::CLAUDE] = new FetchedResponse(404, [], '');
+        for ($i = 0; $i < 3; $i++) {
+            try {
+                $resolver->resolve(self::CLAUDE, '203.0.113.1');
+            } catch (OAuthException $e) {
+                $this->assertSame(401, $e->status);
+            }
+        }
+    }
+
+    public function testAStaleClientIsStillServedFromARememberedTemporaryFailure(): void
+    {
+        $resolver = $this->limited(5);
+        $first = $resolver->resolve(self::CLAUDE);
+        $this->clock->advance(601);
+        $this->transport->responses[self::CLAUDE] = new RuntimeException('down');
+
+        $this->assertSame($first?->id, $resolver->resolve(self::CLAUDE)?->id);
+        $this->assertSame($first?->id, $resolver->resolve(self::CLAUDE)?->id);
+        $this->assertCount(2, $this->transport->requests);
     }
 
     public function testMetadataDocumentsAreIgnoredWhenDisabled(): void

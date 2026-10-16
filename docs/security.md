@@ -52,6 +52,7 @@ person), all in `tests/Security/`.
 | `registration.mode` | `open` | | `token` or `closed` |
 | `registration.allowPrivateSchemes` | `true` | Custom schemes can be claimed by any app on a device | `false` |
 | `cimd.allowedHosts` | any host | | A list of hosts you expect |
+| `rateLimit.cimd` | `[10, 60]` | | Lower it if you only expect a few clients |
 | `rateLimit.*` | 30, 60 and 10 per window | Raised or no cache: no limiting at all | Lowered |
 | `introspection` | `true` | | `false` if you do not need it |
 | `clientCredentials` | `true` | | `false` if you do not need it |
@@ -142,6 +143,15 @@ point it at your internal network. The fetcher defends in layers:
    size limit (`cimd.maxBytes`) and a time limit (`cimd.timeout`).
 6. A failed download gives clients only a generic message, so the error cannot be used to probe your
    network. Other problems name the rule that was broken.
+
+7. Fetches are budgeted per client address (`rateLimit.cimd`, 10 per minute by default), so one address
+   cannot make your server download documents without end or fill the client table with rows. The count
+   happens just before a download, never for a cached client. A failed fetch (a definite rejection or a
+   temporary error) is remembered per `client_id` for 60 seconds in the PSR-16 cache, so repeating the
+   same bad URL fails at once without a new download. Both need the cache argument of
+   `AuthorizationServer`; without one nothing is limited or remembered. Over the budget, `/authorize`
+   shows the error page with status 429 (never a redirect to the client) and `/token`, `/revoke` and
+   `/introspect` answer 429 with `Retry-After`.
 
 Fetched documents are cached as rows. Stored clients keep working for a limited time when their host
 is temporarily unreachable (network error, timeout, 5xx or 429): until `expiry + cacheMax`. Definite

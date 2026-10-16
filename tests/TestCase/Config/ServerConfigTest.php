@@ -34,7 +34,7 @@ class ServerConfigTest extends TestCase
         $this->assertTrue($config->cimdEnabled);
         $this->assertSame(5, $config->cimdTimeout);
         $this->assertSame(
-            ['authorize' => [30, 60], 'token' => [60, 60], 'register' => [10, 3600]],
+            ['authorize' => [30, 60], 'token' => [60, 60], 'register' => [10, 3600], 'cimd' => [10, 60]],
             $config->rateLimits,
         );
         $this->assertSame(7, $config->retentionDays);
@@ -66,7 +66,7 @@ class ServerConfigTest extends TestCase
             'lifetimes' => ['access' => 900],
             'registration' => ['mode' => 'token', 'initialAccessToken' => 'abc', 'allowPrivateSchemes' => false],
             'cimd' => ['allowedHosts' => ['claude.ai'], 'timeout' => 3],
-            'rateLimit' => ['token' => [5, 10]],
+            'rateLimit' => ['token' => [5, 10], 'cimd' => [3, 30]],
             'refreshTokens' => 'offline_access',
         ]);
 
@@ -78,6 +78,7 @@ class ServerConfigTest extends TestCase
         $this->assertSame(3, $config->cimdTimeout);
         $this->assertSame([5, 10], $config->rateLimits['token']);
         $this->assertSame([30, 60], $config->rateLimits['authorize']);
+        $this->assertSame([3, 30], $config->rateLimits['cimd']);
         $this->assertFalse($config->issuesRefreshTokens(false));
         $this->assertTrue($config->issuesRefreshTokens(true));
     }

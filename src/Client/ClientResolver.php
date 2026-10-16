@@ -5,12 +5,14 @@ namespace CakeDC\OAuth\Server\Client;
 
 use CakeDC\OAuth\Server\Client\Cimd\MetadataDocumentFetcher;
 use CakeDC\OAuth\Server\Exception\OAuthException;
+use CakeDC\OAuth\Server\RateLimit\RateLimiter;
 use CakeDC\OAuth\Server\Scope\Scopes;
 use CakeDC\OAuth\Server\Storage\ClientRepositoryInterface;
 use CakeDC\OAuth\Server\Support\Time;
 use CakeDC\OAuth\Server\Support\Uuid;
 use DateTimeImmutable;
 use Psr\Clock\ClockInterface;
+use Psr\SimpleCache\CacheInterface;
 use Throwable;
 
 /**
@@ -20,12 +22,20 @@ use Throwable;
 final class ClientResolver
 {
     /**
+     * Seconds a failed fetch is remembered.
+     */
+    private const FAILURE_SECONDS = 60;
+
+    /**
      * @param \CakeDC\OAuth\Server\Storage\ClientRepositoryInterface $clients Storage.
      * @param \Psr\Clock\ClockInterface $clock Clock.
      * @param \CakeDC\OAuth\Server\Client\Cimd\MetadataDocumentFetcher|null $fetcher Null disables metadata documents.
      * @param int $cacheMin Shortest cache time of a document, seconds.
      * @param int $cacheMax Longest cache time of a document, seconds.
      * @param bool $allowPrivateSchemes Native documents may use private-use redirect URI schemes.
+     * @param \CakeDC\OAuth\Server\RateLimit\RateLimiter|null $limiter Counts the fetches of one requester
+     *   (bucket `cimd`); null does not limit.
+     * @param \Psr\SimpleCache\CacheInterface|null $cache Remembers failed fetches for a minute; null does not.
      */
     public function __construct(
         private readonly ClientRepositoryInterface $clients,
@@ -34,15 +44,21 @@ final class ClientResolver
         private readonly int $cacheMin = 300,
         private readonly int $cacheMax = 86400,
         private readonly bool $allowPrivateSchemes = true,
+        private readonly ?RateLimiter $limiter = null,
+        private readonly ?CacheInterface $cache = null,
     ) {
     }
 
     /**
      * The client of $clientId, revoked or not; null when unknown.
      *
-     * @throws \CakeDC\OAuth\Server\Exception\OAuthException invalid_client when a metadata document cannot be used.
+     * @param string $clientId The client_id.
+     * @param string|null $requester Who asks (the client IP). With it, every actual fetch of a metadata
+     *   document is counted against the `cimd` rate limit of that requester; cached clients never are.
+     * @throws \CakeDC\OAuth\Server\Exception\OAuthException invalid_client when a metadata document cannot be
+     *   used, a 429 when the requester is over the fetch budget.
      */
-    public function resolve(string $clientId): ?Client
+    public function resolve(string $clientId, ?string $requester = null): ?Client
     {
         if ($clientId === '' || strlen($clientId) > 2048) {
             return null;
@@ -67,7 +83,7 @@ final class ClientResolver
             return $existing;
         }
         try {
-            $fetched = $this->fetcher->fetch($clientId);
+            $fetched = $this->fetchDocument($this->fetcher, $clientId, $requester);
         } catch (OAuthException $e) {
             if (
                 $e->temporary && $existing !== null && $existing->metadataExpiresAt !== null
@@ -80,7 +96,13 @@ final class ClientResolver
 
             throw $e;
         }
-        $client = $this->fromDocument($clientId, $fetched['document'], $fetched['maxAge'], $existing, $now);
+        try {
+            $client = $this->fromDocument($clientId, $fetched['document'], $fetched['maxAge'], $existing, $now);
+        } catch (OAuthException $e) {
+            $this->rememberFailure($clientId, $e);
+
+            throw $e;
+        }
         try {
             $this->clients->saveClient($client);
         } catch (Throwable $e) {
@@ -94,6 +116,79 @@ final class ClientResolver
 
         // Read back: revocation is sticky in storage and may have been committed during the fetch.
         return $this->clients->findClientByClientId($clientId) ?? $client;
+    }
+
+    /**
+     * Fetches the document, within the requester's budget and the memory of recent failures.
+     *
+     * @return array{document: array<string, mixed>, maxAge: int|null}
+     * @throws \CakeDC\OAuth\Server\Exception\OAuthException
+     */
+    private function fetchDocument(MetadataDocumentFetcher $fetcher, string $clientId, ?string $requester): array
+    {
+        $remembered = $this->rememberedFailure($clientId);
+        if ($remembered !== null) {
+            throw $remembered;
+        }
+        if ($requester !== null) {
+            $this->limiter?->hit('cimd', $requester);
+        }
+        try {
+            return $fetcher->fetch($clientId);
+        } catch (OAuthException $e) {
+            $this->rememberFailure($clientId, $e);
+
+            throw $e;
+        }
+    }
+
+    /**
+     * The cache key of the failure memory of $clientId.
+     */
+    private static function failureKey(string $clientId): string
+    {
+        return 'oauth_cimd_failure_' . hash('sha256', $clientId);
+    }
+
+    /**
+     * The failure remembered for $clientId, rebuilt, or null. The cache is best effort.
+     */
+    private function rememberedFailure(string $clientId): ?OAuthException
+    {
+        if ($this->cache === null) {
+            return null;
+        }
+        try {
+            $stored = $this->cache->get(self::failureKey($clientId));
+        } catch (Throwable) {
+            return null;
+        }
+        if (!is_array($stored) || !is_string($stored['message'] ?? null)) {
+            return null;
+        }
+
+        return ($stored['temporary'] ?? false) === true
+            ? OAuthException::clientUnavailable($stored['message'])
+            : OAuthException::invalidClient($stored['message']);
+    }
+
+    /**
+     * Remembers a failed fetch for a minute, so repeating the same client_id costs nothing.
+     */
+    private function rememberFailure(string $clientId, OAuthException $failure): void
+    {
+        if ($this->cache === null || $failure->error !== 'invalid_client') {
+            return;
+        }
+        try {
+            $this->cache->set(
+                self::failureKey($clientId),
+                ['message' => $failure->getMessage(), 'temporary' => $failure->temporary],
+                self::FAILURE_SECONDS,
+            );
+        } catch (Throwable) {
+            // Best effort: the failure is simply not remembered.
+        }
     }
 
     /**

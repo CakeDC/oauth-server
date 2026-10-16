@@ -125,7 +125,7 @@ final class AuthorizeHandler implements RequestHandlerInterface
         }
         // Only repeats of authorization parameters count (RFC 6749 section 3.1).
         $repeated = array_values(array_intersect($repeated, AuthorizationRequest::PARAMETERS));
-        $authorization = $this->validator->validate($params, $repeated);
+        $authorization = $this->validator->validate($params, $repeated, ($this->clientIp)($request));
         $owner = $this->userContext->currentOwner($request);
         if ($owner === null) {
             if ($method === 'POST') {

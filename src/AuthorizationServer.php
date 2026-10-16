@@ -229,6 +229,8 @@ final class AuthorizationServer
             $this->config->cimdCacheMin,
             $this->config->cimdCacheMax,
             $this->config->allowPrivateSchemes,
+            $this->rateLimiter(),
+            $this->cache,
         );
     }
 

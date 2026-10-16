@@ -129,6 +129,12 @@ Download failures are not logged by the library, so this is the way to see them.
 so everybody has the proxy's address ([deployment](deployment.md#the-client-ip-behind-proxies)), or a
 hosted client such as claude.ai may send many people's requests from a shared range of addresses.
 
+For metadata document clients there is a separate counter, `rateLimit.cimd` (default 10 downloads per
+minute per address), which only counts real downloads of unknown or expired documents. Hitting it looks
+the same (429 with `Retry-After`; on `/authorize` an error page, never a redirect). A client that
+repeats a broken `client_id` URL is not counted again for 60 seconds: the failure is remembered, so after
+fixing the document wait a minute before retrying.
+
 **Fix.** Configure a `$clientIp` closure that reads the real address. Raise the limits, for example
 `'rateLimit' => ['token' => [300, 60]]`. `/revoke` and `/introspect` share the `token` counter. Wait for
 `Retry-After` seconds.

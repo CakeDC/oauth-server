@@ -30,9 +30,10 @@ final class AuthorizationRequestValidator
      *
      * @param array<string, string> $params Query or form parameters.
      * @param list<string> $repeated Parameter names given more than once.
+     * @param string|null $requester The client IP, for the metadata document fetch budget.
      * @throws \CakeDC\OAuth\Server\Grant\AuthorizationError
      */
-    public function validate(array $params, array $repeated = []): AuthorizationRequest
+    public function validate(array $params, array $repeated = [], ?string $requester = null): AuthorizationRequest
     {
         foreach (['client_id', 'redirect_uri'] as $name) {
             if (in_array($name, $repeated, true)) {
@@ -46,7 +47,7 @@ final class AuthorizationRequestValidator
             throw new AuthorizationError(OAuthException::invalidRequest('"client_id" is missing.'));
         }
         try {
-            $client = $this->clients->resolve($clientId);
+            $client = $this->clients->resolve($clientId, $requester);
         } catch (OAuthException $e) {
             throw new AuthorizationError($e);
         }

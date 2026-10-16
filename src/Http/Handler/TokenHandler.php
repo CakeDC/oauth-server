@@ -119,7 +119,7 @@ final class TokenHandler implements RequestHandlerInterface
      */
     private function authorizationCode(ServerRequestInterface $request, array $body): IssuedTokens
     {
-        $client = $this->clientAuthenticator->authenticate($request, $body);
+        $client = $this->clientAuthenticator->authenticate($request, $body, ($this->clientIp)($request));
         if (!$client->allowsGrant(GrantType::AUTHORIZATION_CODE)) {
             throw OAuthException::unauthorizedClient('This client may not use the authorization code grant.');
         }
@@ -222,7 +222,7 @@ final class TokenHandler implements RequestHandlerInterface
      */
     private function refreshToken(ServerRequestInterface $request, array $body): IssuedTokens
     {
-        $client = $this->clientAuthenticator->authenticate($request, $body);
+        $client = $this->clientAuthenticator->authenticate($request, $body, ($this->clientIp)($request));
         if (!$client->allowsGrant(GrantType::REFRESH_TOKEN)) {
             throw OAuthException::unauthorizedClient('This client may not use refresh tokens.');
         }
@@ -248,7 +248,7 @@ final class TokenHandler implements RequestHandlerInterface
         if (!$this->config->clientCredentials) {
             throw OAuthException::unsupportedGrantType('The client credentials grant is disabled.');
         }
-        $client = $this->clientAuthenticator->authenticate($request, $body);
+        $client = $this->clientAuthenticator->authenticate($request, $body, ($this->clientIp)($request));
         if ($client->isPublic() || !$client->allowsGrant(GrantType::CLIENT_CREDENTIALS)) {
             throw OAuthException::unauthorizedClient('This client may not use client credentials.');
         }

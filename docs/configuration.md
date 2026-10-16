@@ -88,6 +88,7 @@ a fixed window.
 | `authorize` | `[30, 60]` | `/authorize` |
 | `token` | `[60, 60]` | `/token`, `/revoke` and `/introspect` (they share one counter) |
 | `register` | `[10, 3600]` | `/register` |
+| `cimd` | `[10, 60]` | Metadata document fetches (`rateLimit.cimd`), counted per client address at `/authorize`, `/token`, `/revoke` and `/introspect`. Only a real download counts: a cached client never does, and neither does a repeat inside the one-minute failure memory |
 
 You only list the keys you want to change. Limits take effect only when you pass a PSR-16 cache to
 `AuthorizationServer` (the `$cache` argument). Without a cache nothing is limited. Both numbers must
@@ -193,6 +194,7 @@ $config = ServerConfig::fromArray([
     'rateLimit' => [
         'authorize' => [60, 60],
         'token' => [120, 60],
+        'cimd' => [20, 60],
     ],
     'retentionDays' => 14,
     'resources' => [

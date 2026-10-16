@@ -18,7 +18,12 @@ final class ServerConfig
     public const REGISTRATION_TOKEN = 'token';
     public const REGISTRATION_CLOSED = 'closed';
 
-    private const DEFAULT_RATE_LIMITS = ['authorize' => [30, 60], 'token' => [60, 60], 'register' => [10, 3600]];
+    private const DEFAULT_RATE_LIMITS = [
+        'authorize' => [30, 60],
+        'token' => [60, 60],
+        'register' => [10, 3600],
+        'cimd' => [10, 60],
+    ];
 
     /**
      * @param string $issuer Canonical issuer URL; https except on loopback hosts.
@@ -150,7 +155,7 @@ final class ServerConfig
             'cimd',
             ['enabled', 'allowedHosts', 'timeout', 'maxBytes', 'cacheMin', 'cacheMax'],
         );
-        $rateLimit = self::section($config, 'rateLimit', ['authorize', 'token', 'register']);
+        $rateLimit = self::section($config, 'rateLimit', ['authorize', 'token', 'register', 'cimd']);
         $rateLimits = self::DEFAULT_RATE_LIMITS;
         foreach ($rateLimit as $endpoint => $limit) {
             if (
