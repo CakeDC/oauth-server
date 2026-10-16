@@ -38,7 +38,7 @@ class AuthorizeHandlerTest extends TestCase
 
     public function testShowsTheConsentPage(): void
     {
-        $client = $this->harness->publicClient(['name' => 'Claude']);
+        $client = $this->harness->registeredClient(['name' => 'Claude']);
         $this->harness->signIn();
 
         $response = $this->harness->server->authorizeHandler()->handle(
@@ -313,6 +313,52 @@ class AuthorizeHandlerTest extends TestCase
         );
 
         $this->assertSame(400, $response->getStatusCode());
+    }
+
+    public function testASignedInPostWithARedirectableErrorForAnUntrustedClientGetsTheNotice(): void
+    {
+        $client = $this->harness->publicClient();
+        $this->harness->signIn();
+        $fields = ['state' => 'st4te', 'response_type' => 'token'] + [
+            'client_id' => $client->clientId,
+            'redirect_uri' => $client->redirectUris[0],
+        ];
+
+        $response = $this->harness->server->authorizeHandler()->handle(
+            $this->harness->form('https://example.com/oauth/authorize', $fields),
+        );
+
+        $this->assertSame('', $response->getHeaderLine('Location'));
+        $html = (string)$response->getBody();
+        $this->assertStringContainsString('Continue to app.example.com', $html);
+    }
+
+    public function testDeletingAConsentMakesTheClientUntrustedAgain(): void
+    {
+        $client = $this->harness->publicClient();
+        $this->harness->authorizationCode($client, ['scope' => 'content:read']);
+        $url = $this->harness->authorizeUrl($client, ['code_challenge_method' => 'plain']);
+        $trusted = $this->harness->server->authorizeHandler()->handle($this->harness->request('GET', $url));
+        $this->assertSame('invalid_request', ServerHarness::redirectParams($trusted)['error']);
+
+        $this->harness->storage->deleteConsent('42', $client->id, Fixtures::MCP);
+
+        $after = $this->harness->server->authorizeHandler()->handle($this->harness->request('GET', $url));
+        $this->assertSame('', $after->getHeaderLine('Location'));
+        $this->assertStringContainsString('Continue to app.example.com', (string)$after->getBody());
+    }
+
+    public function testADynamicClientIsHeadlinedByItsRedirectHostNotByItsName(): void
+    {
+        $client = $this->harness->publicClient(['name' => 'claude.ai']);
+        $this->harness->signIn();
+
+        $html = (string)$this->harness->server->authorizeHandler()->handle(
+            $this->harness->request('GET', $this->harness->authorizeUrl($client)),
+        )->getBody();
+
+        $this->assertStringContainsString('<title>Authorize app.example.com</title>', $html);
+        $this->assertStringContainsString('<h1>app.example.com wants to access Example MCP</h1>', $html);
     }
 
     public function testRedirectErrorsOfThePostAreIssuedWith303(): void

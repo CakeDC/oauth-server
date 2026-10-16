@@ -114,8 +114,17 @@ that, set it to `0`. Then a lost response costs one re-authorization.
   URI on a host that is not this computer. For a public client with a loopback (`localhost`,
   `*.localhost`, `127.0.0.0/8`, `[::1]`, http or https) or private-use redirect URI, whoever opens the
   authorization URL chooses the port and the PKCE challenge, so the consent page is always shown, with a
-  line saying the client was approved before. This is why Claude Code shows the page on every new
-  connection; its refresh tokens keep an existing connection alive without it.
+  line saying the client was approved before. The consent page warns for exactly these redirects: it
+  uses the same classification (`Support\HostClass`) as the consent memory, and the unspecified
+  addresses `0.0.0.0` and `::`, which reach the local machine on macOS and Linux, count as this
+  computer. A local client therefore shows the page on every new connection; its refresh tokens keep an
+  existing connection alive without it.
+- Names: the consent page headlines a self-registered client by the host of its redirect URI and shows
+  the name it declared only as a quoted, unverified line, so a client called `claude.ai` cannot
+  produce the title or heading of the real one. Client and token names reject Unicode control and
+  format characters (`Cc`, `Cf`: bidirectional overrides, zero-width characters), names without a
+  visible character, and, at dynamic registration, names that are host names or IP addresses. Length
+  limits count characters.
 - Nothing checks `canAuthorize()` after `/authorize`. When your policy changes, revoke the person's
   tokens with `TokenRevoker::revokeAllForSubject()`.
 

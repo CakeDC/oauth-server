@@ -66,6 +66,38 @@ class ClientRegistrarTest extends TestCase
         $this->assertArrayNotHasKey('client_secret', $body);
     }
 
+    public function testAHundredJapaneseCharactersAreWithinTheLimitOfCharacters(): void
+    {
+        $name = str_repeat("\u{3042}", 255);
+
+        $result = $this->registrar->register(['client_name' => $name, 'redirect_uris' => ['https://app.example.com/cb']]);
+
+        $this->assertSame($name, $result['client']->name);
+    }
+
+    public function testNamesWithPunctuationAndSpacesStillRegister(): void
+    {
+        foreach (['Claude Code (work)', 'Mr. Smith', "\u{c9}clair \u{1F680}", 'Acme, Inc.'] as $name) {
+            $result = $this->registrar->register(['client_name' => $name, 'redirect_uris' => ['https://app.example.com/cb']]);
+
+            $this->assertSame($name, $result['client']->name);
+        }
+    }
+
+    public function testHandMadeClientsAreCheckedForInvisibleCharactersAndLength(): void
+    {
+        foreach (["a\u{202E}b", "\u{200B}", str_repeat("\u{3042}", 256)] as $name) {
+            try {
+                $this->registrar->create($name, ['https://app.example.com/cb'], false);
+                $this->fail('Created');
+            } catch (InvalidArgumentException) {
+                $this->assertTrue(true);
+            }
+        }
+        $this->registrar->create(str_repeat("\u{3042}", 255), ['https://app.example.com/cb'], false);
+        $this->registrar->create('intranet.example.com', ['https://app.example.com/cb'], false);
+    }
+
     public function testDefaultsToAConfidentialClientWithASecret(): void
     {
         $result = $this->registrar->register(['redirect_uris' => ['https://app.example.com/cb']]);
@@ -139,6 +171,17 @@ class ClientRegistrarTest extends TestCase
             'blank logo host' => [$ok + ['logo_uri' => 'https://'], 'invalid_client_metadata', 'logo_uri'],
             'encoded client_uri host' => [$ok + ['client_uri' => 'https://%65xample.com'], 'invalid_client_metadata', 'client_uri'],
             'long name' => [$ok + ['client_name' => str_repeat('n', 256)], 'invalid_client_metadata', 'client_name'],
+            'long multibyte name' => [$ok + ['client_name' => str_repeat("\u{3042}", 256)], 'invalid_client_metadata', 'client_name'],
+            'a host name' => [$ok + ['client_name' => 'claude.ai'], 'invalid_client_metadata', 'client_name'],
+            'a host name with a subdomain' => [$ok + ['client_name' => 'www.example.com'], 'invalid_client_metadata', 'client_name'],
+            'a padded host name' => [$ok + ['client_name' => ' Claude.AI '], 'invalid_client_metadata', 'client_name'],
+            'an IP address' => [$ok + ['client_name' => '203.0.113.5'], 'invalid_client_metadata', 'client_name'],
+            'right-to-left override' => [$ok + ['client_name' => "Claude\u{202E}pp"], 'invalid_client_metadata', 'client_name'],
+            'zero width space' => [$ok + ['client_name' => "Cla\u{200B}ude"], 'invalid_client_metadata', 'client_name'],
+            'only a no-break space' => [$ok + ['client_name' => "\u{00A0}"], 'invalid_client_metadata', 'client_name'],
+            'only format characters' => [$ok + ['client_name' => "\u{200B}\u{200D}\u{2060}"], 'invalid_client_metadata', 'client_name'],
+            'only a filler' => [$ok + ['client_name' => "\u{3164}"], 'invalid_client_metadata', 'client_name'],
+            'a bidi isolate' => [$ok + ['client_name' => "a\u{2066}b"], 'invalid_client_metadata', 'client_name'],
         ];
     }
 

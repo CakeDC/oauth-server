@@ -9,6 +9,7 @@ use CakeDC\OAuth\Server\Connections\ConnectionService;
 use CakeDC\OAuth\Server\Event\NullEventDispatcher;
 use CakeDC\OAuth\Server\Exception\OAuthException;
 use CakeDC\OAuth\Server\Grant\Consent;
+use CakeDC\OAuth\Server\Grant\ConsentService;
 use CakeDC\OAuth\Server\Owner\ResourceOwner;
 use CakeDC\OAuth\Server\Owner\SubjectType;
 use CakeDC\OAuth\Server\Storage\InMemory\InMemoryStorage;
@@ -122,6 +123,10 @@ class ConnectionServiceTest extends TestCase
             'long multibyte name' => [str_repeat("\u{e9}", 101), Fixtures::MCP, ['content:read'], 7, 'invalid_request'],
             'newline in name' => ["a\nb", Fixtures::MCP, ['content:read'], 7, 'invalid_request'],
             'tab in name' => ["a\tb", Fixtures::MCP, ['content:read'], 7, 'invalid_request'],
+            'right-to-left override' => ["CI\u{202E}", Fixtures::MCP, ['content:read'], 7, 'invalid_request'],
+            'zero width space' => ["C\u{200B}I", Fixtures::MCP, ['content:read'], 7, 'invalid_request'],
+            'only a no-break space' => ["\u{00A0}", Fixtures::MCP, ['content:read'], 7, 'invalid_request'],
+            'only format characters' => ["\u{200B}\u{2060}", Fixtures::MCP, ['content:read'], 7, 'invalid_request'],
             'invalid utf8 name' => ["a\xff", Fixtures::MCP, ['content:read'], 7, 'invalid_request'],
             'unknown resource' => ['CI', 'https://other.example', ['content:read'], 7, 'invalid_target'],
             'no scope' => ['CI', Fixtures::MCP, [], 7, 'invalid_scope'],
@@ -239,6 +244,17 @@ class ConnectionServiceTest extends TestCase
         $result = $this->service->createPersonalToken($this->ada, str_repeat("\u{e9}", 100), Fixtures::MCP, ['content:read'], 7);
 
         $this->assertSame(100, mb_strlen((string)$result['token']->name));
+    }
+
+    public function testRevokingAConnectionMakesTheClientUntrustedAgain(): void
+    {
+        $client = $this->connect('first');
+        $consents = new ConsentService($this->storage, $this->clock, new NullEventDispatcher());
+        $this->assertTrue($consents->hasConsented($this->ada, $client));
+
+        $this->service->revokeConnection($this->ada, 'first');
+
+        $this->assertFalse($consents->hasConsented($this->ada, $client));
     }
 
     public function testConnectionsSkipRevokedClientsExpiredFamiliesAndClientCredentials(): void

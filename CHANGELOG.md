@@ -19,10 +19,11 @@ First release.
   connection, with a line saying they were approved before.
 - Redirect URI policy: `registration.allowPrivateSchemes` now defaults to `false` (the MCP
   authorization spec requires localhost or https redirect URIs); a host that enables it accepts any
-  private-use scheme the matcher does not refuse (such as `cursor://`). At dynamic registration, a
-  client that says `"application_type": "web"` can no longer register loopback `http` URIs, and a client
-  that omits `application_type` is registered as `native` when none of its redirect URIs is https (what
-  MCP clients such as MCP Inspector, VS Code, Cursor and Claude Code send).
+  private-use scheme the matcher does not refuse. A client that uses a `cursor://`-style scheme is
+  accepted only with `allowPrivateSchemes` enabled; the library makes no claim about what a particular
+  third-party tool sends. At dynamic registration, a client that says `"application_type": "web"` can
+  no longer register loopback `http` URIs, and a client that omits `application_type` is registered as
+  `native` when none of its redirect URIs is https.
 - New, optional extension point: `View\RedirectNoticeRendererInterface` with `View\RedirectNoticeView`,
   implemented by `HtmlErrorPageRenderer`. A custom `ErrorPageRendererInterface` that does not implement
   it shows its plain error page (no link) where the built-in one offers the link. New `Messages` keys
@@ -30,6 +31,24 @@ First release.
   new `ConsentService::hasConsented()` and `ConsentService::identityIsAssured()`;
   `AuthorizationError` carries the `Client` (`$client`). The constructor defaults of `ClientRegistrar` and
   `ClientResolver` for private schemes are now `false`.
+- Consent page identity: a dynamically registered client is headlined by the host its answer goes to
+  (like a metadata document client), and its own name is shown only as a quoted, unverified line, so a
+  client called `claude.ai` no longer produces the title and heading of the real one. Client names
+  (dynamic registration, metadata documents, `ClientRegistrar::create()`) and personal token names
+  reject Unicode control and format characters (`Cc`, `Cf`) and names without a visible character;
+  dynamic registration also rejects names that are host names or IP addresses; length limits count
+  characters, not bytes. New `Support\HostClass` is the one classification of loopback, unspecified
+  (`0.0.0.0`, `::`) and `.localhost` hosts used by the redirect URI matcher, the consent memory
+  (`ConsentService::identityIsAssured()`) and the consent page, so the "any program on this computer"
+  warning shows exactly when a remembered consent is not enough; `https://0.0.0.0/...` and
+  `https://[::]/...` are no longer treated as assured. `ConsentView::redirectHost()` now returns the
+  scheme of a private-use URI, as `RedirectNoticeView::redirectHost()` does. New `ConsentView::clientLabel()`
+  and `declaredName()`, new `Messages` key `consent.declaredName`, new `ClientMetadata::characterLength()`
+  and `looksLikeHost()`; `Client::redirectsOnlyToLoopback()` now also counts `.localhost` names,
+  `127.0.0.0/8`, unspecified addresses and private-use schemes. The redirect URI matcher accepts the
+  same URIs as before.
+- Docs: `docs/users.md` teaches identifying a client by `clientId`, not by its name, and says an
+  anonymous POST gets the error page, not the login.
 - Standalone example: `setup.php` no longer records a consent, and `OAUTH_EXAMPLE_AUTO_APPROVE=1`
   (unsafe, used only by `tests/Conformance/run.sh`) answers the consent page with "Allow".
 - OAuth 2.1 authorization server library for PHP 8.2 and newer, built on PSR-7, PSR-15, PSR-14,

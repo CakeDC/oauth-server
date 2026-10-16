@@ -79,6 +79,10 @@ class ConsentServiceTest extends TestCase
             'https IPv6 loopback' => ['https://[::1]:8443/cb', false],
             'https IPv6 loopback, long form' => ['https://[0:0:0:0:0:0:0:1]/cb', false],
             'https IPv4-mapped loopback' => ['https://[::ffff:127.0.0.1]/cb', false],
+            'https unspecified IPv4' => ['https://0.0.0.0/cb', false],
+            'https unspecified IPv6' => ['https://[::]/cb', false],
+            'https this network' => ['https://0.1.2.3/cb', false],
+            'https IPv4-mapped unspecified' => ['https://[::ffff:0.0.0.0]/cb', false],
             'private scheme' => ['com.example.app:/cb', false],
             'private scheme with authority' => ['com.example.app://cb', false],
         ];

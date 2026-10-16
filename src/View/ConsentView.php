@@ -7,6 +7,7 @@ use CakeDC\OAuth\Server\Client\Client;
 use CakeDC\OAuth\Server\Client\ClientType;
 use CakeDC\OAuth\Server\Owner\ResourceOwner;
 use CakeDC\OAuth\Server\Resource\ProtectedResource;
+use CakeDC\OAuth\Server\Support\HostClass;
 
 /**
  * What the consent page shows and posts back.
@@ -48,13 +49,39 @@ final class ConsentView
     }
 
     /**
-     * The host the answer is sent to.
+     * The host the answer is sent to; for a private-use scheme, the scheme, since what follows it is
+     * chosen by the app. The same rule as {@see \CakeDC\OAuth\Server\View\RedirectNoticeView::redirectHost()}.
      */
     public function redirectHost(): string
     {
-        $host = parse_url($this->redirectUri, PHP_URL_HOST);
+        return HostClass::redirectTarget($this->redirectUri);
+    }
 
-        return is_string($host) ? strtolower($host) : $this->redirectUri;
+    /**
+     * What names the client in the title and the heading: the host of its metadata document, or, for a
+     * client that registered itself, the host its answer is sent to. Neither can be chosen freely, unlike
+     * a name, which anyone can set to "claude.ai". An administrator's own name is trusted.
+     */
+    public function clientLabel(): string
+    {
+        return match ($this->client->type) {
+            ClientType::MetadataDocument => $this->clientHost() !== '' ? $this->clientHost() : $this->client->name,
+            ClientType::Dynamic => $this->redirectHost(),
+            default => $this->client->name,
+        };
+    }
+
+    /**
+     * The name the client declared for itself, to show as an unverified secondary line; null when the
+     * client is not self-registered or the name adds nothing to the label.
+     */
+    public function declaredName(): ?string
+    {
+        if (!$this->isUnverified() || $this->client->name === $this->clientLabel()) {
+            return null;
+        }
+
+        return $this->client->name;
     }
 
     /**
@@ -66,10 +93,14 @@ final class ConsentView
     }
 
     /**
-     * Whether the client only redirects to this computer.
+     * Whether the answer goes to a program on this computer: a loopback or unspecified address, a
+     * `.localhost` name or a private-use scheme, or the client only redirects there. These are the
+     * redirects for which a remembered consent is not enough, so the page warns exactly when
+     * `ConsentService::identityIsAssured()` is false for a public client.
      */
     public function isLoopbackOnly(): bool
     {
-        return $this->client->redirectsOnlyToLoopback();
+        return HostClass::redirectStaysOnThisComputer($this->redirectUri)
+            || $this->client->redirectsOnlyToLoopback();
     }
 }

@@ -3,7 +3,6 @@ declare(strict_types=1);
 
 namespace CakeDC\OAuth\Server\View\Html;
 
-use CakeDC\OAuth\Server\Client\ClientType;
 use CakeDC\OAuth\Server\View\ConsentRendererInterface;
 use CakeDC\OAuth\Server\View\ConsentView;
 use CakeDC\OAuth\Server\View\Messages;
@@ -47,10 +46,13 @@ final class HtmlConsentRenderer implements ConsentRendererInterface
         foreach ($view->fields as $name => $value) {
             $fields .= sprintf('<input type="hidden" name="%s" value="%s">', Html::e($name), Html::e($value));
         }
-        // A metadata document names itself; the host of its client_id URL is what can be trusted.
-        $client = $view->client->type === ClientType::MetadataDocument && $view->clientHost() !== ''
-            ? $view->clientHost()
-            : $view->client->name;
+        // A name is self-asserted, so the title and the heading use a host the client cannot choose freely.
+        $client = $view->clientLabel();
+        $declared = $view->declaredName();
+        if ($declared !== null) {
+            $notes = '<p class="muted">' . Html::e($m->get('consent.declaredName', ['name' => $declared]))
+                . '</p>' . $notes;
+        }
         $body = '<h1>' . Html::e($m->get('consent.heading', [
                 'client' => $client,
                 'resource' => $view->resource->name,

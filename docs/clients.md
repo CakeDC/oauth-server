@@ -55,8 +55,7 @@ How a requested `redirect_uri` is matched against the registered ones:
   more than one it must send it, at `/authorize` and again at `/token`.
 
 A dynamic registration that omits `application_type` is registered as `native` when none of its
-redirect URIs is `https` (only loopback `http` or private-use schemes, which is what MCP clients such as
-MCP Inspector, VS Code, Cursor and Claude Code send), and as `web` otherwise. A `web` client inferred
+redirect URIs is `https` (only loopback `http` or private-use schemes), and as `web` otherwise. A `web` client inferred
 that way keeps any loopback `http` URI it lists next to its https ones. A metadata document that omits
 `application_type` is treated as `native` when all its redirect URIs are `http` (loopback), and as
 `web` otherwise.
@@ -94,7 +93,7 @@ create(
 
 | Argument | Meaning |
 | --- | --- |
-| `name` | 1 to 255 characters, no control characters |
+| `name` | 1 to 255 characters (counted as characters, not bytes), with at least one visible character and no control or invisible characters (Unicode `Cc` and `Cf`: newlines, bidirectional overrides, zero-width characters) |
 | `redirectUris` | Up to 10. May be empty only without the authorization code grant |
 | `confidential` | `true` gives the client a secret (`<prefix>_cs_...`) and `client_secret_basic` authentication. `false` makes it public |
 | `grantTypes` | Any of `GrantType::AUTHORIZATION_CODE`, `GrantType::REFRESH_TOKEN`, `GrantType::CLIENT_CREDENTIALS` |
@@ -229,10 +228,12 @@ redirect, the loopback rule applies.
 
 ## Other clients
 
-- **Editors and desktop tools with a private-use scheme redirect** (for example
-  `cursor://anysphere.cursor/oauth`): the server accepts it when you set
-  `registration.allowPrivateSchemes` to `true` and the client is native (it says so, or it lists no
-  https redirect URI).
+- **Editors and desktop tools with a private-use scheme redirect** (a `cursor://`-style scheme, for
+  example): the server accepts the redirect URI only when you set `registration.allowPrivateSchemes` to
+  `true` and the client is native (it says so, or it lists no https redirect URI). This page does not
+  claim that any particular tool works: check what the tool really sends at registration, and test it
+  against your server. Every such connection shows the consent page, with the warning that any program
+  on the computer can use that redirect.
 - **Tools with a loopback or https redirect**: both are accepted under the
   [redirect URI rules](#redirect-uri-rules).
 - **Your own CLI or desktop tool**: register it as a native public client, use a loopback redirect

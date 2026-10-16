@@ -5,6 +5,7 @@ namespace CakeDC\OAuth\Server\View;
 
 use CakeDC\OAuth\Server\Client\Client;
 use CakeDC\OAuth\Server\Exception\OAuthException;
+use CakeDC\OAuth\Server\Support\HostClass;
 
 /**
  * What the page shows when a failed authorization request could go back to its client, but the
@@ -33,12 +34,6 @@ final class RedirectNoticeView
      */
     public function redirectHost(): string
     {
-        $scheme = strtolower((string)parse_url($this->redirectUri, PHP_URL_SCHEME));
-        $host = parse_url($this->redirectUri, PHP_URL_HOST);
-        if (($scheme === 'http' || $scheme === 'https') && is_string($host) && $host !== '') {
-            return strtolower($host);
-        }
-
-        return $scheme !== '' ? $scheme : $this->redirectUri;
+        return HostClass::redirectTarget($this->redirectUri);
     }
 }

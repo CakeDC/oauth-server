@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace CakeDC\OAuth\Server\Connections;
 
+use CakeDC\OAuth\Server\Client\ClientMetadata;
 use CakeDC\OAuth\Server\Exception\OAuthException;
 use CakeDC\OAuth\Server\Owner\ResourceOwner;
 use CakeDC\OAuth\Server\Owner\SubjectType;
@@ -173,8 +174,10 @@ final class ConnectionService
             throw OAuthException::invalidRequest('Only people can create personal tokens.');
         }
         $name = trim($name);
-        if (preg_match('/\A[^\x00-\x1F\x7F]{1,100}\z/u', $name) !== 1) {
-            throw OAuthException::invalidRequest('Give the token a name of up to 100 characters.');
+        if (ClientMetadata::characterLength($name) > 100 || !ClientMetadata::isUsableName($name)) {
+            throw OAuthException::invalidRequest(
+                'Give the token a name of up to 100 visible characters, without control or invisible characters.',
+            );
         }
         $target = $this->resources->get($resource);
         if ($target === null) {

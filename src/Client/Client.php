@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 namespace CakeDC\OAuth\Server\Client;
 
-use CakeDC\OAuth\Server\Resource\ResourceIdentifier;
+use CakeDC\OAuth\Server\Support\HostClass;
 use DateTimeImmutable;
 
 /**
@@ -92,13 +92,13 @@ final class Client
     }
 
     /**
-     * Whether every redirect URI points to this computer.
+     * Whether every redirect URI stays on this computer (a loopback or unspecified address, a `.localhost`
+     * name, or a private-use scheme), where any program can receive the answer.
      */
     public function redirectsOnlyToLoopback(): bool
     {
         foreach ($this->redirectUris as $uri) {
-            $host = parse_url($uri, PHP_URL_HOST);
-            if (!is_string($host) || !ResourceIdentifier::isLoopbackHost($host)) {
+            if (!HostClass::redirectStaysOnThisComputer($uri)) {
                 return false;
             }
         }

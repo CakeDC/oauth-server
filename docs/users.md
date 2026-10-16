@@ -90,11 +90,14 @@ as, for example a service account, or `null` to refuse the grant:
 ```php
 public function forClient(Client $client, ProtectedResource $resource): ?ResourceOwner
 {
-    return $client->name === 'Nightly import'
+    return $client->clientId === 'nightly-import'
         ? new ResourceOwner('service:import', 'Nightly import', null, SubjectType::Client)
         : null;
 }
 ```
+
+Identify the client by `$client->clientId` (or its internal `$client->id`), never by `$client->name`:
+the name is display text that, for a client that registered itself, the client chooses.
 
 If you never use client credentials return `null` and set `'clientCredentials' => false`. The token's
 subject is the client's `client_id` and its type is `client`. `scopesFor()` is called with the owner
@@ -107,9 +110,11 @@ you return here. See [clients](clients.md#client-credentials).
 | `currentOwner(ServerRequestInterface $request): ?ResourceOwner` | The signed-in person of this browser request, or `null` |
 | `loginResponse(ServerRequestInterface $request, string $returnTo): ResponseInterface` | The response that sends a visitor to your login |
 
-`loginResponse()` is called for every authorization request from an anonymous visitor once the client
-and the redirect URI are valid, also when the request has another error: the server never redirects
-to a client before the person is signed in, and checks the request again when the browser comes back.
+`loginResponse()` is called for every authorization request (GET) from an anonymous visitor once the
+client and the redirect URI are valid, also when the request has another error: the server never
+redirects to a client before the person is signed in, and checks the request again when the browser
+comes back. An anonymous POST (a consent form posted without a session) does not get a login redirect:
+it gets the error page.
 
 `loginResponse()` receives `$returnTo`, a relative URL (a path and a query, like
 `/oauth/authorize?response_type=code&...`). The server has already normalised it with

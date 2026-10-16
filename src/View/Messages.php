@@ -12,6 +12,7 @@ final class Messages
         'consent.title' => 'Authorize {client}',
         'consent.heading' => '{client} wants to access {resource}',
         'consent.from' => 'The request comes from {host}. Your answer is sent to {redirect}.',
+        'consent.declaredName' => 'It calls itself "{name}". Anyone can choose that name.',
         'consent.unverified' => 'This application registered itself; its name is not verified.',
         'consent.loopback' => 'Only continue if you just started this from an application on this computer: '
             . 'any program on this computer can use this address.',

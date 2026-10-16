@@ -12,6 +12,7 @@ use CakeDC\OAuth\Server\View\Html\HtmlConsentRenderer;
 use CakeDC\OAuth\Server\View\Html\HtmlErrorPageRenderer;
 use CakeDC\OAuth\Server\View\Messages;
 use CakeDC\OAuth\Server\View\RedirectNoticeView;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 class HtmlRenderersTest extends TestCase
@@ -34,8 +35,8 @@ class HtmlRenderersTest extends TestCase
     {
         $html = (new HtmlConsentRenderer())->render($this->view());
 
-        $this->assertStringContainsString('&lt;b&gt;Evil&lt;/b&gt; App wants to access Example MCP', $html);
-        $this->assertStringContainsString('app.example.com', $html);
+        $this->assertStringContainsString('<h1>app.example.com wants to access Example MCP</h1>', $html);
+        $this->assertStringContainsString('calls itself &quot;&lt;b&gt;Evil&lt;/b&gt; App&quot;', $html);
         $this->assertStringContainsString('not verified', $html);
         $this->assertStringContainsString('Ada &amp; Co', $html);
         $this->assertStringContainsString('<li>Read your posts</li>', $html);
@@ -106,6 +107,112 @@ class HtmlRenderersTest extends TestCase
         }
     }
 
+    public function testADynamicClientCannotPassForAnotherOneByItsName(): void
+    {
+        $real = Fixtures::client([
+            'type' => ClientType::MetadataDocument,
+            'clientId' => 'https://claude.ai/oauth/mcp-oauth-client-metadata',
+            'name' => 'Claude',
+            'redirectUris' => ['https://claude.ai/api/mcp/auth_callback'],
+        ]);
+        $fake = Fixtures::client([
+            'name' => 'claude.ai',
+            'redirectUris' => ['https://claude-ai.example/cb'],
+        ]);
+        $page = fn($client) => (new HtmlConsentRenderer())->render(new ConsentView(
+            $client,
+            new ResourceOwner('42', 'Ada'),
+            Fixtures::resources()->defaultResource(),
+            ['content:read' => 'Read'],
+            false,
+            $client->redirectUris[0],
+            '/oauth/authorize',
+            [],
+        ));
+
+        $html = $page($fake);
+
+        $this->assertStringContainsString('<title>Authorize claude-ai.example</title>', $html);
+        $this->assertStringContainsString('<h1>claude-ai.example wants to access Example MCP</h1>', $html);
+        $this->assertStringContainsString('calls itself &quot;claude.ai&quot;', $html);
+        $this->assertStringNotContainsString('<title>Authorize claude.ai</title>', $html);
+        $this->assertStringContainsString('<title>Authorize claude.ai</title>', $page($real));
+        $this->assertStringNotContainsString('calls itself', $page($real));
+    }
+
+    public function testADynamicClientWithoutADeclaredNameShowsNoSecondLine(): void
+    {
+        $client = Fixtures::client(['name' => 'app.example.com']);
+        $html = (new HtmlConsentRenderer())->render(new ConsentView(
+            $client,
+            new ResourceOwner('42', 'Ada'),
+            Fixtures::resources()->defaultResource(),
+            [],
+            false,
+            'https://app.example.com/cb',
+            '/oauth/authorize',
+            [],
+        ));
+
+        $this->assertStringContainsString('<h1>app.example.com wants', $html);
+        $this->assertStringNotContainsString('calls itself', $html);
+    }
+
+    public function testADynamicClientOfAPrivateSchemeIsHeadlinedByTheScheme(): void
+    {
+        $html = (new HtmlConsentRenderer())->render($this->view(ClientType::Dynamic, ['com.example.app://oauth/cb']));
+
+        $this->assertStringContainsString('<h1>com.example.app wants to access Example MCP</h1>', $html);
+    }
+
+    public function testBothViewsNameTheRedirectTargetTheSameWay(): void
+    {
+        foreach (['https://App.example.com/cb', 'com.example.app:/cb', 'com.example.app://oauth/cb', 'http://127.0.0.1:5/cb'] as $uri) {
+            $consent = $this->view(ClientType::Dynamic, [$uri]);
+            $notice = new RedirectNoticeView(OAuthException::accessDenied('No.'), null, $uri, $uri);
+
+            $this->assertSame($notice->redirectHost(), $consent->redirectHost(), $uri);
+        }
+        $this->assertSame('com.example.app', $this->view(ClientType::Dynamic, ['com.example.app://oauth/cb'])->redirectHost());
+    }
+
+    /**
+     * @return array<string, array{string, bool}>
+     */
+    public static function remembered(): array
+    {
+        return [
+            'loopback' => ['http://127.0.0.1:51000/cb', true],
+            'loopback range' => ['https://127.0.0.5/cb', true],
+            '.localhost name' => ['https://app.localhost/cb', true],
+            'unspecified address' => ['https://0.0.0.0/cb', true],
+            'private scheme' => ['com.example.app:/cb', true],
+            'remote https' => ['https://app.example.com/cb', false],
+        ];
+    }
+
+    #[DataProvider('remembered')]
+    public function testThePageWarnsWheneverTheRememberedConsentIsNotEnough(string $uri, bool $warns): void
+    {
+        $base = $this->view(ClientType::Dynamic, [$uri]);
+        $view = new ConsentView(
+            $base->client,
+            $base->owner,
+            $base->resource,
+            $base->scopes,
+            $base->offlineAccess,
+            $base->redirectUri,
+            $base->formAction,
+            $base->fields,
+            true,
+        );
+
+        $html = (new HtmlConsentRenderer())->render($view);
+
+        $this->assertSame($warns, str_contains($html, 'any program on this computer'), $uri);
+        $this->assertStringContainsString('approved this application before', $html);
+    }
+
     public function testTheApprovedBeforeLine(): void
     {
         $view = $this->view(ClientType::MetadataDocument, ['http://127.0.0.1/cb']);
@@ -129,7 +236,7 @@ class HtmlRenderersTest extends TestCase
     {
         $html = (new HtmlConsentRenderer())->render($this->view(ClientType::Dynamic, ['com.example.app:/cb']));
 
-        $this->assertStringContainsString('The request comes from com.example.app:/cb.', $html);
+        $this->assertStringContainsString('The request comes from com.example.app.', $html);
         $this->assertStringNotContainsString('comes from .', $html);
     }
 

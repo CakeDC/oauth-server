@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 namespace CakeDC\OAuth\Server\Client;
 
-use CakeDC\OAuth\Server\Resource\ResourceIdentifier;
+use CakeDC\OAuth\Server\Support\HostClass;
 use CakeDC\OAuth\Server\Support\HostName;
 
 /**
@@ -51,14 +51,14 @@ final class RedirectUriMatcher
                 return 'must name a host';
             }
 
-            if (HostName::isValid($host) || ResourceIdentifier::isLoopbackHost($host)) {
+            if (HostName::isValid($host) || HostClass::isLoopbackLiteral($host)) {
                 return null;
             }
 
             return 'must use a plain host name or IP address';
         }
         if ($scheme === 'http') {
-            return is_string($host) && ResourceIdentifier::isLoopbackHost($host)
+            return is_string($host) && HostClass::isLoopbackLiteral($host)
                 ? null
                 : 'http is only allowed for loopback addresses (127.0.0.1, [::1], localhost)';
         }
@@ -103,7 +103,7 @@ final class RedirectUriMatcher
             return false;
         }
         $host = strtolower($a['host'] ?? '');
-        if ($host !== strtolower($b['host'] ?? '') || !ResourceIdentifier::isLoopbackHost($host)) {
+        if ($host !== strtolower($b['host'] ?? '') || !HostClass::isLoopbackLiteral($host)) {
             return false;
         }
 

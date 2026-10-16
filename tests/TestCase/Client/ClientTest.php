@@ -64,6 +64,18 @@ class ClientTest extends TestCase
             ->redirectsOnlyToLoopback());
     }
 
+    public function testEveryRedirectThatStaysOnThisComputerCounts(): void
+    {
+        $this->assertTrue($this->client(ClientType::Dynamic, 'a', ['http://127.0.0.1/cb', 'https://127.0.0.5/cb'])
+            ->redirectsOnlyToLoopback());
+        $this->assertTrue($this->client(ClientType::Dynamic, 'a', ['https://app.localhost/cb'])
+            ->redirectsOnlyToLoopback());
+        $this->assertTrue($this->client(ClientType::Dynamic, 'a', ['com.example.app:/cb'])
+            ->redirectsOnlyToLoopback());
+        $this->assertFalse($this->client(ClientType::Dynamic, 'a', ['com.example.app:/cb', 'https://x.example/cb'])
+            ->redirectsOnlyToLoopback());
+    }
+
     public function testWithersReturnModifiedCopies(): void
     {
         $client = $this->client(ClientType::Dynamic, 'abc', ['https://app.example.com/cb']);

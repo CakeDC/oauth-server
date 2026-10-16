@@ -65,6 +65,23 @@ class ClientResolverTest extends TestCase
         $this->assertNull($this->resolver()->resolve(''));
     }
 
+    public function testAMetadataDocumentNameWithInvisibleCharactersIsReplacedByTheHost(): void
+    {
+        foreach (["Claude\u{202E}", "Cla\u{200B}ude", "\u{00A0}"] as $i => $name) {
+            $url = 'https://claude.ai/metadata' . $i . '.json';
+            $this->transport->serve($url, [
+                'client_id' => $url,
+                'client_name' => $name,
+                'redirect_uris' => ['https://claude.ai/cb'],
+                'token_endpoint_auth_method' => 'none',
+            ], 'max-age=600');
+
+            $client = $this->resolver()->resolve($url);
+
+            $this->assertSame('claude.ai', $client?->name, $name);
+        }
+    }
+
     public function testFetchesAndCachesMetadataDocumentClients(): void
     {
         $client = $this->resolver()->resolve(self::CLAUDE);

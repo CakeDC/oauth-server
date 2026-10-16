@@ -11,11 +11,33 @@ use CakeDC\OAuth\Server\Support\HostName;
 final class ClientMetadata
 {
     /**
-     * Whether $name is usable as a display name: not blank, no control characters.
+     * Whether $name is usable as a display name: valid UTF-8, no control or format characters (`\p{Cc}`
+     * and `\p{Cf}`: newlines, bidirectional overrides, zero-width characters), and at least one visible
+     * character (not only spaces or characters that draw nothing).
      */
     public static function isUsableName(string $name): bool
     {
-        return trim($name) !== '' && preg_match('/[\x00-\x1F\x7F]/', $name) !== 1;
+        return preg_match('/[\p{Cc}\p{Cf}]/u', $name) === 0
+            && preg_match('/[^\p{Z}\p{C}\x{115F}\x{1160}\x{2800}\x{3164}\x{FFA0}]/u', $name) === 1;
+    }
+
+    /**
+     * The length of $name in characters, not bytes; a string that is not valid UTF-8 is infinitely long.
+     */
+    public static function characterLength(string $name): int
+    {
+        $length = preg_match_all('/./su', $name);
+
+        return $length === false ? PHP_INT_MAX : $length;
+    }
+
+    /**
+     * Whether $name is a host name or an IP address, which a self-registered client must not use as its
+     * name: it would read as the client's verified identity.
+     */
+    public static function looksLikeHost(string $name): bool
+    {
+        return HostName::isValid(strtolower(trim($name)));
     }
 
     /**

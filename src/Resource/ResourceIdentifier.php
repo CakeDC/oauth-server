@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace CakeDC\OAuth\Server\Resource;
 
+use CakeDC\OAuth\Server\Support\HostClass;
 use InvalidArgumentException;
 
 /**
@@ -45,11 +46,12 @@ final class ResourceIdentifier
     }
 
     /**
-     * Whether $host, as `parse_url()` returns it, names this computer.
+     * Whether $host, as `parse_url()` returns it, is a loopback literal of RFC 8252 (see
+     * {@see \CakeDC\OAuth\Server\Support\HostClass::isLoopbackLiteral()}).
      */
     public static function isLoopbackHost(string $host): bool
     {
-        return in_array(strtolower($host), ['localhost', '127.0.0.1', '[::1]', '::1'], true);
+        return HostClass::isLoopbackLiteral($host);
     }
 
     /**

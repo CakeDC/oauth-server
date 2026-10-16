@@ -64,7 +64,7 @@ final class HtmlConnectionsRenderer implements ConnectionsRendererInterface
 
     /**
      * The client cell: a metadata document is named by its host (its own name is self-asserted) and a
-     * registered client is marked unverified.
+     * dynamically registered client (one that chose its own name) is marked unverified.
      */
     private function client(Client $client): string
     {

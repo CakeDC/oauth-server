@@ -28,7 +28,8 @@ makes the tokens that were not revoked work again.
 
 The signed-in person opens `/oauth/connections`, finds "Personal access tokens", and fills in:
 
-- a name they will recognize (up to 100 characters),
+- a name they will recognize (up to 100 characters, with a visible character and no control or invisible
+  characters),
 - the resource,
 - the permissions (one checkbox per scope they are allowed to give),
 - the number of days (the form shows the maximum).

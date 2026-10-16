@@ -22,17 +22,22 @@ Shown at `/oauth/authorize` when the person has not yet accepted what the client
 time for a public client with a loopback or private-use redirect URI, whose identity a remembered
 consent cannot vouch for (see [endpoints](endpoints.md#get-start)). It shows:
 
-- A heading: "{client} wants to access {resource}". A metadata document client is named by the host
-  of its `client_id` URL, because its own name is self-asserted. Other clients are named by
-  `Client::$name`.
+- A title and a heading: "{client} wants to access {resource}". Only a client an administrator
+  registered is named by `Client::$name`. A metadata document client is named by the host of its
+  `client_id` URL, and a dynamically registered one by the host its answer is sent to (the scheme for a
+  private-use redirect URI), because a name is self-asserted: anyone can register a client called
+  `claude.ai`. A dynamic client's own name appears only as a quoted, unverified line below
+  ("It calls itself ..."), and only when it differs from that host.
 - Where the request comes from and where the answer goes: "The request comes from {host}. Your answer
   is sent to {redirect}." The host is the client's display host (the `client_id` host for a metadata
   document, otherwise the host of its first redirect URI), so the person can spot a client
   pretending to be something else.
 - An **unverified** notice for dynamically registered clients: they chose their own name.
-- A **loopback** warning when every redirect URI points to the person's own computer. It does not reassure:
-  any program on that computer can listen on the address, so the text asks the person to continue only
-  when they just started the flow from an application there.
+- A **loopback** warning when the answer goes to the person's own computer: a loopback or unspecified
+  address (`127.0.0.0/8`, `::1`, `0.0.0.0`, `::`), a `.localhost` name, or a private-use scheme. It does
+  not reassure: any program on that computer can listen on the address, so the text asks the person to
+  continue only when they just started the flow from an application there. The warning shows exactly
+  when a remembered consent is not enough, so "approved before" never appears without it.
 - An **approved before** notice when a remembered consent already covers the request but the page is
   shown anyway because the client's identity cannot be assured: the person is asked to continue only if
   they started this themselves.
@@ -96,9 +101,11 @@ interface ConsentRendererInterface
 | `formAction` | The path the form must post to |
 | `fields` | Hidden fields to post back, as `name => value` |
 | `clientHost()` | The host that names the client |
-| `redirectHost()` | The host of the redirect URI |
+| `clientLabel()` | What the title and heading call the client: its name for a registered client, a host for the others |
+| `declaredName()` | The name a dynamic client declared, to show as an unverified line, or `null` |
+| `redirectHost()` | The host of the redirect URI (the scheme for a private-use URI), the same rule as `RedirectNoticeView::redirectHost()` |
 | `isUnverified()` | `true` for a dynamically registered client |
-| `isLoopbackOnly()` | `true` when the client only redirects to this computer |
+| `isLoopbackOnly()` | `true` when the answer goes to this computer (loopback or unspecified address, `.localhost` name, private-use scheme) |
 | `approvedBefore` | `true` when a remembered consent covers the request but the page is shown again (public loopback or private-scheme client) |
 
 Your page must send a `POST` to `$view->formAction` with:
@@ -235,6 +242,7 @@ Every key, with its default text:
 | `consent.title` | Authorize {client} | `{client}` |
 | `consent.heading` | {client} wants to access {resource} | `{client}`, `{resource}` |
 | `consent.from` | The request comes from {host}. Your answer is sent to {redirect}. | `{host}`, `{redirect}` |
+| `consent.declaredName` | It calls itself "{name}". Anyone can choose that name. | `{name}` |
 | `consent.unverified` | This application registered itself; its name is not verified. |  |
 | `consent.loopback` | Only continue if you just started this from an application on this computer: any program on this computer can use this address. |  |
 | `consent.approvedBefore` | You approved this application before. It is asked again because its identity cannot be confirmed: only continue if you started this yourself. |  |

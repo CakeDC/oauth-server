@@ -106,10 +106,17 @@ final class ClientRegistrar
             throw OAuthException::invalidClientMetadata('response_types must be ["code"].');
         }
         $name = self::optionalString($metadata, 'client_name');
-        if ($name !== null && (strlen($name) > 255 || !ClientMetadata::isUsableName($name))) {
+        if (
+            $name !== null
+            && (ClientMetadata::characterLength($name) > 255 || !ClientMetadata::isUsableName($name))
+        ) {
             throw OAuthException::invalidClientMetadata(
-                'client_name must have 1 to 255 characters, without control characters.',
+                'client_name must have 1 to 255 visible characters, without control or invisible characters.',
             );
+        }
+        // The consent page headlines a client by its host; a name that is a host would still read as one.
+        if ($name !== null && ClientMetadata::looksLikeHost($name)) {
+            throw OAuthException::invalidClientMetadata('client_name must not be a host name or an IP address.');
         }
         $scopes = null;
         $scope = self::optionalString($metadata, 'scope');
@@ -175,8 +182,10 @@ final class ClientRegistrar
         bool $allowIntrospection = false,
         ApplicationType $applicationType = ApplicationType::Web,
     ): array {
-        if (strlen($name) > 255 || !ClientMetadata::isUsableName($name)) {
-            throw new InvalidArgumentException('The name must have 1 to 255 characters, without control characters.');
+        if (ClientMetadata::characterLength($name) > 255 || !ClientMetadata::isUsableName($name)) {
+            throw new InvalidArgumentException(
+                'The name must have 1 to 255 visible characters, without control or invisible characters.',
+            );
         }
         if ($scopes !== null) {
             $known = $this->resources->allScopeNames();
