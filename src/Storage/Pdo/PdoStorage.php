@@ -25,6 +25,9 @@ use Throwable;
 /**
  * Storage on PDO: SQLite, MySQL/MariaDB and PostgreSQL. Create the tables with createTables() or
  * the files in `schema/`.
+ *
+ * On SQLite the REFERENCES clauses are enforced only with PRAGMA foreign_keys = ON, and prune() deletes child
+ * rows explicitly, so it does not depend on cascades.
  */
 final class PdoStorage implements StorageInterface
 {
@@ -43,9 +46,7 @@ final class PdoStorage implements StorageInterface
      */
     public function __construct(private readonly PDO $pdo, string $tablePrefix = 'oauth_')
     {
-        if (preg_match('/^[a-z0-9_]*\z/', $tablePrefix) !== 1) {
-            throw new InvalidArgumentException('The table prefix may contain lowercase letters, digits and "_".');
-        }
+        self::assertPrefix($tablePrefix);
         $this->pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
         $this->clients = $tablePrefix . 'clients';
         $this->codes = $tablePrefix . 'authorization_codes';
@@ -54,23 +55,43 @@ final class PdoStorage implements StorageInterface
     }
 
     /**
-     * Creates the tables with the default prefix if they do not exist.
+     * Creates the tables if they do not exist.
      *
+     * @param \PDO $pdo The connection.
+     * @param string $tablePrefix Prefix of the four table names; must match the storage's prefix.
+     * @throws \InvalidArgumentException For an unsafe prefix.
      * @throws \RuntimeException For a driver without a schema file.
      */
-    public static function createTables(PDO $pdo): void
+    public static function createTables(PDO $pdo, string $tablePrefix = 'oauth_'): void
     {
+        self::assertPrefix($tablePrefix);
         $driver = (string)$pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
         $file = dirname(__DIR__, 3) . '/schema/' . $driver . '.sql';
         $sql = is_file($file) ? file_get_contents($file) : false;
         if ($sql === false) {
             throw new RuntimeException(sprintf('There is no schema for the "%s" driver.', $driver));
         }
+        if ($tablePrefix !== 'oauth_') {
+            // Table, index and constraint names start with "oauth_"; the column oauth_client_id keeps its name.
+            $sql = (string)preg_replace('/\boauth_(?!client_id\b)/', $tablePrefix, $sql);
+        }
         $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
         foreach (preg_split('/;\s*(?:\n|$)/', $sql) ?: [] as $statement) {
             if (trim($statement) !== '') {
                 $pdo->exec($statement);
             }
+        }
+    }
+
+    /**
+     * Rejects a table prefix with anything but lowercase letters, digits and "_".
+     *
+     * @throws \InvalidArgumentException
+     */
+    private static function assertPrefix(string $tablePrefix): void
+    {
+        if (preg_match('/^[a-z0-9_]*\z/', $tablePrefix) !== 1) {
+            throw new InvalidArgumentException('The table prefix may contain lowercase letters, digits and "_".');
         }
     }
 

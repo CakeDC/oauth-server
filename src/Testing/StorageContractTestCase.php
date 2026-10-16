@@ -505,4 +505,50 @@ abstract class StorageContractTestCase extends TestCase
         $this->assertNotNull($storage->findClientById($recent->id));
         $this->assertNotNull($storage->findTokenById($liveToken->id));
     }
+
+    /**
+     * Subjects are compared case-sensitively.
+     */
+    public function testSubjectsAreCaseSensitive(): void
+    {
+        $storage = $this->createStorage();
+        $client = $this->makeClient();
+        $storage->saveClient($client);
+        $token = $this->makeToken($client, subject: 'Alice');
+        $storage->saveToken($token);
+        $storage->saveConsent(
+            new Consent(Uuid::v4(), 'Alice', $client->id, 'https://example.com/mcp', ['a'], $this->at(), $this->at()),
+        );
+
+        $this->assertSame([], $storage->findActiveTokensBySubject('alice', SubjectType::User, $this->at(1)));
+        $this->assertSame(0, $storage->revokeTokensBySubject('alice', SubjectType::User, $this->at(1)));
+        $this->assertNull($storage->findConsent('alice', $client->id, 'https://example.com/mcp'));
+        $storage->deleteConsent('alice', $client->id, 'https://example.com/mcp');
+        $this->assertNotNull($storage->findConsent('Alice', $client->id, 'https://example.com/mcp'));
+        $this->assertCount(1, $storage->findActiveTokensBySubject('Alice', SubjectType::User, $this->at(1)));
+        $this->assertNull($storage->findTokenById($token->id)?->revokedAt);
+    }
+
+    /**
+     * Malformed and unknown ids never throw.
+     */
+    public function testMalformedAndUnknownIdsAreHandled(): void
+    {
+        $storage = $this->createStorage();
+
+        foreach (['not-a-uuid', Uuid::v4()] as $id) {
+            $this->assertNull($storage->findClientById($id));
+            $this->assertNull($storage->findTokenById($id));
+            $this->assertFalse($storage->consumeCode($id, $this->at(1), Uuid::v4()));
+            $this->assertFalse($storage->markTokenUsed($id, $this->at(1)));
+            $this->assertSame(0, $storage->revokeTokenFamily($id, $this->at(1)));
+            $this->assertSame(0, $storage->revokeTokensByClient($id, $this->at(1)));
+            $this->assertSame([], $storage->findTokensByFamily($id));
+            $this->assertNull($storage->findConsent('42', $id, 'https://example.com/mcp'));
+            $storage->revokeToken($id, $this->at(1));
+            $storage->touchToken($id, $this->at(1));
+            $storage->touchClient($id, $this->at(1));
+            $storage->deleteConsent('42', $id, 'https://example.com/mcp');
+        }
+    }
 }

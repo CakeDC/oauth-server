@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS oauth_clients (
     modified DATETIME NOT NULL,
     PRIMARY KEY (id),
     UNIQUE KEY oauth_clients_client_id_hash (client_id_hash)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 CREATE TABLE IF NOT EXISTS oauth_authorization_codes (
     id CHAR(36) NOT NULL,
@@ -39,9 +39,11 @@ CREATE TABLE IF NOT EXISTS oauth_authorization_codes (
     created DATETIME NOT NULL,
     PRIMARY KEY (id),
     UNIQUE KEY oauth_authorization_codes_code_hash (code_hash),
+    KEY oauth_authorization_codes_oauth_client_id (oauth_client_id),
+    KEY oauth_authorization_codes_expires_at (expires_at),
     CONSTRAINT oauth_authorization_codes_client FOREIGN KEY (oauth_client_id)
         REFERENCES oauth_clients (id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 CREATE TABLE IF NOT EXISTS oauth_tokens (
     id CHAR(36) NOT NULL,
@@ -66,9 +68,10 @@ CREATE TABLE IF NOT EXISTS oauth_tokens (
     KEY oauth_tokens_family_id (family_id),
     KEY oauth_tokens_subject (subject, type),
     KEY oauth_tokens_oauth_client_id (oauth_client_id),
+    KEY oauth_tokens_expires_at (expires_at),
     CONSTRAINT oauth_tokens_client FOREIGN KEY (oauth_client_id)
         REFERENCES oauth_clients (id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 CREATE TABLE IF NOT EXISTS oauth_consents (
     id CHAR(36) NOT NULL,
@@ -81,6 +84,7 @@ CREATE TABLE IF NOT EXISTS oauth_consents (
     modified DATETIME NOT NULL,
     PRIMARY KEY (id),
     UNIQUE KEY oauth_consents_unique (subject, oauth_client_id, resource_hash),
+    KEY oauth_consents_oauth_client_id (oauth_client_id),
     CONSTRAINT oauth_consents_client FOREIGN KEY (oauth_client_id)
         REFERENCES oauth_clients (id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;

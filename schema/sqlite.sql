@@ -37,6 +37,10 @@ CREATE TABLE IF NOT EXISTS oauth_authorization_codes (
     created DATETIME NOT NULL
 );
 
+CREATE INDEX IF NOT EXISTS oauth_authorization_codes_oauth_client_id ON oauth_authorization_codes (oauth_client_id);
+
+CREATE INDEX IF NOT EXISTS oauth_authorization_codes_expires_at ON oauth_authorization_codes (expires_at);
+
 CREATE TABLE IF NOT EXISTS oauth_tokens (
     id CHAR(36) NOT NULL PRIMARY KEY,
     token_hash CHAR(64) NOT NULL UNIQUE,
@@ -63,6 +67,8 @@ CREATE INDEX IF NOT EXISTS oauth_tokens_subject ON oauth_tokens (subject, type);
 
 CREATE INDEX IF NOT EXISTS oauth_tokens_oauth_client_id ON oauth_tokens (oauth_client_id);
 
+CREATE INDEX IF NOT EXISTS oauth_tokens_expires_at ON oauth_tokens (expires_at);
+
 CREATE TABLE IF NOT EXISTS oauth_consents (
     id CHAR(36) NOT NULL PRIMARY KEY,
     subject VARCHAR(255) NOT NULL,
@@ -74,3 +80,5 @@ CREATE TABLE IF NOT EXISTS oauth_consents (
     modified DATETIME NOT NULL,
     UNIQUE (subject, oauth_client_id, resource_hash)
 );
+
+CREATE INDEX IF NOT EXISTS oauth_consents_oauth_client_id ON oauth_consents (oauth_client_id);
