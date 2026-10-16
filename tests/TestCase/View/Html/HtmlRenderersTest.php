@@ -51,7 +51,8 @@ class HtmlRenderersTest extends TestCase
         $html = (new HtmlConsentRenderer())->render($this->view(ClientType::Registered, ['http://127.0.0.1/cb']));
 
         $this->assertStringNotContainsString('not verified', $html);
-        $this->assertStringContainsString('your own computer', $html);
+        $this->assertStringContainsString('Only continue if you just started this', $html);
+        $this->assertStringNotContainsString('runs on your own computer', $html);
     }
 
     public function testMessagesCanBeOverridden(): void

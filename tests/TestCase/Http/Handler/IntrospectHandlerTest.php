@@ -74,6 +74,19 @@ class IntrospectHandlerTest extends TestCase
         $this->assertSame('invalid_request', $this->harness->json($this->introspect(''))['error']);
     }
 
+    public function testARepeatedTokenParameterIsRefused(): void
+    {
+        $response = $this->harness->server->introspectHandler()->handle($this->harness->request(
+            'POST',
+            'https://example.com/oauth/introspect',
+            ['Content-Type' => 'application/x-www-form-urlencoded', 'Authorization' => 'Basic ' . base64_encode('resource-server:rs-secret')],
+            'token=a&token=b',
+        ));
+
+        $this->assertSame(400, $response->getStatusCode());
+        $this->assertSame('invalid_request', $this->harness->json($response)['error']);
+    }
+
     public function testCanBeDisabled(): void
     {
         $harness = new ServerHarness(['introspection' => false]);

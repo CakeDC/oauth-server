@@ -27,9 +27,12 @@ Shown at `/oauth/authorize` when the person has not yet accepted what the client
   document, otherwise the host of its first redirect URI), so the person can spot a client
   pretending to be something else.
 - An **unverified** notice for dynamically registered clients: they chose their own name.
-- A **loopback** notice when every redirect URI points to the person's own computer.
+- A **loopback** warning when every redirect URI points to the person's own computer. It does not reassure:
+  any program on that computer can listen on the address, so the text asks the person to continue only
+  when they just started the flow from an application there.
 - Who is signed in, the list of permissions (the scope descriptions from your configuration), and
-  "Stay connected until you revoke it." when a refresh token will be issued.
+  "Stay connected until you revoke it." only when a refresh token will really be issued (the
+  `refreshTokens` mode allows it and the client may use the `refresh_token` grant).
 - Two buttons: Allow and Deny.
 
 Logos are not shown. A logo is a tracking and spoofing risk and the pages do not need one.
@@ -197,7 +200,7 @@ Every key, with its default text:
 | `consent.heading` | {client} wants to access {resource} | `{client}`, `{resource}` |
 | `consent.from` | The request comes from {host}. Your answer is sent to {redirect}. | `{host}`, `{redirect}` |
 | `consent.unverified` | This application registered itself; its name is not verified. |  |
-| `consent.loopback` | This application runs on your own computer. |  |
+| `consent.loopback` | Only continue if you just started this from an application on this computer: any program on this computer can use this address. |  |
 | `consent.user` | Signed in as {user}. | `{user}` |
 | `consent.scopes` | It will be able to: |  |
 | `consent.offline` | Stay connected until you revoke it. |  |

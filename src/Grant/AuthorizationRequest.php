@@ -53,14 +53,15 @@ final class AuthorizationRequest
      */
     public function fingerprint(): string
     {
-        return hash('sha256', json_encode([
-            $this->client->clientId,
-            $this->redirectUri,
-            $this->state,
-            $this->resource->identifier,
-            $this->scopes,
-            $this->offlineAccess,
-            $this->codeChallenge,
-        ], JSON_THROW_ON_ERROR));
+        // Length-prefixed raw values: no encoding step that could fail on invalid UTF-8 (a `state` is arbitrary
+        // bytes), and no two different requests can produce the same input.
+        $frame = static fn(?string $value): string => $value === null ? '-;' : strlen($value) . ':' . $value . ';';
+        $data = $frame($this->client->clientId) . $frame($this->redirectUri) . $frame($this->state)
+            . $frame($this->resource->identifier) . count($this->scopes) . '#';
+        foreach ($this->scopes as $scope) {
+            $data .= $frame($scope);
+        }
+
+        return hash('sha256', $data . ($this->offlineAccess ? '1' : '0') . $frame($this->codeChallenge));
     }
 }

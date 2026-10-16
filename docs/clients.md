@@ -16,8 +16,8 @@ browser apps. They rely on PKCE. Confidential clients have a secret and are for 
 
 The consent page names a metadata document client by the host of its `client_id` URL, which the client
 cannot fake. A dynamically registered client picks its own name, so the page adds an "unverified"
-notice. A client that only redirects to the person's own computer gets a "runs on your own computer"
-notice.
+notice. A client that only redirects to the person's own computer gets a warning that any program on the computer can use that
+address.
 
 ## Redirect URI rules
 

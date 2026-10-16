@@ -7,6 +7,8 @@ use CakeDC\OAuth\Server\Client\Client;
 use CakeDC\OAuth\Server\Event\AuthorizationDenied;
 use CakeDC\OAuth\Server\Event\ConsentGranted;
 use CakeDC\OAuth\Server\Grant\Pkce;
+use CakeDC\OAuth\Server\Owner\ResourceOwner;
+use CakeDC\OAuth\Server\Owner\SubjectType;
 use CakeDC\OAuth\Server\Test\Support\Fixtures;
 use CakeDC\OAuth\Server\Test\Support\ServerHarness;
 use CakeDC\OAuth\Server\Token\TokenGenerator;
@@ -463,6 +465,53 @@ class AuthorizeHandlerTest extends TestCase
             $onDemand->request('GET', $onDemand->authorizeUrl($client, ['scope' => 'content:read offline_access'])),
         )->getBody();
         $this->assertStringContainsString('Stay connected', $with);
+    }
+
+    public function testTheOfflineLineIsHiddenWhenTheClientCannotRefresh(): void
+    {
+        $client = $this->harness->publicClient(['grantTypes' => ['authorization_code']]);
+        $this->harness->signIn();
+
+        $html = (string)$this->harness->server->authorizeHandler()->handle(
+            $this->harness->request('GET', $this->harness->authorizeUrl($client)),
+        )->getBody();
+
+        $this->assertStringContainsString('wants to access', $html);
+        $this->assertStringNotContainsString('Stay connected', $html);
+    }
+
+    public function testInvalidUtf8StateNeverCausesAServerError(): void
+    {
+        $client = $this->harness->publicClient();
+        $this->harness->signIn();
+
+        $page = $this->harness->server->authorizeHandler()->handle(
+            $this->harness->request('GET', $this->harness->authorizeUrl($client, ['state' => "ab\xFFcd"])),
+        );
+
+        $this->assertSame(200, $page->getStatusCode());
+        $fields = ServerHarness::formFields((string)$page->getBody());
+        $this->assertArrayHasKey('consent_token', $fields);
+        $response = $this->harness->server->authorizeHandler()->handle(
+            $this->harness->form('https://example.com/oauth/authorize', $fields + ['decision' => 'approve']),
+        );
+        // The raw bytes cannot survive an HTML form, so approving is refused cleanly (never a 500).
+        $this->assertLessThan(500, $response->getStatusCode());
+    }
+
+    public function testAClientIdentityIsNotAPersonWhoCanConsent(): void
+    {
+        $client = $this->harness->publicClient();
+        $this->harness->userContext->owner = new ResourceOwner('robot', 'Robot', null, SubjectType::Client);
+
+        $response = $this->harness->server->authorizeHandler()->handle(
+            $this->harness->request('GET', $this->harness->authorizeUrl($client)),
+        );
+
+        $this->assertSame(400, $response->getStatusCode());
+        $this->assertSame('', $response->getHeaderLine('Location'));
+        $this->assertStringContainsString('Only people can authorize applications.', (string)$response->getBody());
+        $this->assertSame([], $this->harness->events->ofType(ConsentGranted::class));
     }
 
     public function testForgedPostsHaveNoSideEffects(): void

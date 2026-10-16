@@ -11,6 +11,7 @@ use CakeDC\OAuth\Server\Storage\ClientRepositoryInterface;
 use CakeDC\OAuth\Server\Storage\TokenRepositoryInterface;
 use InvalidArgumentException;
 use Psr\Clock\ClockInterface;
+use Throwable;
 
 /**
  * Validates access and personal tokens presented to a protected resource.
@@ -99,9 +100,14 @@ final class TokenValidator
         }
         $idle = $stored->lastUsedAt === null ? null : $now->getTimestamp() - $stored->lastUsedAt->getTimestamp();
         if ($touch && ($idle === null || $idle >= $this->touchInterval)) {
-            $this->tokens->touchToken($stored->id, $now);
-            if ($client !== null) {
-                $this->clients->touchClient($client->id, $now);
+            // Best effort: recording a use must never fail the request being authorized.
+            try {
+                $this->tokens->touchToken($stored->id, $now);
+                if ($client !== null) {
+                    $this->clients->touchClient($client->id, $now);
+                }
+            } catch (Throwable) {
+                // Ignored on purpose; the next request tries again.
             }
         }
 

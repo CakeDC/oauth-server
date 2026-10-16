@@ -9,6 +9,8 @@ use CakeDC\OAuth\Server\Test\Support\GuardedHost;
 use CakeDC\OAuth\Server\Test\Support\RecordingLogger;
 use Nyholm\Psr7\Factory\Psr17Factory;
 use PHPUnit\Framework\TestCase;
+use Psr\Http\Message\ResponseFactoryInterface;
+use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\StreamFactoryInterface;
 use Psr\Http\Message\StreamInterface;
 use RuntimeException;
@@ -99,5 +101,48 @@ class GuardsErrorsTest extends TestCase
         $this->assertSame('*', $response->getHeaderLine('Access-Control-Allow-Origin'));
         $this->assertStringContainsString('server_error', (string)$response->getBody());
         $this->assertStringContainsString('render failed', $this->logger->text());
+    }
+
+    public function testAStreamFactoryThatAlwaysFailsStillGivesABare500(): void
+    {
+        $streams = new class implements StreamFactoryInterface {
+            public function createStream(string $content = ''): StreamInterface
+            {
+                throw new RuntimeException('no streams today');
+            }
+
+            public function createStreamFromFile(string $filename, string $mode = 'r'): StreamInterface
+            {
+                throw new RuntimeException('no streams today');
+            }
+
+            public function createStreamFromResource($resource): StreamInterface
+            {
+                throw new RuntimeException('no streams today');
+            }
+        };
+
+        $response = $this->host($streams)->run(fn() => throw new RuntimeException('boom'));
+
+        $this->assertSame(500, $response->getStatusCode());
+        $this->assertSame('', (string)$response->getBody());
+        $this->assertSame('no-store', $response->getHeaderLine('Cache-Control'));
+        $this->assertSame('*', $response->getHeaderLine('Access-Control-Allow-Origin'));
+        $this->assertStringContainsString('boom', $this->logger->text());
+        $this->assertStringContainsString('no streams today', $this->logger->text());
+    }
+
+    public function testWhenEvenTheResponseFactoryFailsTheExceptionEscapes(): void
+    {
+        $responses = new class implements ResponseFactoryInterface {
+            public function createResponse(int $code = 200, string $reasonPhrase = ''): ResponseInterface
+            {
+                throw new RuntimeException('no responses');
+            }
+        };
+        $host = new GuardedHost(new HttpResponder($responses, $this->factory), $this->logger);
+
+        $this->expectException(RuntimeException::class);
+        $host->run(fn() => throw new RuntimeException('boom'));
     }
 }

@@ -72,7 +72,7 @@ class OtherClientFlowsTest extends TestCase
         ], '', '&', PHP_QUERY_RFC3986);
 
         $page = (string)$harness->server->authorizeHandler()->handle($harness->request('GET', $url))->getBody();
-        $this->assertStringContainsString('your own computer', $page);
+        $this->assertStringContainsString('Only continue if you just started this', $page);
         $decision = $harness->server->authorizeHandler()->handle($harness->form(
             'https://example.com/oauth/authorize',
             ServerHarness::formFields($page) + ['decision' => 'approve'],

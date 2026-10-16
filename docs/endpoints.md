@@ -285,7 +285,8 @@ Disabled with `'introspection' => false` (answers `access_denied`).
 The caller must be a confidential client created with `allowIntrospection: true`. A public client, or
 one without the permission, gets `invalid_client`. That permission is a high privilege: such a client
 can introspect any token, including the refresh tokens of other clients, and learns the person's
-subject, username and scopes. Give it only to your own trusted resource servers.
+subject, username and scopes. Give it only to your own trusted resource servers. A repeated `token`
+parameter is refused with `invalid_request`, as at `/revoke`.
 
 ```bash
 curl -s https://auth.example.com/oauth/introspect -u RS_ID:RS_SECRET -d token=oauth_at_...

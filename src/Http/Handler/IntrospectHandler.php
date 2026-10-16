@@ -85,7 +85,10 @@ final class IntrospectHandler implements RequestHandlerInterface
                     'Send the parameters form-encoded (application/x-www-form-urlencoded).',
                 );
             }
-            [$body] = FormBody::read($request);
+            [$body, $repeated] = FormBody::read($request);
+            if (in_array('token', $repeated, true)) {
+                throw OAuthException::invalidRequest('"token" was sent more than once.');
+            }
             $client = $this->clientAuthenticator->authenticate($request, $body, ($this->clientIp)($request));
             if ($client->isPublic() || !$client->allowIntrospection) {
                 throw OAuthException::invalidClient('This client may not introspect tokens.');

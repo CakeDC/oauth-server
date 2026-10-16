@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace CakeDC\OAuth\Server\Http\Handler;
 
+use CakeDC\OAuth\Server\Client\GrantType;
 use CakeDC\OAuth\Server\Config\ServerConfig;
 use CakeDC\OAuth\Server\Event\AuthorizationDenied;
 use CakeDC\OAuth\Server\Exception\OAuthException;
@@ -17,6 +18,7 @@ use CakeDC\OAuth\Server\Http\HttpResponder;
 use CakeDC\OAuth\Server\Http\Params;
 use CakeDC\OAuth\Server\Http\RequestPath;
 use CakeDC\OAuth\Server\Owner\ResourceOwner;
+use CakeDC\OAuth\Server\Owner\SubjectType;
 use CakeDC\OAuth\Server\Owner\UserContextInterface;
 use CakeDC\OAuth\Server\Owner\UserProviderInterface;
 use CakeDC\OAuth\Server\RateLimit\RateLimiter;
@@ -134,6 +136,10 @@ final class AuthorizeHandler implements RequestHandlerInterface
 
             return $this->userContext->loginResponse($request, $this->returnTo($request, $path));
         }
+        if ($owner->type !== SubjectType::User) {
+            // A client identity is not a person: nobody is there to consent.
+            throw OAuthException::invalidRequest('Only people can authorize applications.');
+        }
         $client = $authorization->client;
         $resource = $authorization->resource;
         $fail = fn(OAuthException $error): AuthorizationError => new AuthorizationError(
@@ -190,7 +196,8 @@ final class AuthorizeHandler implements RequestHandlerInterface
                 $owner,
                 $resource,
                 $descriptions,
-                $this->config->issuesRefreshTokens($authorization->offlineAccess),
+                $this->config->issuesRefreshTokens($authorization->offlineAccess)
+                    && $client->allowsGrant(GrantType::REFRESH_TOKEN),
                 $authorization->redirectUri,
                 $path,
                 $authorization->formFields() + ['consent_token' => $this->formTokens->issue($context, $owner->subject)],

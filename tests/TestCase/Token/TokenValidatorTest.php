@@ -13,6 +13,8 @@ use CakeDC\OAuth\Server\Storage\InMemory\InMemoryStorage;
 use CakeDC\OAuth\Server\Support\Time;
 use CakeDC\OAuth\Server\Test\Support\FakeUsers;
 use CakeDC\OAuth\Server\Test\Support\Fixtures;
+use CakeDC\OAuth\Server\Test\Support\FlakyClientRepository;
+use CakeDC\OAuth\Server\Test\Support\ThrowingTouchTokens;
 use CakeDC\OAuth\Server\Testing\FrozenClock;
 use CakeDC\OAuth\Server\Token\TokenGenerator;
 use CakeDC\OAuth\Server\Token\TokenIssuer;
@@ -201,6 +203,38 @@ class TokenValidatorTest extends TestCase
         $this->clock->advance(30);
         $this->validator->validate($token, Fixtures::MCP);
         $this->assertEquals($this->clock->now(), $this->storage->findTokenByHash($hash)?->lastUsedAt);
+    }
+
+    public function testAFailingTokenUseRecordNeverFailsTheRequest(): void
+    {
+        $token = $this->token();
+        $validator = new TokenValidator(
+            new ThrowingTouchTokens($this->storage),
+            $this->storage,
+            $this->users,
+            Fixtures::resources(),
+            new ScopeResolver(),
+            $this->clock,
+        );
+
+        $this->assertInstanceOf(ValidatedToken::class, $validator->validate($token, Fixtures::MCP));
+    }
+
+    public function testAFailingClientUseRecordNeverFailsTheRequest(): void
+    {
+        $token = $this->token();
+        $clients = new FlakyClientRepository($this->storage);
+        $clients->failTouch = true;
+        $validator = new TokenValidator(
+            $this->storage,
+            $clients,
+            $this->users,
+            Fixtures::resources(),
+            new ScopeResolver(),
+            $this->clock,
+        );
+
+        $this->assertInstanceOf(ValidatedToken::class, $validator->validate($token, Fixtures::MCP));
     }
 
     public function testAnUndeclaredResourceIsAConfigurationError(): void

@@ -62,6 +62,15 @@ final class HttpResponder
     }
 
     /**
+     * A 500 built with the response factory only: no body, so no stream factory is needed. For when even
+     * the JSON error cannot be rendered.
+     */
+    public function bareServerError(): ResponseInterface
+    {
+        return $this->responses->createResponse(500)->withHeader('Cache-Control', 'no-store');
+    }
+
+    /**
      * A redirect.
      */
     public function redirect(string $url, int $status = 302): ResponseInterface

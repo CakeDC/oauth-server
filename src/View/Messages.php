@@ -13,7 +13,7 @@ final class Messages
         'consent.heading' => '{client} wants to access {resource}',
         'consent.from' => 'The request comes from {host}. Your answer is sent to {redirect}.',
         'consent.unverified' => 'This application registered itself; its name is not verified.',
-        'consent.loopback' => 'This application runs on your own computer.',
+        'consent.loopback' => 'Only continue if you just started this from an application on this computer: any program on this computer can use this address.',
         'consent.user' => 'Signed in as {user}.',
         'consent.scopes' => 'It will be able to:',
         'consent.offline' => 'Stay connected until you revoke it.',
