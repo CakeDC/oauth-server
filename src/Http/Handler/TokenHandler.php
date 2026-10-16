@@ -130,6 +130,15 @@ final class TokenHandler implements RequestHandlerInterface
         if ($code === null || $code->clientInternalId !== $client->id) {
             throw OAuthException::invalidGrant('The authorization code is invalid.');
         }
+        // The verifier is checked before reacting to a used code, so that only the holder of the
+        // code and its verifier can make a replay revoke anything.
+        $verifier = $body['code_verifier'] ?? '';
+        if ($verifier === '') {
+            throw OAuthException::invalidRequest('"code_verifier" is missing.');
+        }
+        if (!Pkce::verify($verifier, $code->codeChallenge)) {
+            throw OAuthException::invalidGrant('The code_verifier does not match.');
+        }
         if ($code->usedAt !== null) {
             if ($code->familyId !== null) {
                 $this->revoker->revokeFamily($code->familyId, 'code_reuse');
@@ -139,15 +148,12 @@ final class TokenHandler implements RequestHandlerInterface
         if ($code->isExpired($now)) {
             throw OAuthException::invalidGrant('The authorization code expired.');
         }
-        if (isset($body['redirect_uri']) && $body['redirect_uri'] !== $code->redirectUri) {
+        $redirectUri = $body['redirect_uri'] ?? '';
+        if ($redirectUri === '' && count($client->redirectUris) > 1) {
+            throw OAuthException::invalidRequest('"redirect_uri" is missing.');
+        }
+        if ($redirectUri !== '' && $redirectUri !== $code->redirectUri) {
             throw OAuthException::invalidGrant('redirect_uri does not match the authorization request.');
-        }
-        $verifier = $body['code_verifier'] ?? '';
-        if ($verifier === '') {
-            throw OAuthException::invalidRequest('"code_verifier" is missing.');
-        }
-        if (!Pkce::verify($verifier, $code->codeChallenge)) {
-            throw OAuthException::invalidGrant('The code_verifier does not match.');
         }
         $resource = $this->config->resources->get($code->resource);
         if ($resource === null) {
@@ -160,17 +166,12 @@ final class TokenHandler implements RequestHandlerInterface
         ) {
             throw OAuthException::invalidTarget('The code was issued for another resource.');
         }
-        $familyId = Uuid::v4();
-        if (!$this->codes->consumeCode($code->id, $now, $familyId)) {
-            $winner = $this->codes->findCodeByHash($code->codeHash);
-            if ($winner?->familyId !== null) {
-                $this->revoker->revokeFamily($winner->familyId, 'code_reuse');
-            }
-            throw OAuthException::invalidGrant('The authorization code was already used.');
-        }
         if ($this->users->findBySubject($code->subject) === null) {
             throw OAuthException::invalidGrant('The person who approved this code no longer has access.');
         }
+        // Issue first, consume second: any family recorded on a used code already has its tokens,
+        // so a concurrent replay can always revoke them.
+        $familyId = Uuid::v4();
         $offlineAccess = in_array(Scopes::OFFLINE_ACCESS, $code->scopes, true);
         $issued = $this->issuer->issue(
             $client,
@@ -181,6 +182,14 @@ final class TokenHandler implements RequestHandlerInterface
             $familyId,
             $this->config->issuesRefreshTokens($offlineAccess) && $client->allowsGrant(GrantType::REFRESH_TOKEN),
         );
+        if (!$this->codes->consumeCode($code->id, $now, $familyId)) {
+            $this->revoker->revokeFamily($familyId, 'code_reuse');
+            $winner = $this->codes->findCodeByHash($code->codeHash);
+            if ($winner?->familyId !== null && $winner->familyId !== $familyId) {
+                $this->revoker->revokeFamily($winner->familyId, 'code_reuse');
+            }
+            throw OAuthException::invalidGrant('The authorization code was already used.');
+        }
         $this->clients->touchClient($client->id, $now);
 
         return $issued;

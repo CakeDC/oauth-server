@@ -4,15 +4,20 @@ declare(strict_types=1);
 namespace CakeDC\OAuth\Server\Test\TestCase\Http\Handler;
 
 use CakeDC\OAuth\Server\AuthorizationServer;
+use CakeDC\OAuth\Server\Client\Client;
+use CakeDC\OAuth\Server\Http\Handler\TokenHandler;
 use CakeDC\OAuth\Server\Owner\ResourceOwner;
 use CakeDC\OAuth\Server\Owner\SubjectType;
 use CakeDC\OAuth\Server\Test\Support\FakeUsers;
 use CakeDC\OAuth\Server\Test\Support\Fixtures;
+use CakeDC\OAuth\Server\Test\Support\RacingCodes;
 use CakeDC\OAuth\Server\Test\Support\ServerHarness;
 use CakeDC\OAuth\Server\Token\TokenGenerator;
 use CakeDC\OAuth\Server\Token\TokenType;
 use PHPUnit\Framework\TestCase;
 use Psr\Http\Message\ResponseInterface;
+use ReflectionClass;
+use ReflectionProperty;
 use RuntimeException;
 
 class TokenHandlerTest extends TestCase
@@ -213,5 +218,272 @@ class TokenHandlerTest extends TestCase
         $this->assertError($response, 'server_error', 500);
         $this->assertStringNotContainsString('hunter2', (string)$response->getBody());
         $this->assertStringContainsString('hunter2', $this->harness->logger->text());
+    }
+
+    /**
+     * @param array<string, string|null> $overrides Null removes a field.
+     * @return array<string, string>
+     */
+    private function codeFields(Client $client, string $code, array $overrides = []): array
+    {
+        return array_filter($overrides + [
+            'grant_type' => 'authorization_code',
+            'code' => $code,
+            'redirect_uri' => $client->redirectUris[0],
+            'code_verifier' => ServerHarness::VERIFIER,
+            'client_id' => $client->clientId,
+        ], fn(?string $value): bool => $value !== null);
+    }
+
+    /**
+     * A token handler whose code repository is wrapped in a RacingCodes.
+     *
+     * @return array{0: \CakeDC\OAuth\Server\Http\Handler\TokenHandler, 1: \CakeDC\OAuth\Server\Test\Support\RacingCodes}
+     */
+    private function racingHandler(): array
+    {
+        $real = $this->harness->server->tokenHandler();
+        $racing = new RacingCodes($this->harness->storage);
+        $args = [];
+        foreach ((new ReflectionClass(TokenHandler::class))->getConstructor()?->getParameters() ?? [] as $parameter) {
+            $args[$parameter->getName()] = (new ReflectionProperty($real, $parameter->getName()))->getValue($real);
+        }
+        $args['codes'] = $racing;
+
+        return [new TokenHandler(...$args), $racing];
+    }
+
+    /**
+     * @param \CakeDC\OAuth\Server\Test\Support\RacingCodes $racing The wrapper that saw the families.
+     */
+    private function assertEveryFamilyRevoked(RacingCodes $racing, string $code): void
+    {
+        $families = $racing->families;
+        $stored = $this->harness->storage->findCodeByHash(TokenGenerator::hash($code));
+        if ($stored?->familyId !== null) {
+            $families[] = $stored->familyId;
+        }
+        $this->assertNotEmpty($families);
+        foreach (array_unique($families) as $family) {
+            $tokens = $this->harness->storage->findTokensByFamily($family);
+            $this->assertNotEmpty($tokens);
+            foreach ($tokens as $token) {
+                $this->assertNotNull($token->revokedAt, 'A token of a raced code stayed live.');
+            }
+        }
+    }
+
+    public function testRaceWhereTheOtherRequestSeesAUsedCode(): void
+    {
+        $client = $this->harness->publicClient();
+        $code = $this->harness->authorizationCode($client);
+        [$handler, $racing] = $this->racingHandler();
+        $request = fn() => $handler->handle($this->harness->form(
+            'https://example.com/oauth/token',
+            $this->codeFields($client, $code),
+        ));
+        $loser = null;
+        $racing->afterConsume = function () use (&$loser, $request): void {
+            $loser = $request();
+        };
+
+        $request();
+
+        $this->assertNotNull($loser);
+        $this->assertError($loser, 'invalid_grant');
+        $this->assertEveryFamilyRevoked($racing, $code);
+    }
+
+    public function testRaceWhereTheOtherRequestConsumesFirst(): void
+    {
+        $client = $this->harness->publicClient();
+        $code = $this->harness->authorizationCode($client);
+        [$handler, $racing] = $this->racingHandler();
+        $request = fn() => $handler->handle($this->harness->form(
+            'https://example.com/oauth/token',
+            $this->codeFields($client, $code),
+        ));
+        $inner = null;
+        $racing->beforeConsume = function () use (&$inner, $request): void {
+            $inner = $request();
+        };
+
+        $outer = $request();
+
+        $this->assertSame(200, $inner?->getStatusCode());
+        $this->assertError($outer, 'invalid_grant');
+        $this->assertCount(2, $racing->families);
+        $this->assertEveryFamilyRevoked($racing, $code);
+    }
+
+    public function testRedirectUriIsRequiredWithSeveralRegisteredUris(): void
+    {
+        $multi = $this->harness->publicClient(['redirectUris' => ['https://app.example.com/cb', 'https://app.example.com/cb2']]);
+        $code = $this->harness->authorizationCode($multi);
+        $this->assertError(
+            $this->post($this->codeFields($multi, $code, ['redirect_uri' => null])),
+            'invalid_request',
+        );
+        $this->assertSame(200, $this->post($this->codeFields($multi, $code))->getStatusCode());
+
+        $single = $this->harness->publicClient();
+        $code = $this->harness->authorizationCode($single);
+        $this->assertSame(
+            200,
+            $this->post($this->codeFields($single, $code, ['redirect_uri' => null]))->getStatusCode(),
+        );
+    }
+
+    public function testAUsedCodeNeedsTheRightVerifierToRevokeAnything(): void
+    {
+        $client = $this->harness->publicClient();
+        $code = $this->harness->authorizationCode($client);
+        $pair = $this->harness->json($this->harness->exchange($client, $code));
+        $access = TokenGenerator::hash($pair['access_token']);
+
+        $this->assertError(
+            $this->harness->exchange($client, $code, ['code_verifier' => str_repeat('x', 43)]),
+            'invalid_grant',
+        );
+        $this->assertNull($this->harness->storage->findTokenByHash($access)?->revokedAt);
+
+        $this->assertError($this->harness->exchange($client, $code), 'invalid_grant');
+        $this->assertNotNull($this->harness->storage->findTokenByHash($access)?->revokedAt);
+    }
+
+    public function testAnotherClientCannotBurnAVictimsCode(): void
+    {
+        $victim = $this->harness->publicClient();
+        $attacker = $this->harness->publicClient();
+        $code = $this->harness->authorizationCode($victim);
+
+        $this->assertError($this->harness->exchange($attacker, $code), 'invalid_grant');
+        $this->assertSame(200, $this->harness->exchange($victim, $code)->getStatusCode());
+    }
+
+    public function testAnotherClientReplayingAUsedCodeLeavesTheFamilyAlive(): void
+    {
+        $victim = $this->harness->publicClient();
+        $attacker = $this->harness->publicClient();
+        $code = $this->harness->authorizationCode($victim);
+        $pair = $this->harness->json($this->harness->exchange($victim, $code));
+
+        $this->assertError($this->harness->exchange($attacker, $code), 'invalid_grant');
+        $stored = $this->harness->storage->findTokenByHash(TokenGenerator::hash($pair['access_token']));
+        $this->assertNull($stored?->revokedAt);
+    }
+
+    public function testAWrongVerifierLeavesTheCodeUsable(): void
+    {
+        $client = $this->harness->publicClient();
+        $code = $this->harness->authorizationCode($client);
+
+        $this->assertError(
+            $this->harness->exchange($client, $code, ['code_verifier' => str_repeat('x', 43)]),
+            'invalid_grant',
+        );
+        $this->assertSame(200, $this->harness->exchange($client, $code)->getStatusCode());
+    }
+
+    public function testACodeWhoseResourceWasRemovedIsRejected(): void
+    {
+        $client = $this->harness->publicClient();
+        $code = $this->harness->authorizationCode($client);
+        $settings = Fixtures::resourceSettings();
+        unset($settings[Fixtures::MCP]);
+        $server = new AuthorizationServer(
+            Fixtures::config(['resources' => $settings]),
+            $this->harness->storage,
+            $this->harness->users,
+            $this->harness->userContext,
+            $this->harness->factory,
+            $this->harness->factory,
+            clock: $this->harness->clock,
+            logger: $this->harness->logger,
+        );
+
+        $response = $server->tokenHandler()->handle(
+            $this->harness->form('https://example.com/oauth/token', $this->codeFields($client, $code)),
+        );
+
+        $this->assertError($response, 'invalid_grant');
+    }
+
+    public function testClientsWithoutTheGrantAreUnauthorized(): void
+    {
+        $noCode = $this->harness->publicClient(['grantTypes' => ['refresh_token']]);
+        $this->assertError($this->harness->exchange($noCode, 'whatever'), 'unauthorized_client');
+
+        $noRefresh = $this->harness->publicClient(['grantTypes' => ['authorization_code']]);
+        $this->assertError($this->post([
+            'grant_type' => 'refresh_token',
+            'refresh_token' => 'x',
+            'client_id' => $noRefresh->clientId,
+        ]), 'unauthorized_client');
+
+        $this->harness->confidentialClient('s3cret', ['clientId' => 'plain', 'grantTypes' => ['authorization_code']]);
+        $basic = ['Authorization' => 'Basic ' . base64_encode('plain:s3cret')];
+        $this->assertError($this->post(['grant_type' => 'client_credentials'], $basic), 'unauthorized_client');
+    }
+
+    public function testRefreshAndClientCredentialsTouchTheClient(): void
+    {
+        $client = $this->harness->publicClient();
+        $pair = $this->harness->json($this->harness->exchange($client, $this->harness->authorizationCode($client)));
+        $this->harness->clock->advance(10);
+        $this->post([
+            'grant_type' => 'refresh_token',
+            'refresh_token' => $pair['refresh_token'],
+            'client_id' => $client->clientId,
+        ]);
+        $this->assertEquals(
+            $this->harness->clock->now(),
+            $this->harness->storage->findClientById($client->id)?->lastUsedAt,
+        );
+
+        $confidential = $this->harness->confidentialClient('s3cret', ['clientId' => 'reports', 'scopes' => ['api']]);
+        $this->harness->users->clientIdentity = new ResourceOwner('reports', 'Job', null, SubjectType::Client);
+        $this->harness->clock->advance(10);
+        $response = $this->post(
+            ['grant_type' => 'client_credentials', 'resource' => Fixtures::API],
+            ['Authorization' => 'Basic ' . base64_encode('reports:s3cret')],
+        );
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertEquals(
+            $this->harness->clock->now(),
+            $this->harness->storage->findClientById($confidential->id)?->lastUsedAt,
+        );
+    }
+
+    public function testErrorsCarryNoStoreCorsAndChallenges(): void
+    {
+        $error = $this->post(['grant_type' => 'password']);
+        $this->assertSame('no-store', $error->getHeaderLine('Cache-Control'));
+        $this->assertSame('*', $error->getHeaderLine('Access-Control-Allow-Origin'));
+
+        $this->harness->confidentialClient('s3cret', ['clientId' => 'reports']);
+        $failed = $this->post(
+            ['grant_type' => 'authorization_code', 'code' => 'x'],
+            ['Authorization' => 'Basic ' . base64_encode('reports:wrong')],
+        );
+        $this->assertError($failed, 'invalid_client', 401);
+        $this->assertStringStartsWith('Basic', $failed->getHeaderLine('WWW-Authenticate'));
+    }
+
+    public function testRateLimitAndPreflightHeaders(): void
+    {
+        $harness = new ServerHarness(['rateLimit' => ['token' => [1, 60]]]);
+        $handler = $harness->server->tokenHandler();
+        $request = fn() => $handler->handle($harness->form('https://example.com/oauth/token', ['grant_type' => 'x']));
+        $this->assertSame(400, $request()->getStatusCode());
+        $limited = $request();
+        $this->assertSame(429, $limited->getStatusCode());
+        $this->assertNotSame('', $limited->getHeaderLine('Retry-After'));
+        $this->assertSame('*', $limited->getHeaderLine('Access-Control-Allow-Origin'));
+
+        $preflight = $this->harness->server->tokenHandler()
+            ->handle($this->harness->request('OPTIONS', 'https://example.com/oauth/token'));
+        $this->assertSame('*', $preflight->getHeaderLine('Access-Control-Allow-Origin'));
+        $this->assertStringContainsString('POST', $preflight->getHeaderLine('Access-Control-Allow-Methods'));
     }
 }
