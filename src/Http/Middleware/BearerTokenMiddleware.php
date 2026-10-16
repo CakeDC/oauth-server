@@ -16,6 +16,11 @@ use Psr\Http\Server\RequestHandlerInterface;
 /**
  * Protects any PSR-15 route with this server's tokens. The next handler finds the validated token
  * and its owner in the request attributes `ValidatedToken::class` and `ResourceOwner::class`.
+ *
+ * CORS preflights (OPTIONS with an `Access-Control-Request-Method` header) reach the handler unauthenticated and
+ * without those attributes, so the handler must answer them without side effects. Any other OPTIONS request is
+ * challenged like every other request. Hosts must put their CORS layer outside this middleware and expose the
+ * `WWW-Authenticate` header.
  */
 final class BearerTokenMiddleware implements MiddlewareInterface
 {
@@ -40,13 +45,13 @@ final class BearerTokenMiddleware implements MiddlewareInterface
      */
     public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
     {
-        if ($request->getMethod() === 'OPTIONS') {
+        if ($request->getMethod() === 'OPTIONS' && $request->getHeaderLine('Access-Control-Request-Method') !== '') {
             return $handler->handle($request);
         }
         $authorization = $request->getHeaderLine('Authorization');
         $isBearer = preg_match('/^Bearer(?: |\z)/i', $authorization) === 1;
         if (!$isBearer || preg_match('/^Bearer *\z/i', $authorization) === 1) {
-            return $this->challenge(401, null, 'A bearer token is required.');
+            return $this->challenge(401, null, 'A bearer token is required.', $this->requiredScopes);
         }
         if (preg_match('/^Bearer +([A-Za-z0-9\-._~+\/]+=*) *\z/i', $authorization, $matches) !== 1) {
             return $this->challenge(400, 'invalid_request', 'Malformed Authorization header.');
@@ -88,7 +93,7 @@ final class BearerTokenMiddleware implements MiddlewareInterface
         if ($scopes !== []) {
             $parts[] = 'scope="' . self::quote(implode(' ', $scopes)) . '"';
         }
-        $body = ['error_description' => $description];
+        $body = [];
         if ($error !== null) {
             $parts[] = 'error="' . self::quote($error) . '"';
             $parts[] = 'error_description="' . self::quote($description) . '"';

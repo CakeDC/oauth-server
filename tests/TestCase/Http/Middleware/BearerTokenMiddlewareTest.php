@@ -82,16 +82,24 @@ class BearerTokenMiddlewareTest extends TestCase
             $response->getHeaderLine('WWW-Authenticate'),
         );
         $this->assertNull($this->seen);
+        $this->assertSame('{}', (string)$response->getBody());
+    }
+
+    public function testChallengesWithoutATokenNameTheRequiredScopes(): void
+    {
+        $response = $this->call(null, ['content:read']);
+
+        $this->assertSame(401, $response->getStatusCode());
+        $this->assertStringContainsString('scope="content:read"', $response->getHeaderLine('WWW-Authenticate'));
+        $this->assertStringNotContainsString('error=', $response->getHeaderLine('WWW-Authenticate'));
     }
 
     public function testABareSchemeCountsAsNoToken(): void
     {
-        foreach (['Bearer', 'Bearer  '] as $header) {
-            $response = $this->call($header);
+        $response = $this->call('Bearer');
 
-            $this->assertSame(401, $response->getStatusCode());
-            $this->assertStringNotContainsString('error=', $response->getHeaderLine('WWW-Authenticate'));
-        }
+        $this->assertSame(401, $response->getStatusCode());
+        $this->assertStringNotContainsString('error=', $response->getHeaderLine('WWW-Authenticate'));
     }
 
     public function testRejectsInvalidTokens(): void
@@ -128,13 +136,75 @@ class BearerTokenMiddlewareTest extends TestCase
         $this->assertStringContainsString('error="insufficient_scope"', $header);
     }
 
-    public function testPreflightsPassThrough(): void
+    public function testPreflightsPassThroughWithoutAttributes(): void
+    {
+        $middleware = $this->harness->server->bearerMiddleware(Fixtures::MCP);
+        $request = $this->harness->request('OPTIONS', Fixtures::MCP, ['Access-Control-Request-Method' => 'POST']);
+
+        $response = $middleware->process($request, $this->next);
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertNotNull($this->seen);
+        $this->assertNull($this->seen->getAttribute(ValidatedToken::class));
+        $this->assertNull($this->seen->getAttribute(ResourceOwner::class));
+    }
+
+    public function testOtherOptionsRequestsAreChallenged(): void
     {
         $middleware = $this->harness->server->bearerMiddleware(Fixtures::MCP);
 
         $response = $middleware->process($this->harness->request('OPTIONS', Fixtures::MCP), $this->next);
 
-        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame(401, $response->getStatusCode());
+        $this->assertNull($this->seen);
+    }
+
+    public function testATokenForAnotherResourceIsInvalid(): void
+    {
+        $middleware = $this->harness->server->bearerMiddleware(Fixtures::API);
+        $headers = ['Authorization' => 'Bearer ' . $this->token()];
+
+        $response = $middleware->process($this->harness->request('POST', Fixtures::API, $headers), $this->next);
+
+        $this->assertSame(401, $response->getStatusCode());
+        $this->assertStringContainsString('error="invalid_token"', $response->getHeaderLine('WWW-Authenticate'));
+    }
+
+    public function testImpliedScopesSatisfyRequirements(): void
+    {
+        $client = $this->harness->publicClient();
+        $code = $this->harness->authorizationCode($client, ['scope' => 'content:publish']);
+        $token = $this->harness->json($this->harness->exchange($client, $code))['access_token'];
+
+        $this->assertSame(200, $this->call('Bearer ' . $token, ['content:read'])->getStatusCode());
+    }
+
+    public function testTwoAuthorizationHeadersAreMalformed(): void
+    {
+        $middleware = $this->harness->server->bearerMiddleware(Fixtures::MCP);
+        $request = $this->harness->request('POST', Fixtures::MCP)->withHeader('Authorization', ['Bearer a', 'Bearer b']);
+
+        $this->assertSame(400, $middleware->process($request, $this->next)->getStatusCode());
+        $this->assertNull($this->seen);
+    }
+
+    public function testChallengeValuesAreEscaped(): void
+    {
+        $middleware = $this->harness->server->bearerMiddleware(Fixtures::MCP, "https://e.com/a\"b\\c\r\nX: y");
+
+        $response = $middleware->process($this->harness->request('POST', Fixtures::MCP), $this->next);
+
+        $this->assertSame(
+            'Bearer resource_metadata="https://e.com/a\\"b\\\\cX: y"',
+            $response->getHeaderLine('WWW-Authenticate'),
+        );
+    }
+
+    public function testUndeclaredScopesFailWhenBuilt(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        $this->harness->server->bearerMiddleware(Fixtures::MCP, null, ['content:nope']);
     }
 
     public function testAnUndeclaredResourceFailsWhenBuilt(): void

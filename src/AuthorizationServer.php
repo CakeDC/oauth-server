@@ -508,7 +508,7 @@ final class AuthorizationServer
         ?string $resourceMetadataUrl = null,
         array $requiredScopes = [],
     ): BearerTokenMiddleware {
-        $this->assertResource($resource);
+        $this->assertResource($resource, $requiredScopes);
 
         return new BearerTokenMiddleware(
             $this->tokenValidator(),
@@ -524,21 +524,35 @@ final class AuthorizationServer
      *
      * @param string $resource Resource identifier.
      * @throws \InvalidArgumentException When the resource is not declared.
+     * @throws \LogicException When mcp/sdk is not installed.
      */
     public function mcpTokenValidator(string $resource): McpTokenValidator
     {
+        if (!interface_exists('Mcp\\Server\\Transport\\Http\\OAuth\\AuthorizationTokenValidatorInterface')) {
+            throw new LogicException('The MCP SDK bridge requires mcp/sdk.');
+        }
         $this->assertResource($resource);
 
         return new McpTokenValidator($this->tokenValidator(), $resource);
     }
 
     /**
-     * Fails fast on a resource the configuration does not declare.
+     * Fails fast on a resource or scopes the configuration does not declare.
+     *
+     * @param list<string> $scopes Scopes the resource must declare.
      */
-    private function assertResource(string $resource): void
+    private function assertResource(string $resource, array $scopes = []): void
     {
-        if ($this->config->resources->get($resource) === null) {
+        $declared = $this->config->resources->get($resource);
+        if ($declared === null) {
             throw new InvalidArgumentException(sprintf('Resource "%s" is not declared.', $resource));
+        }
+        foreach ($scopes as $scope) {
+            if (!$declared->hasScope($scope)) {
+                throw new InvalidArgumentException(
+                    sprintf('Scope "%s" is not declared by the resource "%s".', $scope, $resource),
+                );
+            }
         }
     }
 

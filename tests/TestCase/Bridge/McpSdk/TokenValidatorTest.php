@@ -34,6 +34,27 @@ class TokenValidatorTest extends TestCase
         $this->assertSame('Ada', $token->getClaim('name'));
     }
 
+    public function testClaimsAreExactAndDoNotLeakTheToken(): void
+    {
+        $harness = new ServerHarness();
+        $client = $harness->publicClient();
+        $pair = $harness->json($harness->exchange($client, $harness->authorizationCode($client)));
+
+        $token = $harness->server->mcpTokenValidator(Fixtures::MCP)->validate($pair['access_token'])->getAccessToken();
+
+        $this->assertNotNull($token);
+        $claims = $token->getClaims();
+        $keys = array_keys($claims);
+        sort($keys);
+        $this->assertSame(['aud', 'client_id', 'exp', 'iat', 'name', 'sub', 'subject_type'], $keys);
+        $this->assertIsInt($claims['exp']);
+        $this->assertIsInt($claims['iat']);
+        $this->assertSame('user', $claims['subject_type']);
+        $dump = json_encode($claims, JSON_THROW_ON_ERROR);
+        $this->assertStringNotContainsString($pair['access_token'], $dump);
+        $this->assertStringNotContainsString(hash('sha256', $pair['access_token']), $dump);
+    }
+
     public function testRejectsInvalidTokens(): void
     {
         $harness = new ServerHarness();

@@ -41,6 +41,7 @@ final class TokenValidator implements AuthorizationTokenValidatorInterface
             'aud' => $result->resource->identifier,
             'exp' => $result->token->expiresAt?->getTimestamp(),
             'iat' => $result->token->createdAt->getTimestamp(),
+            'subject_type' => $result->token->subjectType->value,
         ], fn(mixed $value): bool => $value !== null);
 
         return AuthorizationResult::allow(new AccessToken($result->scopes, $claims));
