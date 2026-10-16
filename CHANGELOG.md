@@ -268,6 +268,14 @@ CakePHP plugin) and to a database created from one.
   spelling `gbeng`, `gbsct` or `gbwls`, U+E007F: England, Scotland, Wales). Every other tag sequence is
   refused, however short: a cap on its length still let a flag spell `IGN OR!`, and several flags in one
   name could carry about 190 hidden ASCII characters.
+- Refresh with a narrowed client: the client's registered scopes narrow the refreshed access token the
+  way the owner's `scopesFor()` does (the grant expanded, kept where the expanded allowance contains it,
+  reduced to the minimal set). A client an administrator narrowed from `content:write` to `content:read`
+  used to get `invalid_scope` on refresh, and introspection showed its refresh token inactive, while its
+  access token still worked as `content:read`; it now refreshes with a `content:read` access token, the
+  new refresh token keeps `content:write`, introspection reports `content:read`, and the client widened
+  again gets `content:write` back at the next refresh. Only a client that may hold none of the scopes is
+  still refused (`invalid_scope`, inactive on introspection).
 - Configuration: a non-empty list where a map is expected is refused with an `InvalidArgumentException`
   naming the setting, in `resources`, `lifetimes`, `registration`, `cimd`, `rateLimit`, a resource's
   settings, its `scopes` and its `implies` (`'scopes' => ['content:read', 'content:write']` used to

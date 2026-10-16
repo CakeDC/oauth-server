@@ -92,6 +92,10 @@ class ScopeResolverTest extends TestCase
         $this->assertSame(['read'], $this->resolver->refreshed($this->resource, ['write', 'media'], ['read'], null, null));
         $this->assertSame(['write'], $this->resolver->refreshed($this->resource, ['write', 'gone'], [], ['publish'], null));
         $this->assertSame(['read'], $this->resolver->refreshed($this->resource, ['write'], [], null, ['read', 'media']));
+        // A narrowed client narrows the grant the way a demoted owner does, to the minimal set.
+        $this->assertSame(['read'], $this->resolver->refreshed($this->resource, ['write'], [], ['read'], null));
+        $this->assertSame(['write'], $this->resolver->refreshed($this->resource, ['publish'], [], ['write', 'read'], null));
+        $this->assertSame(['read'], $this->resolver->refreshed($this->resource, ['publish', 'media'], [], ['read'], ['write']));
 
         $errors = [];
         foreach ([[['media'], null], [null, ['media']]] as [$client, $owner]) {

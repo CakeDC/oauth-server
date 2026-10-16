@@ -175,6 +175,44 @@ class IntrospectHandlerTest extends TestCase
         $this->assertSame(400, $this->refresh($client->clientId, $pair['refresh_token'])->getStatusCode());
     }
 
+    /**
+     * An administrator narrows a client from `content:write` to `content:read`: its refresh token is worth
+     * `content:read` today, the refresh issues a `content:read` access token and keeps the grant, and the
+     * client widened again gets `content:write` back.
+     */
+    public function testARefreshTokenOfANarrowedClientIntrospectsWithTheNarrowedScopes(): void
+    {
+        $client = $this->harness->publicClient();
+        $pair = $this->harness->json($this->harness->exchange($client, $this->harness->authorizationCode($client)));
+        $allow = fn(?array $scopes) => $this->harness->storage->saveClient(Fixtures::client([
+            'id' => $client->id,
+            'clientId' => $client->clientId,
+            'scopes' => $scopes,
+        ]));
+        $allow(['content:read']);
+
+        $before = $this->harness->json($this->introspect($pair['refresh_token']));
+        $this->assertTrue($before['active']);
+        $this->assertSame('content:read', $before['scope']);
+        $response = $this->refresh($client->clientId, $pair['refresh_token']);
+        $this->assertSame(200, $response->getStatusCode());
+        $rotated = $this->harness->json($response);
+        $this->assertSame('content:read', $rotated['scope']);
+        $this->assertSame('content:read', $this->harness->json($this->introspect($rotated['access_token']))['scope']);
+        $this->assertSame('content:read', $this->harness->json($this->introspect($rotated['refresh_token']))['scope']);
+        $stored = $this->harness->storage->findTokenByHash(TokenGenerator::hash($rotated['refresh_token']));
+        $this->assertSame(['content:write'], $stored?->scopes);
+
+        $allow(null);
+        $this->assertSame(
+            'content:write content:read',
+            $this->harness->json($this->introspect($rotated['refresh_token']))['scope'],
+        );
+        $this->harness->clock->advance(60);
+        $widened = $this->harness->json($this->refresh($client->clientId, $rotated['refresh_token']));
+        $this->assertSame('content:write content:read', $this->harness->json($this->introspect($widened['access_token']))['scope']);
+    }
+
     public function testARefreshTokenOfANarrowedClientIsInactiveWhenNothingIsLeft(): void
     {
         $client = $this->harness->publicClient();

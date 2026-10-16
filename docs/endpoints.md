@@ -212,8 +212,11 @@ not refresh the same token from two places at once: concurrent refreshes can rev
 
 The new refresh token keeps the scopes of the one presented (RFC 6749 section 6), minus scopes the
 resource no longer declares. A `scope` parameter narrows only the new access token, so a client that asks
-for `content:read` once can ask for `content:write` again at the next refresh. The response's `scope`
-describes the access token.
+for `content:read` once can ask for `content:write` again at the next refresh. The client's registered
+scopes and the person's scopes of today narrow the new access token the same way (a client an
+administrator narrowed from `content:write` to `content:read` gets `content:read`); the refresh fails
+with `invalid_scope` only when the client may hold none of the scopes, and with `invalid_grant` when the
+person may hold none. The response's `scope` describes the access token.
 
 Errors: `invalid_request`, `invalid_client`, `invalid_grant`, `unauthorized_client`, `invalid_scope`,
 `invalid_target`.

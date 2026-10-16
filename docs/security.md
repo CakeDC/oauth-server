@@ -84,11 +84,13 @@ Related rules:
 - A refresh keeps the grant (RFC 6749 section 6, OAuth 2.1 section 4.3.3): the new refresh token carries
   the scopes of the one presented, minus scopes the resource no longer declares. A requested `scope`,
   the client's registered scopes and the person's `scopesFor()` of today narrow only the new access
-  token. So a down-scoped refresh, a demotion or a narrowed client loses nothing for good: a person
-  promoted again gets the scopes back at the next refresh. Nothing is widened either, because every use
-  of a token recomputes its scopes ([protecting resources](protecting-resources.md)), and introspecting a
-  refresh token reports what an access token refreshed from it would hold today, not the stored grant
-  (inactive when nothing is left).
+  token (expanded and reduced to the minimal set, so a client or a person cut from `content:write` to
+  `content:read` refreshes with `content:read`; the refresh fails only when nothing is left). So a
+  down-scoped refresh, a demotion or a narrowed client loses nothing for good: a person promoted again,
+  or a client widened again, gets the scopes back at the next refresh. Nothing is widened either,
+  because every use of a token recomputes its scopes ([protecting resources](protecting-resources.md)),
+  and introspecting a refresh token reports what an access token refreshed from it would hold today, not
+  the stored grant (inactive when nothing is left).
 - A refresh token is never a bearer token: a resource refuses it as `invalid_token` ("The access token is
   invalid.") whatever scopes it carries. A resource server that introspects must do the same: accept
   only `"token_type": "Bearer"`, never `refresh_token`

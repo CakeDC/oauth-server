@@ -78,31 +78,7 @@ final class ScopeResolver
      */
     public function withinOwnerAllowance(ProtectedResource $resource, array $scopes, ?array $ownerAllowed): array
     {
-        if ($ownerAllowed === null) {
-            return $scopes;
-        }
-        $allowed = $resource->expand($ownerAllowed);
-        $kept = array_values(array_filter(
-            $resource->expand($scopes),
-            fn(string $scope): bool => in_array($scope, $allowed, true),
-        ));
-
-        return array_values(array_filter(
-            $kept,
-            function (string $scope) use ($resource, $kept): bool {
-                foreach ($kept as $other) {
-                    if (
-                        $other !== $scope
-                        && in_array($scope, $resource->expand([$other]), true)
-                        && !in_array($other, $resource->expand([$scope]), true)
-                    ) {
-                        return false;
-                    }
-                }
-
-                return true;
-            },
-        ));
+        return $this->withinAllowance($resource, $scopes, $ownerAllowed);
     }
 
     /**
@@ -134,10 +110,11 @@ final class ScopeResolver
 
     /**
      * The scopes of the access token a refresh issues today: the refresh token's grant (or the subset the
-     * client asks for, {@see narrow()}), without the scopes the resource no longer declares or the client
-     * may no longer hold, then narrowed to the owner's allowance of today ({@see withinOwnerAllowance()}).
-     * The refresh and the introspection of a refresh token both use it, so they agree on what a grant is
-     * worth today.
+     * client asks for, {@see narrow()}), without the scopes the resource no longer declares, then narrowed
+     * to the client's allowance and to the owner's allowance of today, both the way
+     * {@see withinOwnerAllowance()} narrows: a client narrowed from `write` to `read` refreshes with `read`
+     * instead of being refused. The refresh and the introspection of a refresh token both use it, so they
+     * agree on what a grant is worth today.
      *
      * @param \CakeDC\OAuth\Server\Resource\ProtectedResource $resource The resource.
      * @param list<string> $grant Scopes of the refresh token.
@@ -155,22 +132,60 @@ final class ScopeResolver
         ?array $clientAllowed,
         ?array $ownerAllowed,
     ): array {
-        $client = $clientAllowed === null ? null : $resource->expand($clientAllowed);
         $scopes = array_values(array_unique(array_filter(
             $this->narrow($resource, $grant, $requested),
-            fn(string $scope): bool => $resource->hasScope($scope)
-                && ($client === null || in_array($scope, $client, true)),
+            fn(string $scope): bool => $resource->hasScope($scope),
         )));
+        // A narrowed client and a demoted owner narrow the grant; only when nothing is left is it refused.
+        $scopes = $this->withinAllowance($resource, $scopes, $clientAllowed);
         if ($scopes === []) {
             throw OAuthException::invalidScope('None of the scopes of this token can be granted any more.');
         }
-        // A demotion narrows the grant; only when nothing is left is it refused.
-        $scopes = $this->withinOwnerAllowance($resource, $scopes, $ownerAllowed);
+        $scopes = $this->withinAllowance($resource, $scopes, $ownerAllowed);
         if ($scopes === []) {
             throw OAuthException::invalidGrant('The grant no longer allows any scope.');
         }
 
         return $scopes;
+    }
+
+    /**
+     * What remains of $scopes under an allowance (the client's or the owner's): with no restriction the
+     * scopes as given, otherwise the expanded scopes the expanded allowance contains, reduced to the minimal
+     * set (a scope implied by another kept scope is dropped).
+     *
+     * @param \CakeDC\OAuth\Server\Resource\ProtectedResource $resource The resource.
+     * @param list<string> $scopes Granted scopes.
+     * @param list<string>|null $allowed The allowance; null for any.
+     * @return list<string>
+     */
+    private function withinAllowance(ProtectedResource $resource, array $scopes, ?array $allowed): array
+    {
+        if ($allowed === null) {
+            return $scopes;
+        }
+        $allowed = $resource->expand($allowed);
+        $kept = array_values(array_filter(
+            $resource->expand($scopes),
+            fn(string $scope): bool => in_array($scope, $allowed, true),
+        ));
+
+        return array_values(array_filter(
+            $kept,
+            function (string $scope) use ($resource, $kept): bool {
+                foreach ($kept as $other) {
+                    if (
+                        $other !== $scope
+                        && in_array($scope, $resource->expand([$other]), true)
+                        && !in_array($other, $resource->expand([$scope]), true)
+                    ) {
+                        return false;
+                    }
+                }
+
+                return true;
+            },
+        ));
     }
 
     /**

@@ -225,6 +225,67 @@ class RefreshTokenRotatorTest extends TestCase
         $this->assertSame(['content:read', 'content:write'], $rotated->refresh?->scopes);
     }
 
+    /**
+     * The same client as $this->client, with the allowance an administrator gave it today.
+     *
+     * @param list<string>|null $scopes The client's scopes; null for any.
+     */
+    private function clientAllowed(?array $scopes): Client
+    {
+        return Fixtures::client(['id' => $this->client->id, 'clientId' => $this->client->clientId, 'scopes' => $scopes]);
+    }
+
+    public function testANarrowedClientRefreshesWithTheNarrowedAccessToken(): void
+    {
+        $initial = $this->initial(['content:write']);
+
+        $rotated = $this->rotator()->rotate($this->clientAllowed(['content:read']), (string)$initial->refreshToken, null, []);
+
+        $this->assertSame(['content:read'], $rotated->access->scopes);
+        $this->assertSame(['content:write'], $rotated->refresh?->scopes);
+        $this->assertSame('content:read', $rotated->toResponse()['scope']);
+    }
+
+    public function testAClientNarrowedToAnImpliedScopeKeepsOnlyTheMinimalSet(): void
+    {
+        $initial = $this->initial(['content:publish']);
+
+        $rotated = $this->rotator()->rotate($this->clientAllowed(['content:write']), (string)$initial->refreshToken, null, []);
+
+        $this->assertSame(['content:write'], $rotated->access->scopes);
+        $this->assertSame(['content:publish'], $rotated->refresh?->scopes);
+    }
+
+    public function testAClientWidenedAgainRegainsTheGrantOnTheNextRefresh(): void
+    {
+        $initial = $this->initial(['content:write']);
+        $narrowed = $this->rotator()->rotate($this->clientAllowed(['content:read']), (string)$initial->refreshToken, null, []);
+        $this->assertSame(['content:read'], $narrowed->access->scopes);
+
+        $this->clock->advance(60);
+        $widened = $this->rotator()->rotate($this->clientAllowed(null), (string)$narrowed->refreshToken, null, []);
+
+        $this->assertSame(['content:write'], $widened->access->scopes);
+        $this->assertSame(['content:write'], $widened->refresh?->scopes);
+        $this->assertSame('content:write', $widened->toResponse()['scope']);
+    }
+
+    public function testAClientNarrowedToNothingCannotRefreshAndNothingIsConsumed(): void
+    {
+        $initial = $this->initial(['content:write']);
+
+        foreach ([[], ['api']] as $allowed) {
+            try {
+                $this->rotator()->rotate($this->clientAllowed($allowed), (string)$initial->refreshToken, null, []);
+                $this->fail('Rotated');
+            } catch (OAuthException $e) {
+                $this->assertSame('invalid_scope', $e->error);
+            }
+        }
+        $this->assertNull($this->storage->findTokenById((string)$initial->refresh?->id)?->usedAt);
+        $this->assertCount(2, $this->live());
+    }
+
     public function testRejectsTokensItShouldNotRotate(): void
     {
         $initial = $this->initial();
