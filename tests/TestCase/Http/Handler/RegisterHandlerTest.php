@@ -34,9 +34,15 @@ class RegisterHandlerTest extends TestCase
         $body = $harness->json($response);
 
         $this->assertSame(201, $response->getStatusCode());
+        $this->assertSame('no-store', $response->getHeaderLine('Cache-Control'));
+        $this->assertSame('no-cache', $response->getHeaderLine('Pragma'));
+        $this->assertSame('application/json', $response->getHeaderLine('Content-Type'));
         $this->assertSame('*', $response->getHeaderLine('Access-Control-Allow-Origin'));
         $this->assertSame('Claude', $body['client_name']);
         $this->assertSame('none', $body['token_endpoint_auth_method']);
+        $this->assertSame(['https://claude.ai/api/mcp/auth_callback'], $body['redirect_uris']);
+        $this->assertSame(['authorization_code', 'refresh_token'], $body['grant_types']);
+        $this->assertArrayNotHasKey('client_secret', $body);
         $this->assertNotNull($harness->storage->findClientByClientId($body['client_id']));
         $this->assertCount(1, $harness->events->ofType(ClientRegistered::class));
     }

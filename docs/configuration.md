@@ -122,7 +122,9 @@ be at least 1. The address is `REMOTE_ADDR` unless you pass a `$clientIp` closur
 | `defaultScopes` | list | `[]` | Granted when a client asks for no scope. Must be declared in `scopes`. If it is empty and the client asks for nothing, the request fails with `invalid_scope` |
 
 The resource URL must be in canonical form: lowercase scheme and host, no default port, no trailing
-slash, no fragment. `fromArray()` canonicalizes the keys for you. Scope names are printable ASCII
+slash, no fragment. In the array form (`ServerConfig::fromArray()`, `ProtectedResource::fromArray()`) the
+keys are canonicalized for you. A `ProtectedResource` built by hand with its constructor must already be
+canonical and throws otherwise. Scope names are printable ASCII
 without spaces, quotes or backslashes. `offline_access` cannot be a resource scope.
 
 Scopes are checked at the time of use, not only when issued. A token holds its granted scopes plus
@@ -154,7 +156,7 @@ Invalid settings throw `InvalidArgumentException` when the config is built. The 
 | Lifetime too small | `The "access" lifetime must be at least one second.` |
 | Negative grace | `"refreshReuseGrace" cannot be negative.` |
 | Resource without scopes | `The resource "..." declares no scopes.` |
-| Resource not canonical | `The resource "..." is not canonical; use "...".` |
+| Resource not canonical (a `ProtectedResource` built by hand) | `The resource "..." is not canonical; use "...".` |
 | Unknown scope in `implies` or `defaultScopes` | `The resource "..." refers to the unknown scope "...".` |
 | Invalid scope name | `"..." is not a valid resource scope.` |
 | Unknown default resource | `The default resource "..." is not declared.` |

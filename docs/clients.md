@@ -160,19 +160,20 @@ claude.ai connects to your MCP server as a "custom connector".
    `https://example.com/mcp`.
 3. Claude finds your authorization server. It uses a Client ID Metadata Document when the metadata has
    `client_id_metadata_document_supported: true` and `"none"` in `token_endpoint_auth_methods_supported`
-   (this server sends both when `cimd.enabled` is `true`):
+   (this server always sends `"none"`; the first member is `true` only when `cimd.enabled` is `true`):
    - `client_id`: `https://claude.ai/oauth/mcp-oauth-client-metadata`
    - callback: `https://claude.ai/api/mcp/auth_callback`
 4. The person is sent to your login, then sees "claude.ai wants to access Example MCP" and approves.
 
 Nothing needs registering. Some points to know:
 
-- If either of those two metadata members is missing, Claude falls back to dynamic registration, and
-  fails when there is no `registration_endpoint`. So with `cimd.enabled` set to `false` Claude needs
+- If either of those two metadata members is not as above, Claude falls back to dynamic registration, and
+  fails when there is no `registration_endpoint`. This server serves `client_id_metadata_document_supported`
+  as `false` when `cimd.enabled` is `false`. So with `cimd.enabled` set to `false` Claude needs
   `registration.mode` `open`, or you give Claude a client you registered yourself (the connector
   dialog has an option for your own client id). With `cimd.enabled` `false` and
-  `registration.mode` `closed`, the connection cannot work, because the metadata then offers no way to
-  get a client.
+  `registration.mode` `closed`, only a client you registered by hand works: the metadata has no
+  `registration_endpoint` and says `false`, so Claude cannot get a client by itself.
 
 - The document lists grant types this server does not implement (for example the JWT bearer grant).
   The server ignores unknown grant types.

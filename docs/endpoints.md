@@ -64,7 +64,10 @@ The authorization endpoint. The browser of the person visits it, never the clien
 
 Query parameters. Each authorization parameter below may be sent at most once: a repeat of any of them is
 refused (`client_id` and `redirect_uri` repeats give the error page). Repeats of other, non-OAuth
-parameters are ignored (RFC 6749, section 3.1).
+parameters (for example a tracking parameter that a proxy appends) are ignored. That leniency is
+deliberate: RFC 6749 section 3.1 says request parameters must not be repeated, which the server
+enforces for the parameters it reads, but a stray parameter it does not read cannot change the
+meaning of the request, so it is not worth breaking a login over.
 
 
 | Parameter | Required | Meaning |
@@ -112,7 +115,9 @@ limit). See [errors](errors.md).
 ## POST /oauth/token
 
 Exchanges a grant for tokens. The body is `application/x-www-form-urlencoded`. Any other content type
-is refused, and so is a parameter sent twice.
+is refused. Unlike `/authorize`, there is no leniency here: any parameter sent more than once, whatever
+its name, is refused with `invalid_request` (`/revoke` follows the same rule; `/introspect` refuses a
+repeated `token`).
 
 ### Client authentication
 
@@ -124,7 +129,10 @@ is refused, and so is a parameter sent twice.
 
 A client must use the method it registered with. Sending two methods at once is refused. Every
 authentication failure answers the same text, `Client authentication failed.`, and a failed Basic
-attempt adds `WWW-Authenticate: Basic realm="oauth"`.
+attempt adds `WWW-Authenticate: Basic realm="oauth"`. The one exception is a metadata document client
+whose document cannot be used: that `invalid_client` keeps its own message (for example `Clients from
+example.org are not accepted.` or `The metadata document needs a client_name.`), so its developer can
+fix it. See [troubleshooting](troubleshooting.md).
 
 ### Response
 

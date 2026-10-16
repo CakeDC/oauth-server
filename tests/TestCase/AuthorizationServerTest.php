@@ -58,8 +58,13 @@ class AuthorizationServerTest extends TestCase
 
         $url = 'https://claude.ai/oauth/native';
         $harness->transport->serve($url, ['client_id' => $url, 'client_name' => 'Native'] + $meta);
-        $this->expectException(OAuthException::class);
-        $harness->server->clientResolver()->resolve($url);
+        try {
+            $harness->server->clientResolver()->resolve($url);
+            $this->fail('Resolved a document with a private scheme.');
+        } catch (OAuthException $e) {
+            $this->assertSame('invalid_client', $e->error);
+            $this->assertStringContainsString('no usable redirect_uris', $e->getMessage());
+        }
     }
 
     public function testDisabledCimdNeverFetches(): void

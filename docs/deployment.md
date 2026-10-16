@@ -65,6 +65,16 @@ The closure must return a string. `ClientIp::fromServerParams()` is the default
 A platform such as claude.ai calls from a shared range of addresses (`160.79.104.0/21`) that may serve
 many people. Give the `token` limit enough room for that.
 
+## Transactions
+
+Never run the OAuth endpoints inside a request-wide database transaction (a framework or middleware
+setting that wraps every request in `BEGIN ... COMMIT`). The library relies on single statements that
+commit at once: of two requests racing for the same authorization code or refresh token only one may
+win, and a revocation must be visible to the next request immediately. Inside a long transaction the
+winner is not visible to the other request until commit, so a code can be used twice, and a rollback after
+an error can undo tokens that were already handed out in a response. Exclude the OAuth routes from such a
+wrapper, or run the storage on its own connection.
+
 ## The rate limit cache
 
 Rate limiting works only when you pass a PSR-16 cache to `AuthorizationServer` as `cache`. Use one that

@@ -37,7 +37,7 @@ For each request it:
 | Attribute | Type | Content |
 | --- | --- | --- |
 | `ValidatedToken::class` | `ValidatedToken` | The token with its owner, client, resource and scopes |
-| `ResourceOwner::class` | `ResourceOwner` | The person (or client identity) the token acts for, freshly loaded through `findBySubject()` |
+| `ResourceOwner::class` | `ResourceOwner` | The person the token acts for, freshly loaded through `findBySubject()`; for a client credentials token, the identity your `forClient()` returns |
 
 ```php
 use CakeDC\OAuth\Server\Owner\ResourceOwner;
@@ -141,7 +141,7 @@ a minute per token). Pass `false` to look without recording, as introspection do
 | Property | Type | Meaning |
 | --- | --- | --- |
 | `token` | `Token` | The stored token: `id`, `type` (`access` or `personal`), `subject`, `subjectType`, `resource`, `scopes`, `createdAt`, `expiresAt`, `name` and more |
-| `owner` | `ResourceOwner` | Its owner, loaded now |
+| `owner` | `ResourceOwner` | Its owner, loaded now: `findBySubject()` for a person's token, `forClient()` for a client credentials token |
 | `client` | `Client` or `null` | The client. `null` for personal tokens |
 | `resource` | `ProtectedResource` | The resource |
 | `scopes` | `list<string>` | Scopes held right now, implied ones included |

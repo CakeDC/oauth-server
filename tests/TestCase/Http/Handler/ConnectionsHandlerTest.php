@@ -4,9 +4,13 @@ declare(strict_types=1);
 namespace CakeDC\OAuth\Server\Test\TestCase\Http\Handler;
 
 use CakeDC\OAuth\Server\AuthorizationServer;
+use CakeDC\OAuth\Server\Client\ClientType;
+use CakeDC\OAuth\Server\Owner\SubjectType;
 use CakeDC\OAuth\Server\Test\Support\Fixtures;
 use CakeDC\OAuth\Server\Test\Support\ServerHarness;
 use CakeDC\OAuth\Server\Token\TokenGenerator;
+use LogicException;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\UriInterface;
@@ -151,6 +155,157 @@ class ConnectionsHandlerTest extends TestCase
             'form_token' => $formToken, 'action' => 'revoke_token', 'token_id' => $created['token']->id,
         ]))->getStatusCode());
         $this->assertNotNull($this->harness->storage->findTokenById($created['token']->id)?->revokedAt);
+    }
+
+    public function testAnotherPersonsConnectionsAndTokensStayActive(): void
+    {
+        $client = $this->harness->publicClient();
+        $victim = $this->harness->json($this->harness->exchange(
+            $client,
+            $this->harness->authorizationCode($client, [], '43'),
+        ));
+        $victimToken = $this->harness->storage->findTokenByHash(TokenGenerator::hash($victim['access_token']));
+        $this->assertNotNull($victimToken);
+        $personal = $this->harness->server->connectionService()->createPersonalToken(
+            $this->harness->users->users['43'],
+            'Victim key',
+            Fixtures::MCP,
+            ['content:read'],
+            7,
+        );
+        $this->harness->signIn('42');
+
+        $response = $this->post(['action' => 'revoke_connection', 'family_id' => $victimToken->familyId]);
+        $this->assertSame(303, $response->getStatusCode());
+        $response = $this->post(['action' => 'revoke_token', 'token_id' => $personal['token']->id]);
+        $this->assertSame(303, $response->getStatusCode());
+
+        $this->assertNull($this->harness->storage->findTokenById($victimToken->id)?->revokedAt);
+        $this->assertNull($this->harness->storage->findTokenById($personal['token']->id)?->revokedAt);
+        $this->assertNotNull($this->harness->storage->findConsent('43', $client->id, Fixtures::MCP));
+    }
+
+    public function testAScopeTheOwnerCannotGrantIsRefusedWith422(): void
+    {
+        $this->harness->signIn();
+
+        $response = $this->post([
+            'action' => 'create_token',
+            'name' => 'Deploy',
+            'resource' => Fixtures::MCP,
+            'scope:content:read' => '1',
+            'scope:evil' => '1',
+            'days' => '7',
+        ]);
+
+        $this->assertSame(422, $response->getStatusCode());
+        $this->assertStringContainsString('You cannot grant', (string)$response->getBody());
+        $this->assertStringNotContainsString('oauth_pat_', (string)$response->getBody());
+        $this->assertSame([], $this->harness->server->connectionService()->personalTokens($this->harness->users->users['42']));
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function badDays(): array
+    {
+        return [
+            'not a number' => ['abc'],
+            'empty' => [''],
+            'zero' => ['0'],
+            'negative' => [' -5'],
+            'minus' => ['-1'],
+            'huge' => ['99999999999999999999999'],
+            'exponent' => ['1e9'],
+            'above the maximum' => ['91'],
+        ];
+    }
+
+    #[DataProvider('badDays')]
+    public function testHostileDayCountsAreRefusedWith422(string $days): void
+    {
+        $this->harness->signIn();
+
+        $response = $this->post([
+            'action' => 'create_token',
+            'name' => 'Deploy',
+            'resource' => Fixtures::MCP,
+            'scope:content:read' => '1',
+            'days' => $days,
+        ]);
+
+        $this->assertSame(422, $response->getStatusCode());
+        $this->assertSame([], $this->harness->server->connectionService()->personalTokens($this->harness->users->users['42']));
+    }
+
+    public function testHostileTextIsEscapedEverywhere(): void
+    {
+        $evil = '<script>alert(1)</script>';
+        $resources = Fixtures::resourceSettings();
+        $resources[Fixtures::MCP]['scopes'][$evil] = '<img src=x onerror=alert(1)>';
+        $this->harness = new ServerHarness(['resources' => $resources]);
+        $client = $this->harness->publicClient([
+            'name' => '<b onmouseover=alert(1)>Evil</b>',
+            'type' => ClientType::MetadataDocument,
+            'clientId' => 'https://evil<script>alert(1)</script>.example/client.json',
+            'redirectUris' => ['https://evil.example/cb'],
+        ]);
+        $this->harness->server->tokenIssuer()->issue(
+            $client,
+            '42',
+            SubjectType::User,
+            $this->harness->server->config()->resources->get(Fixtures::MCP) ?? throw new LogicException('resource'),
+            [$evil],
+            'family-evil',
+            true,
+        );
+        $this->harness->signIn();
+        $this->post([
+            'action' => 'create_token',
+            'name' => '<script>name</script>',
+            'resource' => Fixtures::MCP,
+            'scope:' . $evil => '1',
+            'days' => '7',
+        ]);
+
+        $page = (string)$this->page()->getBody();
+        $refused = $this->post([
+            'action' => 'create_token',
+            'name' => 'x',
+            'resource' => Fixtures::MCP,
+            'scope:<img src=x>' => '1',
+            'days' => '7',
+        ]);
+
+        foreach ([$page, (string)$refused->getBody()] as $html) {
+            $this->assertStringNotContainsString('<script>', $html);
+            $this->assertStringNotContainsString('<img src=x', $html);
+            $this->assertStringNotContainsString('<b onmouseover', $html);
+        }
+        $this->assertStringContainsString('&lt;script&gt;', $page);
+        $this->assertSame(422, $refused->getStatusCode());
+        $this->assertStringContainsString('&lt;img src=x&gt;', (string)$refused->getBody());
+    }
+
+    public function testTheTokenValueNeverAppearsInALocationHeader(): void
+    {
+        $this->harness->signIn();
+
+        $created = $this->post([
+            'action' => 'create_token',
+            'name' => 'Deploy',
+            'resource' => Fixtures::MCP,
+            'scope:content:read' => '1',
+            'days' => '7',
+        ]);
+        preg_match('/<code>(oauth_pat_[A-Za-z0-9_-]+)<\/code>/', (string)$created->getBody(), $match);
+        $this->assertNotEmpty($match);
+        $tokenId = ServerHarness::formFields((string)$this->page()->getBody())['token_id'];
+        $revoked = $this->post(['action' => 'revoke_token', 'token_id' => $tokenId]);
+
+        $this->assertSame('', $created->getHeaderLine('Location'));
+        $this->assertStringNotContainsString($match[1], $revoked->getHeaderLine('Location'));
+        $this->assertStringNotContainsString('oauth_pat_', $revoked->getHeaderLine('Location'));
     }
 
     public function testRefusesUnsafePaths(): void
