@@ -158,22 +158,33 @@ claude.ai connects to your MCP server as a "custom connector".
    [metadata](endpoints.md#get-well-knownoauth-authorization-server) too.
 2. In claude.ai, add a custom connector and enter the URL of your MCP endpoint, for example
    `https://example.com/mcp`.
-3. Claude finds your authorization server, and uses a Client ID Metadata Document:
+3. Claude finds your authorization server. It uses a Client ID Metadata Document when the metadata has
+   `client_id_metadata_document_supported: true` and `"none"` in `token_endpoint_auth_methods_supported`
+   (this server sends both when `cimd.enabled` is `true`):
    - `client_id`: `https://claude.ai/oauth/mcp-oauth-client-metadata`
    - callback: `https://claude.ai/api/mcp/auth_callback`
 4. The person is sent to your login, then sees "claude.ai wants to access Example MCP" and approves.
 
 Nothing needs registering. Some points to know:
 
+- If either of those two metadata members is missing, Claude falls back to dynamic registration, and
+  fails when there is no `registration_endpoint`. So with `cimd.enabled` set to `false` Claude needs
+  `registration.mode` `open`, or you give Claude a client you registered yourself (the connector
+  dialog has an option for your own client id). With `cimd.enabled` `false` and
+  `registration.mode` `closed`, the connection cannot work, because the metadata then offers no way to
+  get a client.
+
 - The document lists grant types this server does not implement (for example the JWT bearer grant).
   The server ignores unknown grant types.
 - If you set `cimd.allowedHosts`, include `claude.ai`.
-- Claude's requests come from Anthropic's egress range `160.79.104.0/21`. If a firewall or WAF sits in
-  front of your server, allow it, and do not block `/.well-known/` or `/oauth/`. See
+- Claude's requests come from Anthropic's egress range `160.79.104.0/21`. Do not block or challenge that
+  range on the OAuth and MCP paths (`/.well-known/`, `/oauth/` and your MCP endpoint). See
   [deployment](deployment.md#cloudflare-and-waf-notes).
-- Many people share those addresses, and rate limits are per address, so give `token` a generous limit.
-- The resource URL you configure must be exactly the one in the connector (see
-  [troubleshooting](troubleshooting.md#invalid_target)).
+- Many people may share those addresses, and rate limits are per address, so give `token` a generous
+  limit.
+- The resource URL you configure must be the one in the connector. It is compared after
+  canonicalisation (lowercase host, no trailing slash, no default port). See
+  [troubleshooting](troubleshooting.md#invalid_target).
 
 The whole flow is tested in `tests/TestCase/EndToEnd/ClaudeConnectorFlowTest.php`.
 
@@ -185,28 +196,35 @@ Add the server as an HTTP MCP server:
 claude mcp add --transport http example https://example.com/mcp
 ```
 
-Then run `/mcp` inside Claude Code and choose to authenticate. Claude Code opens the browser and
-listens for the redirect on your own computer, on a free port that changes every time. That is a
-loopback redirect, which the server accepts on any port. The client registers itself dynamically, so
-keep `registration.mode` `open`, or `token` and give the token to your team, if you want people to
-connect without extra steps.
+Then run `/mcp` inside Claude Code and choose to authenticate. Claude Code supports both Client ID
+Metadata Documents (its default) and dynamic registration, and this server accepts either:
 
-## The MCP Inspector
+- With CIMD, its `client_id` is `https://claude.ai/oauth/claude-code-client-metadata`, with the redirect
+  URIs `http://localhost/callback` and `http://127.0.0.1/callback`. Nothing needs registering.
+- Claude Code listens for the redirect on your own computer, on a free port that changes every time.
+  That is a loopback redirect, and the server ignores the port.
 
-The MCP Inspector runs in a browser and does the OAuth flow itself. Because a browser reads the
-responses, CORS must work: the metadata, token, register, revoke and introspect endpoints send the
-needed headers (`Access-Control-Allow-Origin: *`, `Authorization`, `Content-Type` and
-`MCP-Protocol-Version` allowed). Your MCP endpoint needs a CORS layer of its own, outside the bearer
-middleware, which exposes `WWW-Authenticate`
-([protecting resources](protecting-resources.md#cors-preflights)). The Inspector uses a loopback or
-local callback, so the loopback rule applies.
+One caveat: the loopback match compares the host exactly, and different Claude Code versions have sent
+`localhost` or `127.0.0.1`. A client you register by hand, or that registers dynamically, should
+therefore list both loopback forms (`http://localhost/callback` and `http://127.0.0.1/callback`).
+CIMD already lists both.
+
+## Browser based tools
+
+A tool that runs in a browser and does the OAuth flow itself needs CORS to work. The metadata, token,
+register, revoke and introspect endpoints send the needed headers (`Access-Control-Allow-Origin: *`,
+`Authorization`, `Content-Type` and `MCP-Protocol-Version` allowed). Your MCP endpoint needs a CORS
+layer of its own, outside the bearer middleware, which exposes `WWW-Authenticate`
+([protecting resources](protecting-resources.md#cors-preflights)). If such a tool uses a loopback
+redirect, the loopback rule applies.
 
 ## Other clients
 
-- **Cursor** registers itself dynamically with a private-use scheme redirect (`cursor://...`). That
-  works with `allowPrivateSchemes` left `true`, if the client sends `application_type` `native`.
-- **VS Code** uses a loopback `http://127.0.0.1:<port>/` redirect, and may also use an https redirect
-  page. Both are accepted by the rules above.
+- **Editors and desktop tools with a private-use scheme redirect** (for example `myeditor://callback`):
+  the server accepts it when the client registers with `application_type` `native` and
+  `registration.allowPrivateSchemes` is `true` (the default).
+- **Tools with a loopback or https redirect**: both are accepted under the
+  [redirect URI rules](#redirect-uri-rules).
 - **Your own CLI or desktop tool**: register it as a native public client, use a loopback redirect
   with PKCE, and keep the refresh token safe. Use the `offline_access` scope to receive a refresh
   token when `refreshTokens` is `offline_access`.

@@ -70,7 +70,7 @@ $factory = new Psr17Factory();
 $server = new AuthorizationServer(
     ServerConfig::fromArray([
         'issuer' => 'https://auth.example.com',
-        // At least 32 random bytes. Keep it out of version control.
+        // At least 32 characters (for example 32 random bytes, hex or base64 encoded). Keep it out of version control.
         'secret' => getenv('OAUTH_SECRET'),
         'resources' => [
             'https://auth.example.com/api' => [

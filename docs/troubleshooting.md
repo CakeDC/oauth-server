@@ -110,7 +110,7 @@ these:
 | The host resolves to a private, loopback, link-local or reserved address (also when only one of several addresses is) | The document must be served from a public address. This is the SSRF protection. For tests, serve it publicly or use a fake transport |
 | Timeout or connection error | The default is 5 seconds (`cimd.timeout`). Check egress firewalls and TLS certificates of the client's host |
 | Redirects | The server never follows redirects. Serve the document at the exact `client_id` URL |
-| Wrong content type | The `Content-Type` must be exactly `application/json` (parameters like `; charset=utf-8` are fine) |
+| Wrong content type | The media type must be `application/json`. Parameters such as `; charset=utf-8` are ignored |
 | Too large | The default maximum is 10240 bytes (`cimd.maxBytes`) |
 | HTTP error | 404 and 410 reject the client at once. 5xx and 429 are treated as temporary and a stored copy keeps working |
 | The document is wrong | `client_id` must equal the URL, `client_name` and `redirect_uris` are required, `token_endpoint_auth_method` must be `none` |
@@ -127,7 +127,7 @@ Download failures are not logged by the library, so this is the way to see them.
 **Cause.** The limit for the endpoint was reached for the client address
 ([configuration](configuration.md#ratelimit)). Two common reasons: all traffic comes through a proxy,
 so everybody has the proxy's address ([deployment](deployment.md#the-client-ip-behind-proxies)), or a
-hosted client such as claude.ai sends many people's requests from a shared range of addresses.
+hosted client such as claude.ai may send many people's requests from a shared range of addresses.
 
 **Fix.** Configure a `$clientIp` closure that reads the real address. Raise the limits, for example
 `'rateLimit' => ['token' => [300, 60]]`. `/revoke` and `/introspect` share the `token` counter. Wait for

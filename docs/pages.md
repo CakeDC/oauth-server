@@ -225,4 +225,5 @@ Every key, with its default text:
 | `tokens.create` | Create token |  |
 | `tokens.created` | Copy your new token now. It will not be shown again: |  |
 | `tokens.revoke` | Revoke |  |
+
 The `<html lang>` of the built-in pages is `en`. If you translate fully, supply your own renderers.

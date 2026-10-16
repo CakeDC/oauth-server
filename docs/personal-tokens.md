@@ -72,8 +72,8 @@ It throws `OAuthException` with:
 
 To show a form you can ask what a person may create:
 
-- `$connections->creatableScopes($owner)`: `resource => ['name' => ..., 'scopes' => [scope => description]]`.
-- `$connections->maxPersonalDays()`: the longest life in days (`personalMax` divided by 86400, at least 1).
+- `$server->connectionService()->creatableScopes($owner)`: `resource => ['name' => ..., 'scopes' => [scope => description]]`.
+- `$server->connectionService()->maxPersonalDays()`: the longest life in days (`personalMax` divided by 86400, at least 1).
 
 A `TokenIssued` event is dispatched with a `null` client. See [events](events.md).
 
@@ -86,7 +86,7 @@ A `TokenIssued` event is dispatched with a `null` client. See [events](events.md
 ```
 
 There is no limit on how many tokens a person has. If you need one, count with
-`$connections->personalTokens($owner)` before you create.
+`$server->connectionService()->personalTokens($owner)` before you create.
 
 ## Listing and revoking
 

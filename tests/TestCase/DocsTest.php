@@ -109,5 +109,41 @@ class DocsTest extends TestCase
     public function testNoEnDashes(): void
     {
         $this->assertStringNotContainsString("\u{2013}", self::docs());
+        $this->assertStringNotContainsString("\u{2013}", (string)file_get_contents(dirname(__DIR__, 2) . '/CHANGELOG.md'));
+    }
+
+    private static function anchor(string $heading): string
+    {
+        $heading = strtolower(str_replace('`', '', trim($heading)));
+
+        return str_replace(' ', '-', (string)preg_replace('/[^\w\- ]/', '', $heading));
+    }
+
+    public function testEveryRelativeLinkAndAnchorResolves(): void
+    {
+        $root = dirname(__DIR__, 2);
+        $files = array_merge([$root . '/README.md'], glob($root . '/docs/*.md') ?: []);
+        $anchors = [];
+        $texts = [];
+        foreach ($files as $file) {
+            $text = (string)preg_replace('/```.*?```/s', '', (string)file_get_contents($file));
+            $texts[$file] = $text;
+            preg_match_all('/^#+\s+(.*)$/m', $text, $matches);
+            $anchors[$file] = array_map(self::anchor(...), $matches[1]);
+        }
+        foreach ($texts as $file => $text) {
+            preg_match_all('/\]\(([^)\s]+)\)/', $text, $links);
+            foreach ($links[1] as $link) {
+                if (str_starts_with($link, 'http')) {
+                    continue;
+                }
+                [$path, $anchor] = array_pad(explode('#', $link, 2), 2, '');
+                $target = $path === '' ? $file : (string)realpath(dirname($file) . '/' . $path);
+                $this->assertFileExists($target, basename($file) . ' links to ' . $link);
+                if ($anchor !== '' && str_ends_with($target, '.md')) {
+                    $this->assertContains($anchor, $anchors[$target] ?? [], basename($file) . ' links to ' . $link);
+                }
+            }
+        }
     }
 }

@@ -62,7 +62,10 @@ The authorization endpoint. The browser of the person visits it, never the clien
 
 ### GET: start
 
-Query parameters (each at most once; a repeated parameter is refused):
+Query parameters. Each authorization parameter below may be sent at most once: a repeat of any of them is
+refused (`client_id` and `redirect_uri` repeats give the error page). Repeats of other, non-OAuth
+parameters are ignored (RFC 6749, section 3.1).
+
 
 | Parameter | Required | Meaning |
 | --- | --- | --- |
@@ -218,7 +221,7 @@ Dynamic client registration (RFC 7591). The body is JSON (`Content-Type: applica
 | `token_endpoint_auth_method` | `none`, `client_secret_basic` (default) or `client_secret_post` |
 | `grant_types` | Default `["authorization_code"]`. May add `refresh_token`. `client_credentials` is refused |
 | `response_types` | Must be `["code"]` |
-| `scope` | Space separated scopes the client may ask for. `offline_access` is accepted but not stored |
+| `scope` | Space separated scopes the client may ask for. `offline_access` is accepted but not stored. A `scope` of only `offline_access` stores an empty list, so the client may then get no resource scope at all (`invalid_scope` at `/authorize`). Leave `scope` out to allow any |
 | `client_uri`, `logo_uri` | https URLs |
 
 `client_id` and `client_secret` sent by the caller are ignored. In `token` mode the request needs

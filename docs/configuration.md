@@ -22,7 +22,7 @@ documents.
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
 | `issuer` | string | required | Canonical URL of this server, for example `https://auth.example.com`. https, except on loopback hosts. No query, no fragment, no trailing slash. It appears in the metadata and in the `iss` of every authorization answer. It is always taken from this setting, never from the request |
-| `secret` | string | required | At least 32 characters. Signs the consent and connections forms. Not used for tokens |
+| `secret` | string | required | At least 32 characters (for example 32 random bytes, hex or base64 encoded). Signs the consent and connections forms. Not used for tokens |
 | `resources` | array | required | The resources tokens are issued for. See below |
 | `defaultResource` | string | first resource | The resource used when a client sends no `resource` parameter |
 | `routePrefix` | string | `/oauth` | Path of the endpoints below the issuer. Starts with `/`, does not end with `/` |

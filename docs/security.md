@@ -21,7 +21,7 @@ item are in `tests/Security/`.
 
 | Item | How the library handles it | Test class |
 | --- | --- | --- |
-| Insufficient redirect URI validation | Exact matching, no normalisation. Loopback `http` matches only on the port. Dangerous schemes and odd characters are refused at registration. Nothing is ever sent to an unregistered URI | `RedirectUriValidationTest` |
+| Insufficient redirect URI validation | Exact matching, no normalisation. For loopback `http` redirects only the port may differ. Dangerous schemes and odd characters are refused at registration. Nothing is ever sent to an unregistered URI | `RedirectUriValidationTest` |
 | Credential leakage through Referer, browser history, and access token leakage | Pages are `no-store` with `Referrer-Policy: no-referrer`. Only the authorization code travels in a redirect. A token in a query string is ignored. Logs never contain secrets | `CredentialLeakageTest` |
 | Mix-up attacks | Every authorization answer, errors included, carries `iss` (RFC 9207). The issuer always comes from your configuration, never from the request's `Host` | `MixUpTest` |
 | Authorization code injection, PKCE downgrade | PKCE with S256 is mandatory for all clients, confidential ones too. A code is bound to its client, its redirect URI and its challenge. Codes live 60 seconds and work once. The verifier is checked before the server reacts to a used code | `AuthorizationCodeInjectionTest` |
@@ -116,7 +116,8 @@ that, set it to `0`. Then a lost response costs one re-authorization.
 - Client secrets are compared with `hash_equals`.
 - Client authentication failures all say `Client authentication failed.`
 - The `secret` setting signs forms only. It is not used for tokens. If it leaks, an attacker could
-  forge consent forms for signed-in people, so keep it private and long (at least 32 random bytes).
+  forge consent forms for signed-in people, so keep it private and long (at least 32 characters, for example 32 random bytes, hex or base64
+  encoded).
 - `FormToken` expires after 15 minutes.
 
 ## SSRF protections for metadata documents
@@ -137,7 +138,7 @@ point it at your internal network. The fetcher defends in layers:
 4. The connection goes to the address that was checked (`CURLOPT_CONNECT_TO`) and the address curl
    really used is verified afterwards (`CURLINFO_PRIMARY_IP`). A DNS answer that changes between the
    check and the connection does not help an attacker.
-5. No proxy, no redirects, https only, the response must be exactly `application/json`, and there is a
+5. No proxy, no redirects, https only, the response media type must be `application/json` (parameters such as a charset are ignored), and there is a
    size limit (`cimd.maxBytes`) and a time limit (`cimd.timeout`).
 6. A failed download gives clients only a generic message, so the error cannot be used to probe your
    network. Other problems name the rule that was broken.
@@ -170,7 +171,7 @@ stays revoked: `saveClient()` never clears `revokedAt`.
 ## Production checklist
 
 - [ ] The issuer and every resource are https, spelled exactly as clients use them.
-- [ ] `secret` is at least 32 random bytes, comes from the environment and is not in version control.
+- [ ] `secret` is at least 32 characters (for example 32 random bytes, hex or base64 encoded), comes from the environment and is not in version control.
 - [ ] A cron job runs `Pruner` daily ([operations](operations.md#pruning)).
 - [ ] A shared PSR-16 cache (APCu, Redis, Memcached) is passed to `AuthorizationServer` for rate limits.
       `ArrayCache` is for tests only: each process has its own.

@@ -62,8 +62,8 @@ $server = new AuthorizationServer(
 The closure must return a string. `ClientIp::fromServerParams()` is the default
 (`REMOTE_ADDR`, or `unknown` when it is missing; requests without an address then share one counter).
 
-A platform such as claude.ai calls from a shared range of addresses (`160.79.104.0/21`) for many
-people. Give the `token` limit enough room for that.
+A platform such as claude.ai calls from a shared range of addresses (`160.79.104.0/21`) that may serve
+many people. Give the `token` limit enough room for that.
 
 ## The rate limit cache
 
@@ -145,9 +145,10 @@ or define them with `env[OAUTH_SECRET] = ...` in the pool file.
 - **Do not block or challenge** `/.well-known/` and `/oauth/` (or your `routePrefix`). Bot protection,
   "Under Attack" mode and browser integrity checks assume a human with a browser. OAuth clients are
   programs. Add a rule that skips the challenge for those paths.
-- **Allow Anthropic's egress range `160.79.104.0/21`.** Requests from claude.ai (token, registration
-  and your MCP endpoint) come from it. Allow it in the firewall, the WAF and any allow-list in front of
-  the server.
+- **Do not block or challenge Anthropic's egress range `160.79.104.0/21`** on the OAuth and MCP paths.
+  Requests from claude.ai (token, registration and your MCP endpoint) come from it. Skip the challenge
+  for those paths only. Avoid a blanket allow-list for the whole range: it can bypass your WAF rules for
+  every other path.
 - **Do not cache** `/oauth/` or your MCP endpoint at the edge. Only the metadata may be cached, and
   it carries `Cache-Control: public, max-age=300` itself.
 - **Client addresses**: Cloudflare puts the real address in `CF-Connecting-IP`. Read it in your

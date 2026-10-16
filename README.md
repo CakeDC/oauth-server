@@ -117,7 +117,7 @@ $users = new MyUsers();
 $server = new AuthorizationServer(
     ServerConfig::fromArray([
         'issuer' => 'https://auth.example.com',
-        'secret' => getenv('OAUTH_SECRET'), // at least 32 random bytes
+        'secret' => getenv('OAUTH_SECRET'), // at least 32 characters (for example 32 random bytes, hex or base64 encoded)
         'resources' => [
             'https://auth.example.com/api' => [
                 'name' => 'Example API',
