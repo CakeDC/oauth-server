@@ -114,10 +114,6 @@ final class ClientRegistrar
                 'client_name must have 1 to 255 visible characters, without control or invisible characters.',
             );
         }
-        // The consent page headlines a client by its host; a name that is a host would still read as one.
-        if ($name !== null && ClientMetadata::looksLikeHost($name)) {
-            throw OAuthException::invalidClientMetadata('client_name must not be a host name or an IP address.');
-        }
         $scopes = null;
         $scope = self::optionalString($metadata, 'scope');
         if ($scope !== null) {

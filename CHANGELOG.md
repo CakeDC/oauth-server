@@ -36,15 +36,14 @@ First release.
   client called `claude.ai` no longer produces the title and heading of the real one. Client names
   (dynamic registration, metadata documents, `ClientRegistrar::create()`) and personal token names
   reject Unicode control and format characters (`Cc`, `Cf`) and names without a visible character;
-  dynamic registration also rejects names that are host names or IP addresses; length limits count
-  characters, not bytes. New `Support\HostClass` is the one classification of loopback, unspecified
+  length limits count characters, not bytes. New `Support\HostClass` is the one classification of loopback, unspecified
   (`0.0.0.0`, `::`) and `.localhost` hosts used by the redirect URI matcher, the consent memory
   (`ConsentService::identityIsAssured()`) and the consent page, so the "any program on this computer"
   warning shows exactly when a remembered consent is not enough; `https://0.0.0.0/...` and
   `https://[::]/...` are no longer treated as assured. `ConsentView::redirectHost()` now returns the
   scheme of a private-use URI, as `RedirectNoticeView::redirectHost()` does. New `ConsentView::clientLabel()`
-  and `declaredName()`, new `Messages` key `consent.declaredName`, new `ClientMetadata::characterLength()`
-  and `looksLikeHost()`; `Client::redirectsOnlyToLoopback()` now also counts `.localhost` names,
+  and `declaredName()`, new `Messages` key `consent.declaredName`, new `ClientMetadata::characterLength()`.
+  Names that look like hosts stay accepted, because the page never headlines a name. `Client::redirectsOnlyToLoopback()` now also counts `.localhost` names,
   `127.0.0.0/8`, unspecified addresses and private-use schemes. The redirect URI matcher accepts the
   same URIs as before.
 - Docs: `docs/users.md` teaches identifying a client by `clientId`, not by its name, and says an

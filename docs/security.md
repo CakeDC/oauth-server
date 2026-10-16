@@ -123,7 +123,7 @@ that, set it to `0`. Then a lost response costs one re-authorization.
   the name it declared only as a quoted, unverified line, so a client called `claude.ai` cannot
   produce the title or heading of the real one. Client and token names reject Unicode control and
   format characters (`Cc`, `Cf`: bidirectional overrides, zero-width characters), names without a
-  visible character, and, at dynamic registration, names that are host names or IP addresses. Length
+  visible character. A name that looks like a host is accepted: it never headlines the page. Length
   limits count characters.
 - Nothing checks `canAuthorize()` after `/authorize`. When your policy changes, revoke the person's
   tokens with `TokenRevoker::revokeAllForSubject()`.

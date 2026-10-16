@@ -239,7 +239,7 @@ Dynamic client registration (RFC 7591). The body is JSON (`Content-Type: applica
 | Member | Meaning |
 | --- | --- |
 | `redirect_uris` | Required. List of 1 to 10 URIs. See [clients](clients.md#redirect-uri-rules) |
-| `client_name` | Display name, 1 to 255 characters, with a visible character and no control or invisible characters (Unicode `Cc`, `Cf`). It must not be a host name or an IP address (`claude.ai` is refused), because the consent page names a self-registered client by the host of its redirect URI and shows this name only as an unverified line. Default: the host of the first redirect URI |
+| `client_name` | Display name, 1 to 255 characters, with a visible character and no control or invisible characters (Unicode `Cc`, `Cf`). The consent page names a self-registered client by the host of its redirect URI and shows this name only as a quoted, unverified line, so a name such as `claude.ai` is accepted but cannot pass for the real client. Default: the host of the first redirect URI |
 | `application_type` | `web` or `native`. When omitted: `native` if no redirect URI is https, otherwise `web`. A client that says `web` may not register loopback `http` |
 | `token_endpoint_auth_method` | `none`, `client_secret_basic` (default) or `client_secret_post` |
 | `grant_types` | Default `["authorization_code"]`. May add `refresh_token`. `client_credentials` is refused |

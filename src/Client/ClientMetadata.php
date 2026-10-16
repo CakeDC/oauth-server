@@ -32,15 +32,6 @@ final class ClientMetadata
     }
 
     /**
-     * Whether $name is a host name or an IP address, which a self-registered client must not use as its
-     * name: it would read as the client's verified identity.
-     */
-    public static function looksLikeHost(string $name): bool
-    {
-        return HostName::isValid(strtolower(trim($name)));
-    }
-
-    /**
      * Whether $url is a plain https URL: RFC 3986 characters only, no user information, a strict host name or
      * IP literal. This is a syntax check for display: the server never fetches these URLs, and renderers
      * must still escape them.

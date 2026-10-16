@@ -75,6 +75,15 @@ class ClientRegistrarTest extends TestCase
         $this->assertSame($name, $result['client']->name);
     }
 
+    public function testANameThatLooksLikeAHostStillRegistersBecauseThePageDoesNotHeadlineIt(): void
+    {
+        foreach (['claude.ai', 'www.example.com', 'Node.js client', '203.0.113.5'] as $name) {
+            $result = $this->registrar->register(['client_name' => $name, 'redirect_uris' => ['https://app.example.com/cb']]);
+
+            $this->assertSame($name, $result['client']->name);
+        }
+    }
+
     public function testNamesWithPunctuationAndSpacesStillRegister(): void
     {
         foreach (['Claude Code (work)', 'Mr. Smith', "\u{c9}clair \u{1F680}", 'Acme, Inc.'] as $name) {
@@ -95,7 +104,6 @@ class ClientRegistrarTest extends TestCase
             }
         }
         $this->registrar->create(str_repeat("\u{3042}", 255), ['https://app.example.com/cb'], false);
-        $this->registrar->create('intranet.example.com', ['https://app.example.com/cb'], false);
     }
 
     public function testDefaultsToAConfidentialClientWithASecret(): void
@@ -172,10 +180,6 @@ class ClientRegistrarTest extends TestCase
             'encoded client_uri host' => [$ok + ['client_uri' => 'https://%65xample.com'], 'invalid_client_metadata', 'client_uri'],
             'long name' => [$ok + ['client_name' => str_repeat('n', 256)], 'invalid_client_metadata', 'client_name'],
             'long multibyte name' => [$ok + ['client_name' => str_repeat("\u{3042}", 256)], 'invalid_client_metadata', 'client_name'],
-            'a host name' => [$ok + ['client_name' => 'claude.ai'], 'invalid_client_metadata', 'client_name'],
-            'a host name with a subdomain' => [$ok + ['client_name' => 'www.example.com'], 'invalid_client_metadata', 'client_name'],
-            'a padded host name' => [$ok + ['client_name' => ' Claude.AI '], 'invalid_client_metadata', 'client_name'],
-            'an IP address' => [$ok + ['client_name' => '203.0.113.5'], 'invalid_client_metadata', 'client_name'],
             'right-to-left override' => [$ok + ['client_name' => "Claude\u{202E}pp"], 'invalid_client_metadata', 'client_name'],
             'zero width space' => [$ok + ['client_name' => "Cla\u{200B}ude"], 'invalid_client_metadata', 'client_name'],
             'only a no-break space' => [$ok + ['client_name' => "\u{00A0}"], 'invalid_client_metadata', 'client_name'],
