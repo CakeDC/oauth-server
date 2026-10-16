@@ -15,6 +15,8 @@ use Psr\Http\Server\RequestHandlerInterface;
 ini_set('display_errors', '0');
 ini_set('log_errors', '1');
 session_set_cookie_params(['httponly' => true, 'samesite' => 'Lax', 'path' => '/']);
+// The server sets its own Cache-Control; the session cache limiter would add a second, conflicting one.
+session_cache_limiter('');
 session_start();
 ['server' => $server, 'factory' => $factory, 'issuer' => $issuer] = require __DIR__ . '/bootstrap.php';
 
@@ -70,8 +72,8 @@ $response = match (true) {
 
 http_response_code($response->getStatusCode());
 foreach ($response->getHeaders() as $name => $values) {
-    foreach ($values as $value) {
-        header($name . ': ' . $value, false);
+    foreach (array_values($values) as $i => $value) {
+        header($name . ': ' . $value, $i === 0);
     }
 }
 echo $response->getBody();
