@@ -2,4 +2,32 @@
 
 ## 1.0.0-beta1 (unreleased)
 
-- First release.
+First release.
+
+- OAuth 2.1 authorization server library for PHP 8.2 and newer, built on PSR-7, PSR-15, PSR-14,
+  PSR-16, PSR-17, PSR-20 and PSR-3.
+- Authorization code flow with mandatory PKCE (S256), exact redirect URI matching and loopback
+  redirects on any port (RFC 8252).
+- Refresh tokens with rotation, reuse detection that revokes the token family, a configurable grace
+  window for lost responses and a hard family lifetime.
+- Client credentials grant.
+- Client ID Metadata Documents with SSRF protection (pinned connection, address checks, no redirects,
+  size and time limits) and stale-if-error caching.
+- Dynamic client registration (RFC 7591) in `open`, `token` and `closed` modes, and clients registered
+  by hand with `ClientRegistrar::create()`.
+- Resource indicators (RFC 8707), the `iss` authorization response parameter (RFC 9207) and
+  authorization server metadata (RFC 8414).
+- Token revocation (RFC 7009) and introspection (RFC 7662).
+- Consent page and connections page, with replaceable renderers and translatable texts (`Messages`).
+- Personal access tokens.
+- Scopes and scope hierarchies, checked on every request.
+- `PdoStorage` for SQLite, MySQL/MariaDB and PostgreSQL, `InMemoryStorage` and
+  `StorageContractTestCase` for custom storages.
+- `BearerTokenMiddleware` for PSR-15 stacks and a bridge for the official MCP PHP SDK
+  (`AuthorizationServer::mcpTokenValidator()`).
+- PSR-14 events: `TokenIssued`, `TokenRevoked`, `ConsentGranted`, `ClientRegistered`,
+  `RefreshTokenReused` and `AuthorizationDenied`.
+- Rate limiting through any PSR-16 cache, and a `Pruner` for housekeeping.
+- A standalone example in `examples/standalone/` and a run of the official MCP conformance suite for
+  authorization servers (`tests/Conformance/run.sh`).
+- Documentation in `docs/`.
