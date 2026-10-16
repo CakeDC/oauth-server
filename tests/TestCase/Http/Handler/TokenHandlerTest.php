@@ -5,11 +5,13 @@ namespace CakeDC\OAuth\Server\Test\TestCase\Http\Handler;
 
 use CakeDC\OAuth\Server\AuthorizationServer;
 use CakeDC\OAuth\Server\Client\Client;
+use CakeDC\OAuth\Server\Event\TokenIssued;
 use CakeDC\OAuth\Server\Http\Handler\TokenHandler;
 use CakeDC\OAuth\Server\Owner\ResourceOwner;
 use CakeDC\OAuth\Server\Owner\SubjectType;
 use CakeDC\OAuth\Server\Test\Support\FakeUsers;
 use CakeDC\OAuth\Server\Test\Support\Fixtures;
+use CakeDC\OAuth\Server\Test\Support\FlakyClientRepository;
 use CakeDC\OAuth\Server\Test\Support\RacingCodes;
 use CakeDC\OAuth\Server\Test\Support\ServerHarness;
 use CakeDC\OAuth\Server\Token\TokenGenerator;
@@ -421,6 +423,7 @@ class TokenHandlerTest extends TestCase
             'client_id' => $noRefresh->clientId,
         ]), 'unauthorized_client');
 
+        $this->harness->users->clientIdentity = new ResourceOwner('plain', 'Plain', null, SubjectType::Client);
         $this->harness->confidentialClient('s3cret', ['clientId' => 'plain', 'grantTypes' => ['authorization_code']]);
         $basic = ['Authorization' => 'Basic ' . base64_encode('plain:s3cret')];
         $this->assertError($this->post(['grant_type' => 'client_credentials'], $basic), 'unauthorized_client');
@@ -485,5 +488,55 @@ class TokenHandlerTest extends TestCase
             ->handle($this->harness->request('OPTIONS', 'https://example.com/oauth/token'));
         $this->assertSame('*', $preflight->getHeaderLine('Access-Control-Allow-Origin'));
         $this->assertStringContainsString('POST', $preflight->getHeaderLine('Access-Control-Allow-Methods'));
+    }
+
+    public function testAFailedIssuanceRevokesWhatWasSavedAndKeepsTheCode(): void
+    {
+        $client = $this->harness->publicClient();
+        $code = $this->harness->authorizationCode($client);
+        $failed = false;
+        $this->harness->events->hook = function (object $event) use (&$failed): void {
+            if (!$failed && $event instanceof TokenIssued) {
+                $failed = true;
+
+                throw new RuntimeException('listener broke');
+            }
+        };
+
+        $this->assertError($this->harness->exchange($client, $code), 'server_error', 500);
+
+        $stored = $this->harness->storage->findCodeByHash(TokenGenerator::hash($code));
+        $this->assertNull($stored?->usedAt);
+        $issued = $this->harness->events->ofType(TokenIssued::class);
+        $this->assertCount(1, $issued);
+        $family = $issued[0]->token->familyId;
+        $tokens = $this->harness->storage->findTokensByFamily($family);
+        $this->assertNotEmpty($tokens);
+        foreach ($tokens as $token) {
+            $this->assertNotNull($token->revokedAt);
+        }
+        $this->assertSame(200, $this->harness->exchange($client, $code)->getStatusCode());
+    }
+
+    public function testAFailingClientTouchDoesNotFailTheGrant(): void
+    {
+        $client = $this->harness->publicClient();
+        $code = $this->harness->authorizationCode($client);
+        $real = $this->harness->server->tokenHandler();
+        $clients = new FlakyClientRepository($this->harness->storage);
+        $clients->failTouch = true;
+        $args = [];
+        foreach ((new ReflectionClass(TokenHandler::class))->getConstructor()?->getParameters() ?? [] as $parameter) {
+            $args[$parameter->getName()] = (new ReflectionProperty($real, $parameter->getName()))->getValue($real);
+        }
+        $args['clients'] = $clients;
+        $handler = new TokenHandler(...$args);
+
+        $response = $handler->handle(
+            $this->harness->form('https://example.com/oauth/token', $this->codeFields($client, $code)),
+        );
+
+        $this->assertSame(200, $response->getStatusCode(), (string)$response->getBody());
+        $this->assertStringContainsString('touch exploded', $this->harness->logger->text());
     }
 }

@@ -22,6 +22,8 @@ class FlakyClientRepository implements ClientRepositoryInterface
      */
     public ?Client $raceWinner = null;
 
+    public bool $failTouch = false;
+
     private bool $raced = false;
 
     public function __construct(public readonly InMemoryStorage $inner = new InMemoryStorage())
@@ -54,6 +56,9 @@ class FlakyClientRepository implements ClientRepositoryInterface
 
     public function touchClient(string $id, DateTimeImmutable $at): void
     {
+        if ($this->failTouch) {
+            throw new RuntimeException('touch exploded');
+        }
         $this->inner->touchClient($id, $at);
     }
 

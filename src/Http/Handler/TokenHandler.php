@@ -24,11 +24,13 @@ use CakeDC\OAuth\Server\Token\TokenGenerator;
 use CakeDC\OAuth\Server\Token\TokenIssuer;
 use CakeDC\OAuth\Server\Token\TokenRevoker;
 use Closure;
+use DateTimeImmutable;
 use Psr\Clock\ClockInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 use Psr\Log\LoggerInterface;
+use Throwable;
 
 /**
  * The token endpoint: authorization code, refresh token and client credentials grants.
@@ -173,15 +175,22 @@ final class TokenHandler implements RequestHandlerInterface
         // so a concurrent replay can always revoke them.
         $familyId = Uuid::v4();
         $offlineAccess = in_array(Scopes::OFFLINE_ACCESS, $code->scopes, true);
-        $issued = $this->issuer->issue(
-            $client,
-            $code->subject,
-            SubjectType::User,
-            $resource,
-            array_values(array_diff($code->scopes, [Scopes::OFFLINE_ACCESS])),
-            $familyId,
-            $this->config->issuesRefreshTokens($offlineAccess) && $client->allowsGrant(GrantType::REFRESH_TOKEN),
-        );
+        try {
+            $issued = $this->issuer->issue(
+                $client,
+                $code->subject,
+                SubjectType::User,
+                $resource,
+                array_values(array_diff($code->scopes, [Scopes::OFFLINE_ACCESS])),
+                $familyId,
+                $this->config->issuesRefreshTokens($offlineAccess) && $client->allowsGrant(GrantType::REFRESH_TOKEN),
+            );
+        } catch (Throwable $e) {
+            // Whatever was saved before the failure must not stay live.
+            $this->revoker->revokeFamily($familyId, 'issue_failed');
+
+            throw $e;
+        }
         if (!$this->codes->consumeCode($code->id, $now, $familyId)) {
             $this->revoker->revokeFamily($familyId, 'code_reuse');
             $winner = $this->codes->findCodeByHash($code->codeHash);
@@ -190,7 +199,7 @@ final class TokenHandler implements RequestHandlerInterface
             }
             throw OAuthException::invalidGrant('The authorization code was already used.');
         }
-        $this->clients->touchClient($client->id, $now);
+        $this->touch($client->id, $now);
 
         return $issued;
     }
@@ -213,7 +222,7 @@ final class TokenHandler implements RequestHandlerInterface
         }
         $requested = array_values(array_diff(Scopes::parse($body['scope'] ?? null), [Scopes::OFFLINE_ACCESS]));
         $issued = $this->rotator->rotate($client, $value, $body['resource'] ?? null, $requested);
-        $this->clients->touchClient($client->id, $this->clock->now());
+        $this->touch($client->id, $this->clock->now());
 
         return $issued;
     }
@@ -263,8 +272,20 @@ final class TokenHandler implements RequestHandlerInterface
             Uuid::v4(),
             false,
         );
-        $this->clients->touchClient($client->id, $this->clock->now());
+        $this->touch($client->id, $this->clock->now());
 
         return $issued;
+    }
+
+    /**
+     * Records the client's last use. A failure is logged and ignored: the grant already happened.
+     */
+    private function touch(string $clientId, DateTimeImmutable $at): void
+    {
+        try {
+            $this->clients->touchClient($clientId, $at);
+        } catch (Throwable $e) {
+            $this->logger->error('Could not record client use: {message}', ['message' => $e->getMessage()]);
+        }
     }
 }
