@@ -18,8 +18,11 @@ value is shown only once, when it is created.
 - The validation is the same as for access tokens: the owner is loaded again on every request, and the
   token stops working when `findBySubject()` returns `null`.
 
-Turn the feature off with `'personalTokens' => false`. The section disappears from the connections
-page and creating or revoking tokens is refused with `invalid_request`.
+Turn the feature off with `'personalTokens' => false`. Existing personal tokens stop working at once
+(the validator answers `Personal access tokens are disabled.`), and creating a token is refused with
+`invalid_request`. The connections page still lists the person's live personal tokens and still lets
+them revoke those, so people can clean up; the creation form is gone. Turning the feature on again
+makes the tokens that were not revoked work again.
 
 ## Creating tokens on the connections page
 

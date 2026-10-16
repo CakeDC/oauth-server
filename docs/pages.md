@@ -143,7 +143,7 @@ interface ConnectionsRendererInterface
 | `formAction` | The path the forms post to |
 | `formToken` | The signed token every form must post |
 | `maxDays` | The longest life of a new personal token, in days |
-| `personalTokensEnabled` | Whether to show the personal token section |
+| `personalTokensEnabled` | Whether creating personal tokens is offered. Show the section anyway when `personalTokens` is not empty, so people can revoke what is left |
 | `newToken` | A token just created. Show it once, with a copy warning |
 | `error` | A message about the last action (for example a failed creation) |
 

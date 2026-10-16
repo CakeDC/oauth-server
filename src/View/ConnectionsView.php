@@ -20,7 +20,7 @@ final class ConnectionsView
      * @param string $formAction Path the forms post to.
      * @param string $formToken Signed form token.
      * @param int $maxDays Longest life of a new personal token.
-     * @param bool $personalTokensEnabled Whether the personal token section is shown.
+     * @param bool $personalTokensEnabled Whether creating personal tokens is offered; existing ones are listed either way.
      * @param string|null $newToken A token just created; shown once.
      * @param string|null $error A message about the last action.
      */

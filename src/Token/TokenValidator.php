@@ -25,6 +25,7 @@ final class TokenValidator
      * @param \CakeDC\OAuth\Server\Scope\ScopeResolver $scopes Scopes.
      * @param \Psr\Clock\ClockInterface $clock Clock.
      * @param int $touchInterval Least seconds between two `last_used_at` updates.
+     * @param bool $personalTokens Whether personal tokens are accepted; off, they stop working at once.
      */
     public function __construct(
         private readonly TokenRepositoryInterface $tokens,
@@ -34,6 +35,7 @@ final class TokenValidator
         private readonly ScopeResolver $scopes,
         private readonly ClockInterface $clock,
         private readonly int $touchInterval = 60,
+        private readonly bool $personalTokens = true,
     ) {
     }
 
@@ -58,6 +60,9 @@ final class TokenValidator
         $stored = $this->tokens->findTokenByHash(TokenGenerator::hash($token));
         if ($stored === null || $stored->type === TokenType::Refresh) {
             return new ValidationFailure('The access token is invalid.');
+        }
+        if ($stored->type === TokenType::Personal && !$this->personalTokens) {
+            return new ValidationFailure('Personal access tokens are disabled.');
         }
         if ($stored->revokedAt !== null) {
             return new ValidationFailure('The access token was revoked.');

@@ -33,7 +33,7 @@ documents.
 | `cimd` | array | see below | Client ID Metadata Documents |
 | `clientCredentials` | bool | `true` | Enable the client credentials grant |
 | `introspection` | bool | `true` | Enable the introspection endpoint |
-| `personalTokens` | bool | `true` | Enable personal access tokens on the connections page |
+| `personalTokens` | bool | `true` | Enable personal access tokens on the connections page. Off, existing personal tokens stop validating at once and creation is refused, while listing and revoking stay available |
 | `connections` | bool | `true` | Enable the connections page. When `false` the page answers 404 |
 | `rateLimit` | array | see below | Request limits per endpoint |
 | `retentionDays` | int | `7` | Days revoked and expired tokens are kept before [pruning](operations.md) deletes them |

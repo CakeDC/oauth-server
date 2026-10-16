@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace CakeDC\OAuth\Server\Test\TestCase\Http\Handler;
 
+use CakeDC\OAuth\Server\AuthorizationServer;
 use CakeDC\OAuth\Server\Test\Support\Fixtures;
 use CakeDC\OAuth\Server\Test\Support\ServerHarness;
 use CakeDC\OAuth\Server\Token\TokenGenerator;
@@ -119,6 +120,37 @@ class ConnectionsHandlerTest extends TestCase
         $this->harness->signIn();
         $this->assertStringNotContainsString('Personal access tokens', (string)$this->page()->getBody());
         $this->assertSame(400, $this->post(['action' => 'create_token', 'name' => 'x'])->getStatusCode());
+    }
+
+    public function testPersonalTokensCanBeListedAndRevokedWhenTheFeatureIsOff(): void
+    {
+        $this->harness->signIn();
+        $owner = $this->harness->users->users['42'];
+        $created = $this->harness->server->connectionService()
+            ->createPersonalToken($owner, 'Deploy key', Fixtures::MCP, ['content:read'], 7);
+        $off = new AuthorizationServer(
+            Fixtures::config(['personalTokens' => false]),
+            $this->harness->storage,
+            $this->harness->users,
+            $this->harness->userContext,
+            $this->harness->factory,
+            $this->harness->factory,
+            cache: $this->harness->cache,
+            clock: $this->harness->clock,
+        );
+        $handler = $off->connectionsHandler();
+        $formToken = $off->formToken()->issue('connections', '42');
+
+        $html = (string)$handler->handle($this->harness->request('GET', self::URL))->getBody();
+        $this->assertStringContainsString('Deploy key', $html);
+        $this->assertStringNotContainsString('name="name"', $html);
+        $this->assertSame(400, $handler->handle($this->harness->form(self::URL, [
+            'form_token' => $formToken, 'action' => 'create_token', 'name' => 'x',
+        ]))->getStatusCode());
+        $this->assertSame(303, $handler->handle($this->harness->form(self::URL, [
+            'form_token' => $formToken, 'action' => 'revoke_token', 'token_id' => $created['token']->id,
+        ]))->getStatusCode());
+        $this->assertNotNull($this->harness->storage->findTokenById($created['token']->id)?->revokedAt);
     }
 
     public function testRefusesUnsafePaths(): void

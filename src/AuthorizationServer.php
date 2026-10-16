@@ -339,6 +339,7 @@ final class AuthorizationServer
             $this->config->resources,
             $this->scopeResolver(),
             $this->clock,
+            personalTokens: $this->config->personalTokens,
         );
     }
 

@@ -140,6 +140,42 @@ class TokenValidatorTest extends TestCase
         $this->assertNull($validated->client);
     }
 
+    public function testPersonalTokensStopWorkingWhenTheFeatureIsOff(): void
+    {
+        $result = $this->issuer->issuePersonal('42', Fixtures::resources()->defaultResource(), ['content:read'], 'CI', Time::plus($this->clock->now(), 86400));
+        $off = new TokenValidator(
+            $this->storage,
+            $this->storage,
+            $this->users,
+            Fixtures::resources(),
+            new ScopeResolver(),
+            $this->clock,
+            personalTokens: false,
+        );
+
+        $failure = $off->validate($result['value'], Fixtures::MCP);
+
+        $this->assertInstanceOf(ValidationFailure::class, $failure);
+        $this->assertSame('Personal access tokens are disabled.', $failure->description);
+        $this->assertInstanceOf(ValidatedToken::class, $this->validator->validate($result['value'], Fixtures::MCP));
+    }
+
+    public function testTheFlagDoesNotAffectOAuthAccessTokens(): void
+    {
+        $token = $this->token();
+        $off = new TokenValidator(
+            $this->storage,
+            $this->storage,
+            $this->users,
+            Fixtures::resources(),
+            new ScopeResolver(),
+            $this->clock,
+            personalTokens: false,
+        );
+
+        $this->assertInstanceOf(ValidatedToken::class, $off->validate($token, Fixtures::MCP));
+    }
+
     public function testRecordsUseAtMostOnceAMinute(): void
     {
         $token = $this->token();

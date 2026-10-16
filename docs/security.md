@@ -55,7 +55,7 @@ person), all in `tests/Security/`.
 | `rateLimit.*` | 30, 60 and 10 per window | Raised or no cache: no limiting at all | Lowered |
 | `introspection` | `true` | | `false` if you do not need it |
 | `clientCredentials` | `true` | | `false` if you do not need it |
-| `personalTokens` | `true` | | `false` if you do not need it |
+| `personalTokens` | `true` | | `false` if you do not need it. Existing personal tokens stop working immediately |
 
 Turn off what you do not use. Every endpoint you leave on is surface you must watch.
 
@@ -179,7 +179,7 @@ stays revoked: `saveClient()` never clears `revokedAt`.
       proxy ([deployment](deployment.md#the-client-ip-behind-proxies)).
 - [ ] `cimd.allowedHosts` lists the hosts you expect, if you only serve known clients.
 - [ ] Registration is `closed`, or `token` mode, if you do not need open registration.
-- [ ] Features you do not use are off: `introspection`, `clientCredentials`, `personalTokens`.
+- [ ] Features you do not use are off: `introspection`, `clientCredentials`, `personalTokens` (turning it off also stops existing personal tokens).
 - [ ] `tokenPrefix` names your product.
 - [ ] The database user can only touch the four tables, and backups are encrypted.
 - [ ] Your CORS layer exposes `WWW-Authenticate` on protected routes.

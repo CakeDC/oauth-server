@@ -55,7 +55,7 @@ final class HtmlConnectionsRenderer implements ConnectionsRendererInterface
             }
             $body .= '</table>';
         }
-        if ($view->personalTokensEnabled) {
+        if ($view->personalTokensEnabled || $view->personalTokens !== []) {
             $body .= $this->personalTokens($view);
         }
 

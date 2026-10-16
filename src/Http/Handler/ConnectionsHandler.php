@@ -99,8 +99,8 @@ final class ConnectionsHandler implements RequestHandlerInterface
             return $this->error(OAuthException::invalidRequest('The form expired. Reload the page and try again.'));
         }
         $action = $params['action'] ?? '';
-        $personal = in_array($action, ['create_token', 'revoke_token'], true);
-        if ($personal && !$this->config->personalTokens) {
+        // Listing and revoking stay available when the feature is off, so people can clean up.
+        if ($action === 'create_token' && !$this->config->personalTokens) {
             return $this->error(OAuthException::invalidRequest('Personal access tokens are disabled.'));
         }
         $back = $this->responder->redirect(RequestPath::safe($request), 303);
@@ -160,7 +160,7 @@ final class ConnectionsHandler implements RequestHandlerInterface
         return new ConnectionsView(
             $owner,
             $this->connections->connections($owner),
-            $this->config->personalTokens ? $this->connections->personalTokens($owner) : [],
+            $this->connections->personalTokens($owner),
             $this->config->personalTokens ? $this->connections->creatableScopes($owner) : [],
             $names,
             RequestPath::safe($request),
