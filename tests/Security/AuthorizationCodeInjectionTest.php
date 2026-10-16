@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace CakeDC\OAuth\Server\Test\Security;
 
+use CakeDC\OAuth\Server\Test\Support\Fixtures;
 use CakeDC\OAuth\Server\Test\Support\ServerHarness;
 use CakeDC\OAuth\Server\Token\TokenGenerator;
 use PHPUnit\Framework\TestCase;
@@ -65,5 +66,45 @@ class AuthorizationCodeInjectionTest extends TestCase
         $late = $harness->authorizationCode($client);
         $harness->clock->advance(61);
         $this->assertSame('invalid_grant', $harness->json($harness->exchange($client, $late))['error']);
+    }
+
+    public function testADifferentRedirectUriAtTheTokenEndpointIsRefused(): void
+    {
+        $harness = new ServerHarness();
+        $client = $harness->publicClient();
+        $code = $harness->authorizationCode($client);
+
+        $response = $harness->exchange($client, $code, ['redirect_uri' => 'https://app.example.com/other']);
+
+        $this->assertSame('invalid_grant', $harness->json($response)['error']);
+    }
+
+    public function testTheVerifierCannotBeOmitted(): void
+    {
+        $harness = new ServerHarness();
+        $client = $harness->publicClient();
+        $code = $harness->authorizationCode($client);
+
+        $response = $harness->server->tokenHandler()->handle($harness->form('https://example.com/oauth/token', [
+            'grant_type' => 'authorization_code',
+            'code' => $code,
+            'redirect_uri' => $client->redirectUris[0],
+            'client_id' => $client->clientId,
+        ]));
+
+        $this->assertSame('invalid_request', $harness->json($response)['error']);
+    }
+
+    public function testReusingACodeRevokesTheAccessTokenToo(): void
+    {
+        $harness = new ServerHarness();
+        $client = $harness->publicClient();
+        $code = $harness->authorizationCode($client);
+        $first = $harness->json($harness->exchange($client, $code));
+        $this->assertSame(200, $harness->bearerStatus(Fixtures::MCP, $first['access_token']));
+
+        $harness->exchange($client, $code);
+
+        $this->assertSame(401, $harness->bearerStatus(Fixtures::MCP, $first['access_token']));
     }
 }

@@ -23,6 +23,8 @@ class RedirectUriValidationTest extends TestCase
             'https://app.example.com/cb/../evil',
             'https://app.example.com/cb?x=1',
             'https://app.example.com.evil.example/cb',
+            'https://app.example.com:8443/cb',
+            'http://app.example.com/cb',
         ];
         foreach ($redirects as $redirect) {
             $url = $harness->authorizeUrl($client, ['redirect_uri' => $redirect]);
@@ -50,7 +52,8 @@ class RedirectUriValidationTest extends TestCase
     public function testRegistrationRefusesDangerousRedirects(): void
     {
         $harness = new ServerHarness();
-        $uris = ['javascript:alert(1)', 'https://app.example.com/cb#frag', 'http://app.example.com/cb', 'data:text/html,x'];
+        $uris = [
+            'javascript:alert(1)', 'https://app.example.com/cb#frag', 'http://app.example.com/cb', 'data:text/html,x', 'file:///etc/passwd', 'vbscript:msgbox(1)'];
         foreach ($uris as $uri) {
             $body = (string)json_encode([
                 'application_type' => 'native',
@@ -64,6 +67,20 @@ class RedirectUriValidationTest extends TestCase
                 $body,
             ));
             $this->assertSame('invalid_redirect_uri', $harness->json($response)['error'], $uri);
+        }
+    }
+
+    public function testLoopbackStillNeedsTheSamePathAndQuery(): void
+    {
+        $harness = new ServerHarness();
+        $client = $harness->publicClient(['redirectUris' => ['http://127.0.0.1/cb']]);
+        $harness->signIn();
+
+        foreach (['http://127.0.0.1:4444/other', 'http://127.0.0.1:4444/cb?x=1', 'https://127.0.0.1:4444/cb'] as $uri) {
+            $url = $harness->authorizeUrl($client, ['redirect_uri' => $uri]);
+            $response = $harness->server->authorizeHandler()->handle($harness->request('GET', $url));
+            $this->assertSame(400, $response->getStatusCode(), $uri);
+            $this->assertSame('', $response->getHeaderLine('Location'), $uri);
         }
     }
 }

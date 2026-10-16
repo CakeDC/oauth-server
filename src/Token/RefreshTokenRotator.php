@@ -6,6 +6,8 @@ namespace CakeDC\OAuth\Server\Token;
 use CakeDC\OAuth\Server\Client\Client;
 use CakeDC\OAuth\Server\Event\RefreshTokenReused;
 use CakeDC\OAuth\Server\Exception\OAuthException;
+use CakeDC\OAuth\Server\Owner\SubjectType;
+use CakeDC\OAuth\Server\Owner\UserProviderInterface;
 use CakeDC\OAuth\Server\Resource\ProtectedResource;
 use CakeDC\OAuth\Server\Resource\ResourceRegistry;
 use CakeDC\OAuth\Server\Scope\ScopeResolver;
@@ -16,6 +18,10 @@ use Psr\EventDispatcher\EventDispatcherInterface;
 
 /**
  * Exchanges refresh tokens for new pairs, detecting reuse.
+ *
+ * A refresh token whose owner no longer exists (a removed person, or a client without an identity) is
+ * refused with invalid_grant before it is marked used and nothing is revoked, so a reactivated person's
+ * connection works again without a new consent.
  */
 final class RefreshTokenRotator
 {
@@ -27,6 +33,7 @@ final class RefreshTokenRotator
      * @param \CakeDC\OAuth\Server\Resource\ResourceRegistry $resources Resources.
      * @param \Psr\Clock\ClockInterface $clock Clock.
      * @param \Psr\EventDispatcher\EventDispatcherInterface $events Events.
+     * @param \CakeDC\OAuth\Server\Owner\UserProviderInterface $users The application's people.
      * @param int $grace Seconds in which a just-rotated token may be presented again; 0 disables.
      */
     public function __construct(
@@ -37,6 +44,7 @@ final class RefreshTokenRotator
         private readonly ResourceRegistry $resources,
         private readonly ClockInterface $clock,
         private readonly EventDispatcherInterface $events,
+        private readonly UserProviderInterface $users,
         private readonly int $grace = 30,
     ) {
     }
@@ -136,6 +144,12 @@ final class RefreshTokenRotator
             if ($asked?->identifier !== $target->identifier) {
                 throw OAuthException::invalidTarget('The refresh token was issued for another resource.');
             }
+        }
+        $owner = $token->subjectType === SubjectType::Client
+            ? $this->users->forClient($client, $target)
+            : $this->users->findBySubject($token->subject);
+        if ($owner === null) {
+            throw OAuthException::invalidGrant('The owner of this refresh token no longer has access.');
         }
         $scopes = $this->grantable(
             $client,

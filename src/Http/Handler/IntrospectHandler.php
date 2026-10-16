@@ -3,15 +3,19 @@ declare(strict_types=1);
 
 namespace CakeDC\OAuth\Server\Http\Handler;
 
+use CakeDC\OAuth\Server\Client\Client;
 use CakeDC\OAuth\Server\Client\ClientAuthenticator;
 use CakeDC\OAuth\Server\Config\ServerConfig;
 use CakeDC\OAuth\Server\Exception\OAuthException;
 use CakeDC\OAuth\Server\Http\FormBody;
 use CakeDC\OAuth\Server\Http\HttpResponder;
+use CakeDC\OAuth\Server\Owner\SubjectType;
+use CakeDC\OAuth\Server\Owner\UserProviderInterface;
 use CakeDC\OAuth\Server\RateLimit\RateLimiter;
 use CakeDC\OAuth\Server\Scope\Scopes;
 use CakeDC\OAuth\Server\Storage\ClientRepositoryInterface;
 use CakeDC\OAuth\Server\Storage\TokenRepositoryInterface;
+use CakeDC\OAuth\Server\Token\Token;
 use CakeDC\OAuth\Server\Token\TokenGenerator;
 use CakeDC\OAuth\Server\Token\TokenType;
 use CakeDC\OAuth\Server\Token\TokenValidator;
@@ -42,6 +46,7 @@ final class IntrospectHandler implements RequestHandlerInterface
      * @param \Psr\Clock\ClockInterface $clock Clock.
      * @param \Psr\Log\LoggerInterface $logger Logger.
      * @param \Closure $clientIp `fn (ServerRequestInterface $request): string`.
+     * @param \CakeDC\OAuth\Server\Owner\UserProviderInterface $users The application's people.
      */
     public function __construct(
         private readonly ServerConfig $config,
@@ -54,6 +59,7 @@ final class IntrospectHandler implements RequestHandlerInterface
         private readonly ClockInterface $clock,
         private readonly LoggerInterface $logger,
         private readonly Closure $clientIp,
+        private readonly UserProviderInterface $users,
     ) {
     }
 
@@ -110,7 +116,7 @@ final class IntrospectHandler implements RequestHandlerInterface
                 ? null
                 : $this->clients->findClientById($stored->clientInternalId);
             $dead = !$stored->isActive($this->clock->now()) || $stored->usedAt !== null;
-            if ($dead || $client === null || $client->isRevoked()) {
+            if ($dead || $client === null || $client->isRevoked() || !$this->ownerExists($stored, $client)) {
                 return $inactive;
             }
 
@@ -145,5 +151,18 @@ final class IntrospectHandler implements RequestHandlerInterface
             'iat' => $result->token->createdAt->getTimestamp(),
             'token_type' => 'Bearer',
         ], fn(mixed $item): bool => $item !== null);
+    }
+
+    /**
+     * Whether the person (or client identity) a refresh token belongs to still exists.
+     */
+    private function ownerExists(Token $token, Client $client): bool
+    {
+        if ($token->subjectType === SubjectType::User) {
+            return $this->users->findBySubject($token->subject) !== null;
+        }
+        $resource = $this->config->resources->get($token->resource);
+
+        return $resource !== null && $this->users->forClient($client, $resource) !== null;
     }
 }

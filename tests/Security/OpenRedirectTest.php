@@ -20,7 +20,9 @@ class OpenRedirectTest extends TestCase
             'https://example.com/oauth/authorize?client_id=nobody&redirect_uri=https%3A%2F%2Fevil.example&response_type=token',
         ));
 
+        $this->assertSame(400, $response->getStatusCode());
         $this->assertSame('', $response->getHeaderLine('Location'));
+        $this->assertStringNotContainsString('evil.example', (string)$response->getBody());
     }
 
     public function testTheLoginReturnUrlIsRelative(): void

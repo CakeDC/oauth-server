@@ -42,4 +42,23 @@ class CsrfTest extends TestCase
 
         $this->assertSame($state, ServerHarness::redirectParams($response)['state']);
     }
+
+    public function testTamperingWithTheConsentFieldsIsRefused(): void
+    {
+        $harness = new ServerHarness();
+        $client = $harness->publicClient();
+        $harness->signIn();
+        $handler = $harness->server->authorizeHandler();
+        $page = $handler->handle($harness->request('GET', $harness->authorizeUrl($client)));
+        $fields = ServerHarness::formFields((string)$page->getBody()) + ['decision' => 'approve'];
+
+        foreach (['scope' => 'content:publish', 'redirect_uri' => 'https://evil.example/cb'] as $name => $value) {
+            $response = $handler->handle($harness->form(
+                'https://example.com/oauth/authorize',
+                [$name => $value] + $fields,
+            ));
+            $this->assertSame(400, $response->getStatusCode(), $name);
+            $this->assertSame('', $response->getHeaderLine('Location'), $name);
+        }
+    }
 }

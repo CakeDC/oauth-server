@@ -44,4 +44,20 @@ class SsrfTest extends TestCase
         $this->assertSame(400, $response->getStatusCode());
         $this->assertCount(1, $harness->transport->requests);
     }
+
+    public function testPlainHttpClientIdUrlsAreNeverFetched(): void
+    {
+        $harness = new ServerHarness();
+        $harness->transport->serve('http://client.example/client.json', ['client_id' => 'http://client.example/client.json']);
+        $harness->signIn();
+
+        $response = $harness->server->authorizeHandler()->handle($harness->request(
+            'GET',
+            'https://example.com/oauth/authorize?response_type=code&client_id='
+                . rawurlencode('http://client.example/client.json'),
+        ));
+
+        $this->assertSame(400, $response->getStatusCode());
+        $this->assertSame([], $harness->transport->requests);
+    }
 }

@@ -10,9 +10,11 @@ use CakeDC\OAuth\Server\Storage\InMemory\InMemoryStorage;
 use CakeDC\OAuth\Server\Testing\ArrayCache;
 use CakeDC\OAuth\Server\Testing\FrozenClock;
 use Nyholm\Psr7\Factory\Psr17Factory;
+use Nyholm\Psr7\Response;
 use Nyholm\Psr7\ServerRequest;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
+use Psr\Http\Server\RequestHandlerInterface;
 use RuntimeException;
 
 /**
@@ -223,5 +225,24 @@ final class ServerHarness
             'code_verifier' => self::VERIFIER,
             'client_id' => $client->clientId,
         ], $headers));
+    }
+
+    /**
+     * The status the bearer middleware answers for $token at $resource.
+     *
+     * @param list<string> $scopes Scopes the route requires.
+     */
+    public function bearerStatus(string $resource, string $token, array $scopes = []): int
+    {
+        $next = new class implements RequestHandlerInterface {
+            public function handle(ServerRequestInterface $request): ResponseInterface
+            {
+                return new Response(200);
+            }
+        };
+
+        return $this->server->bearerMiddleware($resource, null, $scopes)
+            ->process($this->request('GET', $resource, ['Authorization' => 'Bearer ' . $token]), $next)
+            ->getStatusCode();
     }
 }

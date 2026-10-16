@@ -10,6 +10,7 @@ use PHPUnit\Framework\TestCase;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\RequestHandlerInterface;
+use RuntimeException;
 
 /**
  * RFC 9700, "Credential Leakage via Referer Headers" and "via Browser History", and "Access Token
@@ -64,18 +65,37 @@ class CredentialLeakageTest extends TestCase
     public function testLogsNeverContainSecrets(): void
     {
         $harness = new ServerHarness();
-        $client = $harness->publicClient();
+        $client = $harness->confidentialClient('the-client-secret');
+        $basic = ['Authorization' => 'Basic ' . base64_encode($client->clientId . ':the-client-secret')];
         $code = $harness->authorizationCode($client);
-        $tokens = $harness->json($harness->exchange($client, $code));
-        $harness->exchange($client, $code);
+        $tokens = $harness->json($harness->exchange($client, $code, [], $basic));
+        $harness->exchange($client, $code, [], $basic);
         $harness->server->tokenHandler()->handle($harness->form('https://example.com/oauth/token', [
             'grant_type' => 'refresh_token',
             'refresh_token' => $tokens['refresh_token'] . 'x',
-            'client_id' => $client->clientId,
-        ]));
+        ], $basic));
+        $this->assertSame([], $harness->logger->records, 'Expected failures are not logged');
+
+        // A real failure while the secrets are in flight: the server logs it, without any secret.
+        $fresh = $harness->authorizationCode($client);
+        $harness->events->hook = function (object $event): void {
+            throw new RuntimeException('database went away');
+        };
+        $response = $harness->exchange($client, $fresh, [], $basic);
+        $this->assertSame(500, $response->getStatusCode());
 
         $log = $harness->logger->text();
-        foreach ([$code, $tokens['access_token'], $tokens['refresh_token']] as $secret) {
+        $this->assertNotSame([], $harness->logger->records);
+        $this->assertStringContainsString('RuntimeException: database went away', $log);
+        $secrets = [
+            $code,
+            $fresh,
+            ServerHarness::VERIFIER,
+            'the-client-secret',
+            $tokens['access_token'],
+            $tokens['refresh_token'],
+        ];
+        foreach ($secrets as $secret) {
             $this->assertStringNotContainsString($secret, $log);
         }
     }

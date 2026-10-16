@@ -34,4 +34,30 @@ class ClientImpersonationTest extends TestCase
         $this->assertSame(SubjectType::Client, $validated->owner->type);
         $this->assertSame([], $harness->server->connectionService()->connections($harness->users->users['42']));
     }
+
+    public function testConsentNamesAMetadataClientByItsHostAndFlagsRegisteredOnes(): void
+    {
+        $harness = new ServerHarness();
+        $url = 'https://bank.example/client.json';
+        $harness->transport->serve($url, [
+            'client_id' => $url,
+            'client_name' => 'Your Trusted Bank',
+            'redirect_uris' => ['https://bank.example/cb'],
+            'token_endpoint_auth_method' => 'none',
+        ]);
+        $harness->dns->answers['bank.example'] = ['93.184.216.34'];
+        $harness->signIn();
+        $handler = $harness->server->authorizeHandler();
+
+        $cimd = $handler->handle($harness->request('GET', $harness->authorizeUrl(
+            Fixtures::client(['clientId' => $url, 'redirectUris' => ['https://bank.example/cb']]),
+        )));
+        $body = (string)$cimd->getBody();
+        $this->assertStringContainsString('bank.example', $body);
+        $this->assertStringNotContainsString('Your Trusted Bank', $body);
+
+        $dynamic = $harness->publicClient(['name' => 'Your Trusted Bank']);
+        $page = (string)$handler->handle($harness->request('GET', $harness->authorizeUrl($dynamic)))->getBody();
+        $this->assertStringContainsString('registered itself', $page);
+    }
 }

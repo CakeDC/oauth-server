@@ -12,6 +12,7 @@ use CakeDC\OAuth\Server\Exception\OAuthException;
 use CakeDC\OAuth\Server\Owner\SubjectType;
 use CakeDC\OAuth\Server\Scope\ScopeResolver;
 use CakeDC\OAuth\Server\Storage\InMemory\InMemoryStorage;
+use CakeDC\OAuth\Server\Test\Support\FakeUsers;
 use CakeDC\OAuth\Server\Test\Support\Fixtures;
 use CakeDC\OAuth\Server\Test\Support\RecordingEventDispatcher;
 use CakeDC\OAuth\Server\Testing\FrozenClock;
@@ -38,6 +39,8 @@ class RefreshTokenRotatorTest extends TestCase
 
     private Client $client;
 
+    private FakeUsers $users;
+
     protected function setUp(): void
     {
         $this->storage = new InMemoryStorage();
@@ -45,6 +48,7 @@ class RefreshTokenRotatorTest extends TestCase
         $this->events = new RecordingEventDispatcher();
         $this->issuer = new TokenIssuer($this->storage, new TokenGenerator(), $this->clock, $this->events, new Lifetimes());
         $this->client = Fixtures::client();
+        $this->users = new FakeUsers();
     }
 
     private function rotator(int $grace = 30): RefreshTokenRotator
@@ -57,6 +61,7 @@ class RefreshTokenRotatorTest extends TestCase
             Fixtures::resources(),
             $this->clock,
             $this->events,
+            $this->users,
             $grace,
         );
     }
@@ -96,6 +101,40 @@ class RefreshTokenRotatorTest extends TestCase
             $this->storage->findTokensByFamily('family-1'),
             fn(Token $t): bool => $t->isActive($this->clock->now()) && $t->usedAt === null,
         ));
+    }
+
+    public function testARemovedOwnerCannotRefreshAndNothingIsRevoked(): void
+    {
+        $initial = $this->initial();
+        $this->users->remove('42');
+
+        $this->assertInvalidGrant(
+            fn() => $this->rotator()->rotate($this->client, (string)$initial->refreshToken, null, []),
+            'no longer has access',
+        );
+        $this->assertCount(2, $this->live());
+        $this->assertNull($this->storage->findTokenById((string)$initial->refresh?->id)?->usedAt);
+
+        $this->users->add('42', 'Ada');
+        $rotated = $this->rotator()->rotate($this->client, (string)$initial->refreshToken, null, []);
+        $this->assertSame('42', $rotated->access->subject);
+    }
+
+    public function testAClientTokenNeedsItsIdentityToRefresh(): void
+    {
+        $initial = $this->issuer->issue(
+            $this->client,
+            'robot',
+            SubjectType::Client,
+            Fixtures::resources()->defaultResource(),
+            ['content:read'],
+            'family-1',
+            true,
+        );
+
+        $this->assertInvalidGrant(
+            fn() => $this->rotator()->rotate($this->client, (string)$initial->refreshToken, null, []),
+        );
     }
 
     public function testRotatesIntoTheSameFamily(): void

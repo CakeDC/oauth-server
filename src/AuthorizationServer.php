@@ -322,6 +322,7 @@ final class AuthorizationServer
             $this->config->resources,
             $this->clock,
             $this->events,
+            $this->users,
             $this->config->lifetimes->refreshReuseGrace,
         );
     }
@@ -492,6 +493,7 @@ final class AuthorizationServer
             $this->clock,
             $this->logger,
             $this->clientIp,
+            $this->users,
         );
     }
 

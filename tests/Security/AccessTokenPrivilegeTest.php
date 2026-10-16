@@ -66,4 +66,23 @@ class AccessTokenPrivilegeTest extends TestCase
 
         $this->assertSame(401, $this->call($harness, Fixtures::MCP, $token));
     }
+
+    public function testARevokedClientLosesItsTokensAndCannotAuthenticate(): void
+    {
+        $harness = new ServerHarness();
+        $client = $harness->confidentialClient('s');
+        $basic = ['Authorization' => 'Basic ' . base64_encode($client->clientId . ':s')];
+        $tokens = $harness->json($harness->exchange($client, $harness->authorizationCode($client), [], $basic));
+        $this->assertSame(200, $this->call($harness, Fixtures::MCP, $tokens['access_token']));
+
+        $harness->storage->saveClient($client->withRevokedAt($harness->clock->now()));
+
+        $this->assertSame(401, $this->call($harness, Fixtures::MCP, $tokens['access_token']));
+        $response = $harness->server->tokenHandler()->handle($harness->form('https://example.com/oauth/token', [
+            'grant_type' => 'refresh_token',
+            'refresh_token' => $tokens['refresh_token'],
+        ], $basic));
+        $this->assertSame(401, $response->getStatusCode());
+        $this->assertSame('invalid_client', $harness->json($response)['error']);
+    }
 }
