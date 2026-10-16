@@ -2,3 +2,11 @@ parameters:
     level: 8
     paths:
         - src/
+    ignoreErrors:
+        # Read by the handler factories of Tasks 18 to 22; remove this block once they exist.
+        -
+            identifier: property.onlyWritten
+            path: src/AuthorizationServer.php
+        -
+            identifier: trait.unused
+            path: src/Http/Handler/GuardsErrors.php
