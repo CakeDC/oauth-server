@@ -19,6 +19,10 @@ final class ClientMetadata
      * character, the musical null notehead, and the unassigned default-ignorable code points
      * (U+2065, U+FFF0 to U+FFF8, U+E0000, U+E0002 to U+E001F, U+E0080 to U+E0FFF).
      */
+    private const INVISIBLE = '/[\x{034F}\x{115F}\x{1160}\x{17B4}\x{17B5}\x{180B}-\x{180F}\x{2065}\x{2800}'
+        . '\x{3164}\x{FFA0}\x{FFF0}-\x{FFF8}\x{FFFC}\x{1D159}\x{E0000}\x{E0002}-\x{E001F}'
+        . '\x{E0080}-\x{E0FFF}]/u';
+
     /**
      * The three RGI emoji tag sequences (subdivision flags): U+1F3F4, the tag characters spelling `gbeng`,
      * `gbsct` or `gbwls`, and the cancel tag U+E007F (England, Scotland, Wales). They are the only sequences
@@ -26,10 +30,6 @@ final class ClientMetadata
      */
     private const RGI_FLAG = '/(\x{1F3F4})\x{E0067}\x{E0062}'
         . '(?:\x{E0065}\x{E006E}\x{E0067}|\x{E0073}\x{E0063}\x{E0074}|\x{E0077}\x{E006C}\x{E0073})\x{E007F}/u';
-
-    private const INVISIBLE = '/[\x{034F}\x{115F}\x{1160}\x{17B4}\x{17B5}\x{180B}-\x{180F}\x{2065}\x{2800}'
-        . '\x{3164}\x{FFA0}\x{FFF0}-\x{FFF8}\x{FFFC}\x{1D159}\x{E0000}\x{E0002}-\x{E001F}'
-        . '\x{E0080}-\x{E0FFF}]/u';
 
     /**
      * Whether $name is usable as a display name. It must be valid UTF-8 and contain a letter, number,
