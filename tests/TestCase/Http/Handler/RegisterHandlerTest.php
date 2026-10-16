@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace CakeDC\OAuth\Server\Test\TestCase\Http\Handler;
 
 use CakeDC\OAuth\Server\Event\ClientRegistered;
+use CakeDC\OAuth\Server\Test\Support\ChunkedStream;
 use CakeDC\OAuth\Server\Test\Support\ServerHarness;
 use PHPUnit\Framework\TestCase;
 use Psr\Http\Message\ResponseInterface;
@@ -127,6 +128,50 @@ class RegisterHandlerTest extends TestCase
         $this->assertSame(400, $over->getStatusCode());
         $this->assertSame('invalid_client_metadata', $harness->json($over)['error']);
         $edge = $this->register($harness, $make(16384));
-        $this->assertNotSame('The registration request is too large.', $harness->json($edge)['error_description'] ?? '');
+        $this->assertSame(201, $edge->getStatusCode());
+    }
+
+    public function testNoStoreAndAnyJsonObjectShape(): void
+    {
+        $harness = new ServerHarness();
+
+        $response = $this->register($harness, '{"redirect_uris":["https://a.example/cb"],"token_endpoint_auth_method":"none"}');
+        $this->assertSame('no-store', $response->getHeaderLine('Cache-Control'));
+
+        $this->assertSame('invalid_client_metadata', $harness->json($this->register($harness, '[]'))['error']);
+        $this->assertSame('invalid_redirect_uri', $harness->json($this->register($harness, '{"0":"x"}'))['error']);
+    }
+
+    public function testBadJsonIsRefused(): void
+    {
+        $harness = new ServerHarness();
+        $deep = str_repeat('[', 100) . str_repeat(']', 100);
+
+        $this->assertSame('invalid_client_metadata', $harness->json($this->register($harness, "{\"a\":\"\xB1\xB2\"}"))['error']);
+        $this->assertSame('invalid_client_metadata', $harness->json($this->register($harness, '{"a":' . $deep . '}'))['error']);
+    }
+
+    public function testMissingAuthorizationHeaderGetsABareChallenge(): void
+    {
+        $harness = new ServerHarness(['registration' => ['mode' => 'token', 'initialAccessToken' => 'let-me-in']]);
+
+        $response = $this->register($harness, '{}');
+
+        $this->assertSame(401, $response->getStatusCode());
+        $this->assertSame('Bearer', $response->getHeaderLine('WWW-Authenticate'));
+    }
+
+    public function testChunkedNonSeekableBodiesAreReadAndCapped(): void
+    {
+        $harness = new ServerHarness();
+        $prefix = '{"redirect_uris":["https://a.example/cb"],"token_endpoint_auth_method":"none","x":"';
+        $make = fn(int $length): string => $prefix . str_repeat('a', $length - strlen($prefix) - 2) . '"}';
+        $send = fn(string $body) => $harness->server->registerHandler()->handle(
+            $harness->request('POST', 'https://example.com/oauth/register', ['Content-Type' => 'application/json'])
+                ->withBody(new ChunkedStream($body)),
+        );
+
+        $this->assertSame(201, $send($make(16384))->getStatusCode());
+        $this->assertSame('invalid_client_metadata', $harness->json($send($make(40000)))['error']);
     }
 }

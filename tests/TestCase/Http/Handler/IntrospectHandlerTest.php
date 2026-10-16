@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 namespace CakeDC\OAuth\Server\Test\TestCase\Http\Handler;
 
+use CakeDC\OAuth\Server\Owner\ResourceOwner;
+use CakeDC\OAuth\Server\Owner\SubjectType;
 use CakeDC\OAuth\Server\Test\Support\Fixtures;
 use CakeDC\OAuth\Server\Test\Support\ServerHarness;
 use CakeDC\OAuth\Server\Token\TokenGenerator;
@@ -79,5 +81,100 @@ class IntrospectHandlerTest extends TestCase
         $response = $harness->server->introspectHandler()->handle($harness->form('https://example.com/oauth/introspect', ['token' => 'x']));
 
         $this->assertSame(403, $response->getStatusCode());
+    }
+
+    public function testExpiredAccessTokensAreInactive(): void
+    {
+        $client = $this->harness->publicClient();
+        $pair = $this->harness->json($this->harness->exchange($client, $this->harness->authorizationCode($client)));
+        $this->harness->clock->advance(3601);
+
+        $this->assertSame(['active' => false], $this->harness->json($this->introspect($pair['access_token'])));
+    }
+
+    public function testRotatedRefreshTokensAreInactive(): void
+    {
+        $client = $this->harness->publicClient();
+        $pair = $this->harness->json($this->harness->exchange($client, $this->harness->authorizationCode($client)));
+        $this->refresh($client->clientId, $pair['refresh_token']);
+
+        $this->assertSame(['active' => false], $this->harness->json($this->introspect($pair['refresh_token'])));
+    }
+
+    public function testRefreshTokensOfRevokedClientsAreInactive(): void
+    {
+        $client = $this->harness->publicClient();
+        $pair = $this->harness->json($this->harness->exchange($client, $this->harness->authorizationCode($client)));
+        $this->harness->storage->saveClient($client->withRevokedAt($this->harness->clock->now()));
+
+        $this->assertSame(['active' => false], $this->harness->json($this->introspect($pair['refresh_token'])));
+    }
+
+    public function testRefreshTokenResponseOmitsNullFields(): void
+    {
+        $client = $this->harness->publicClient();
+        $pair = $this->harness->json($this->harness->exchange($client, $this->harness->authorizationCode($client)));
+
+        $body = $this->harness->json($this->introspect($pair['refresh_token']));
+
+        $this->assertNotContains(null, $body, '', false, true);
+        $this->assertArrayHasKey('exp', $body);
+    }
+
+    public function testPersonalTokens(): void
+    {
+        $ada = $this->harness->users->users['42'];
+        $issued = $this->harness->server->connectionService()
+            ->createPersonalToken($ada, 'CI', Fixtures::MCP, ['content:read'], 7);
+
+        $body = $this->harness->json($this->introspect($issued['value']));
+
+        $this->assertTrue($body['active']);
+        $this->assertSame('42', $body['sub']);
+        $this->assertSame('Ada', $body['username']);
+        $this->assertSame('content:read', $body['scope']);
+        $this->assertArrayNotHasKey('client_id', $body);
+    }
+
+    public function testClientCredentialsTokens(): void
+    {
+        $this->harness->confidentialClient('s3cret', ['clientId' => 'reports', 'scopes' => ['api']]);
+        $this->harness->users->clientIdentity = new ResourceOwner('reports', 'Reporting job', null, SubjectType::Client);
+        $issued = $this->harness->json($this->harness->server->tokenHandler()->handle($this->harness->form(
+            'https://example.com/oauth/token',
+            ['grant_type' => 'client_credentials', 'resource' => Fixtures::API],
+            ['Authorization' => 'Basic ' . base64_encode('reports:s3cret')],
+        )));
+
+        $body = $this->harness->json($this->introspect($issued['access_token']));
+
+        $this->assertTrue($body['active']);
+        $this->assertSame('reports', $body['sub']);
+        $this->assertSame('reports', $body['client_id']);
+        $this->assertSame(Fixtures::API, $body['aud']);
+    }
+
+    public function testIntrospectionIsNotTokenUseAndDoesNotTripReuseDetection(): void
+    {
+        $client = $this->harness->publicClient();
+        $pair = $this->harness->json($this->harness->exchange($client, $this->harness->authorizationCode($client)));
+        $rotated = $this->harness->json($this->refresh($client->clientId, $pair['refresh_token']));
+
+        $this->assertTrue($this->harness->json($this->introspect($rotated['access_token']))['active']);
+        $this->harness->clock->advance(5);
+        $replay = $this->refresh($client->clientId, $pair['refresh_token']);
+
+        $this->assertSame(200, $replay->getStatusCode());
+        $stored = $this->harness->storage->findTokenByHash(TokenGenerator::hash($rotated['access_token']));
+        $this->assertNull($stored?->lastUsedAt);
+        $this->assertTrue($this->harness->json($this->introspect($pair['refresh_token']))['active'] === false);
+    }
+
+    private function refresh(string $clientId, string $refreshToken): ResponseInterface
+    {
+        return $this->harness->server->tokenHandler()->handle($this->harness->form(
+            'https://example.com/oauth/token',
+            ['grant_type' => 'refresh_token', 'refresh_token' => $refreshToken, 'client_id' => $clientId],
+        ));
     }
 }

@@ -177,4 +177,17 @@ class TokenValidatorTest extends TestCase
         $this->validator->validate($token, Fixtures::MCP);
         $this->assertEquals($this->clock->now(), $this->storage->findClientById($client->id)?->lastUsedAt);
     }
+
+    public function testValidatingWithoutTouchLeavesNoTrace(): void
+    {
+        $client = Fixtures::client();
+        $token = $this->token(['content:publish'], $client);
+        $hash = TokenGenerator::hash($token);
+
+        $result = $this->validator->validate($token, Fixtures::MCP, false);
+
+        $this->assertInstanceOf(ValidatedToken::class, $result);
+        $this->assertNull($this->storage->findTokenByHash($hash)?->lastUsedAt);
+        $this->assertNull($this->storage->findClientById($client->id)?->lastUsedAt);
+    }
 }

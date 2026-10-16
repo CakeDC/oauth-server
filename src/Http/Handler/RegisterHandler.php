@@ -9,10 +9,12 @@ use CakeDC\OAuth\Server\Exception\OAuthException;
 use CakeDC\OAuth\Server\Http\HttpResponder;
 use CakeDC\OAuth\Server\RateLimit\RateLimiter;
 use Closure;
+use JsonException;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 use Psr\Log\LoggerInterface;
+use stdClass;
 
 /**
  * Dynamic client registration (RFC 7591).
@@ -22,6 +24,8 @@ final class RegisterHandler implements RequestHandlerInterface
     use GuardsErrors;
 
     private const MAX_BYTES = 16384;
+
+    private const MAX_DEPTH = 32;
 
     /**
      * @param \CakeDC\OAuth\Server\Config\ServerConfig $config Settings.
@@ -60,13 +64,14 @@ final class RegisterHandler implements RequestHandlerInterface
             // Throttle before checking the token so failed guesses count too.
             $this->rateLimiter->hit('register', ($this->clientIp)($request));
             if ($this->config->registrationMode === ServerConfig::REGISTRATION_TOKEN) {
-                $matched = preg_match('/^Bearer\s+(\S+)\z/i', $request->getHeaderLine('Authorization'), $matches) === 1;
+                $header = $request->getHeaderLine('Authorization');
+                $matched = preg_match('/^Bearer\s+(\S+)\z/i', $header, $matches) === 1;
                 if (!$matched || !hash_equals((string)$this->config->initialAccessToken, $matches[1])) {
                     throw new OAuthException(
                         'invalid_token',
                         'A valid initial access token is required.',
                         401,
-                        ['WWW-Authenticate' => 'Bearer error="invalid_token"'],
+                        ['WWW-Authenticate' => $header === '' ? 'Bearer' : 'Bearer error="invalid_token"'],
                     );
                 }
             }
@@ -75,10 +80,7 @@ final class RegisterHandler implements RequestHandlerInterface
                 throw OAuthException::invalidClientMetadata('Send the registration as application/json.');
             }
             $body = $this->readBody($request);
-            $metadata = json_decode($body, true);
-            if (!is_array($metadata) || ($metadata !== [] && array_is_list($metadata))) {
-                throw OAuthException::invalidClientMetadata('The registration request is not a JSON object.');
-            }
+            $metadata = $this->decode($body);
             $result = $this->registrar->register($metadata);
 
             $response = ClientRegistrar::registrationResponse($result['client'], $result['secret']);
@@ -111,5 +113,25 @@ final class RegisterHandler implements RequestHandlerInterface
         }
 
         return $body;
+    }
+
+    /**
+     * Decodes a JSON object; anything else (a list, a scalar, bad UTF-8, deep nesting) is refused.
+     *
+     * @return array<string, mixed>
+     */
+    private function decode(string $body): array
+    {
+        try {
+            $object = json_decode($body, false, self::MAX_DEPTH, JSON_THROW_ON_ERROR);
+            $metadata = json_decode($body, true, self::MAX_DEPTH, JSON_THROW_ON_ERROR);
+        } catch (JsonException) {
+            throw OAuthException::invalidClientMetadata('The registration request is not valid JSON.');
+        }
+        if (!$object instanceof stdClass || !is_array($metadata)) {
+            throw OAuthException::invalidClientMetadata('The registration request is not a JSON object.');
+        }
+
+        return $metadata;
     }
 }

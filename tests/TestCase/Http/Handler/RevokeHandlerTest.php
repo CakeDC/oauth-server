@@ -22,6 +22,7 @@ class RevokeHandlerTest extends TestCase
         $foreign = $revoke($pair['refresh_token'], $other->clientId);
         $this->assertSame(200, $foreign->getStatusCode());
         $this->assertNull($harness->storage->findTokenByHash(TokenGenerator::hash($pair['access_token']))?->revokedAt);
+        $this->assertNull($harness->storage->findTokenByHash(TokenGenerator::hash($pair['refresh_token']))?->revokedAt);
 
         $response = $revoke($pair['refresh_token'], $client->clientId);
         $this->assertSame(200, $response->getStatusCode());
@@ -43,5 +44,38 @@ class RevokeHandlerTest extends TestCase
         $this->assertSame(401, $unknown->getStatusCode());
         $this->assertSame(204, $handler->handle($harness->request('OPTIONS', '/'))->getStatusCode());
         $this->assertSame(405, $handler->handle($harness->request('GET', '/'))->getStatusCode());
+    }
+
+    public function testRepeatedParametersAreRefused(): void
+    {
+        $harness = new ServerHarness();
+        $client = $harness->publicClient();
+        $request = $harness->request(
+            'POST',
+            'https://example.com/oauth/revoke',
+            ['Content-Type' => 'application/x-www-form-urlencoded'],
+            'token=a&token=b&client_id=' . $client->clientId,
+        );
+
+        $response = $harness->server->revokeHandler()->handle($request);
+
+        $this->assertSame(400, $response->getStatusCode());
+        $this->assertSame('invalid_request', $harness->json($response)['error']);
+    }
+
+    public function testRevokingAnAlreadyRevokedTokenStillAnswers200(): void
+    {
+        $harness = new ServerHarness();
+        $client = $harness->publicClient();
+        $pair = $harness->json($harness->exchange($client, $harness->authorizationCode($client)));
+        $revoke = fn() => $harness->server->revokeHandler()->handle($harness->form(
+            'https://example.com/oauth/revoke',
+            ['token' => $pair['access_token'], 'client_id' => $client->clientId],
+        ));
+
+        $this->assertSame(200, $revoke()->getStatusCode());
+        $again = $revoke();
+        $this->assertSame(200, $again->getStatusCode());
+        $this->assertSame('{}', (string)$again->getBody());
     }
 }

@@ -114,7 +114,7 @@ final class IntrospectHandler implements RequestHandlerInterface
                 return $inactive;
             }
 
-            return [
+            return array_filter([
                 'active' => true,
                 'scope' => Scopes::format($stored->scopes),
                 'client_id' => $client->clientId,
@@ -123,10 +123,10 @@ final class IntrospectHandler implements RequestHandlerInterface
                 'exp' => $stored->expiresAt?->getTimestamp(),
                 'iat' => $stored->createdAt->getTimestamp(),
                 'token_type' => 'refresh_token',
-            ];
+            ], fn(mixed $item): bool => $item !== null);
         }
         try {
-            $result = $this->validator->validate($value, $stored->resource);
+            $result = $this->validator->validate($value, $stored->resource, false);
         } catch (InvalidArgumentException) {
             return $inactive;
         }
@@ -138,7 +138,7 @@ final class IntrospectHandler implements RequestHandlerInterface
             'active' => true,
             'scope' => Scopes::format($result->scopes),
             'client_id' => $result->client?->clientId,
-            'sub' => $result->owner->subject,
+            'sub' => $result->token->subject,
             'username' => $result->owner->displayName,
             'aud' => $result->resource->identifier,
             'exp' => $result->token->expiresAt?->getTimestamp(),

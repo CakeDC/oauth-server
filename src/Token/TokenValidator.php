@@ -40,10 +40,16 @@ final class TokenValidator
     /**
      * Checks $token presented to $resource.
      *
+     * @param string $token The token value.
+     * @param string $resource The resource identifier.
+     * @param bool $touch Whether to record the use (`last_used_at`); introspection passes false.
      * @throws \InvalidArgumentException When $resource is not declared (a configuration error).
      */
-    public function validate(string $token, string $resource): ValidatedToken|ValidationFailure
-    {
+    public function validate(
+        string $token,
+        string $resource,
+        bool $touch = true,
+    ): ValidatedToken|ValidationFailure {
         $target = $this->resources->get($resource);
         if ($target === null) {
             throw new InvalidArgumentException(sprintf('The resource "%s" is not declared.', $resource));
@@ -84,7 +90,7 @@ final class TokenValidator
             $this->users->scopesFor($owner, $target),
         );
         $idle = $stored->lastUsedAt === null ? null : $now->getTimestamp() - $stored->lastUsedAt->getTimestamp();
-        if ($idle === null || $idle >= $this->touchInterval) {
+        if ($touch && ($idle === null || $idle >= $this->touchInterval)) {
             $this->tokens->touchToken($stored->id, $now);
             if ($client !== null) {
                 $this->clients->touchClient($client->id, $now);
