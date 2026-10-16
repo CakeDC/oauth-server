@@ -7,6 +7,7 @@ use CakeDC\OAuth\Server\Client\Client;
 use CakeDC\OAuth\Server\Config\Lifetimes;
 use CakeDC\OAuth\Server\Event\RefreshTokenReused;
 use CakeDC\OAuth\Server\Event\TokenIssued;
+use CakeDC\OAuth\Server\Event\TokenRevoked;
 use CakeDC\OAuth\Server\Exception\OAuthException;
 use CakeDC\OAuth\Server\Owner\SubjectType;
 use CakeDC\OAuth\Server\Scope\ScopeResolver;
@@ -22,6 +23,7 @@ use CakeDC\OAuth\Server\Token\TokenIssuer;
 use CakeDC\OAuth\Server\Token\TokenRevoker;
 use CakeDC\OAuth\Server\Token\TokenType;
 use PHPUnit\Framework\TestCase;
+use ReflectionMethod;
 use Throwable;
 
 class RefreshTokenRotatorTest extends TestCase
@@ -476,5 +478,34 @@ class RefreshTokenRotatorTest extends TestCase
         } catch (OAuthException $e) {
             $this->assertSame('invalid_client', $e->error);
         }
+    }
+
+    public function testNoReuseEventWhenTheFamilyWasAlreadyRevoked(): void
+    {
+        $initial = $this->initial();
+        $this->storage->revokeTokenFamily('family-1', $this->clock->now());
+        $token = $this->storage->findTokenById((string)$initial->refresh?->id);
+        $method = new ReflectionMethod(RefreshTokenRotator::class, 'detectedReuse');
+
+        try {
+            $method->invoke($this->rotator(), $this->client, $token);
+            $this->fail('Answered');
+        } catch (OAuthException $e) {
+            $this->assertSame('invalid_grant', $e->error);
+        }
+
+        $this->assertSame([], $this->events->ofType(RefreshTokenReused::class));
+    }
+
+    public function testARevocationMidRotationIsLabelledRotationRevoked(): void
+    {
+        $initial = $this->initial();
+        $this->duringNextRotation(fn() => $this->storage->revokeTokenFamily('family-1', $this->clock->now()));
+
+        $this->assertInvalidGrant(fn() => $this->rotator()->rotate($this->client, (string)$initial->refreshToken, null, []));
+
+        $reasons = array_map(fn(TokenRevoked $e): string => $e->reason, $this->events->ofType(TokenRevoked::class));
+        $this->assertSame(['rotation_revoked'], $reasons);
+        $this->assertSame([], $this->events->ofType(RefreshTokenReused::class));
     }
 }

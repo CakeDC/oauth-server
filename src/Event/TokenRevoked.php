@@ -12,6 +12,7 @@ final class TokenRevoked
 {
     /**
      * @param string $reason `client`, `connection`, `personal`, `code_reuse`, `refresh_reuse`, `grace`,
+     *   `rotation_revoked`,
      *   `subject`, `client_revoked`.
      * @param int $count How many tokens.
      * @param \CakeDC\OAuth\Server\Token\Token|null $token The token named in the request, if any.

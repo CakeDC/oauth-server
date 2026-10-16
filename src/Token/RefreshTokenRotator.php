@@ -110,8 +110,10 @@ final class RefreshTokenRotator
      */
     private function detectedReuse(Client $client, Token $token): never
     {
-        $this->revoker->revokeFamily($token->familyId, 'refresh_reuse', $token);
-        $this->events->dispatch(new RefreshTokenReused($token, $client));
+        $revoked = $this->revoker->revokeFamily($token->familyId, 'refresh_reuse', $token);
+        if ($revoked > 0) {
+            $this->events->dispatch(new RefreshTokenReused($token, $client));
+        }
 
         throw OAuthException::invalidGrant('The refresh token was already used.');
     }
@@ -251,7 +253,7 @@ final class RefreshTokenRotator
         if ($this->tokens->findTokenById($token->id)?->revokedAt !== null) {
             $this->revoker->revokeTokens(
                 $issued->refresh === null ? [$issued->access] : [$issued->access, $issued->refresh],
-                'refresh_reuse',
+                'rotation_revoked',
                 $token,
             );
 
