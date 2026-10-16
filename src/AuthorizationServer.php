@@ -21,6 +21,7 @@ use CakeDC\OAuth\Server\Grant\ConsentService;
 use CakeDC\OAuth\Server\Http\ClientIp;
 use CakeDC\OAuth\Server\Http\Handler\AuthorizationServerMetadataHandler;
 use CakeDC\OAuth\Server\Http\Handler\AuthorizeHandler;
+use CakeDC\OAuth\Server\Http\Handler\TokenHandler;
 use CakeDC\OAuth\Server\Http\HttpResponder;
 use CakeDC\OAuth\Server\Maintenance\Pruner;
 use CakeDC\OAuth\Server\Owner\UserContextInterface;
@@ -414,6 +415,29 @@ final class AuthorizationServer
         );
     }
 
-    // Task 19: tokenHandler(); Task 20: registerHandler(), revokeHandler(),
+    /**
+     * POST {routePrefix}/token: the token endpoint.
+     */
+    public function tokenHandler(): TokenHandler
+    {
+        return new TokenHandler(
+            $this->config,
+            $this->clientAuthenticator(),
+            $this->storage,
+            $this->storage,
+            $this->users,
+            $this->scopeResolver(),
+            $this->tokenIssuer(),
+            $this->refreshTokenRotator(),
+            $this->tokenRevoker(),
+            $this->rateLimiter(),
+            $this->responder,
+            $this->clock,
+            $this->logger,
+            $this->clientIp,
+        );
+    }
+
+    // Task 20: registerHandler(), revokeHandler(),
     // introspectHandler(); Task 21: connectionsHandler(); Task 22: bearerMiddleware(), mcpTokenValidator().
 }
