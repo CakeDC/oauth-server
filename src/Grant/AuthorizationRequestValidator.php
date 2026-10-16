@@ -68,6 +68,14 @@ final class AuthorizationRequestValidator
         }
 
         $state = ($params['state'] ?? '') === '' ? null : $params['state'];
+        if ($state !== null && preg_match('/\A[\x20-\x7E]+\z/', $state) !== 1) {
+            // RFC 6749 appendix A.5: state is %x20-7E. It cannot be echoed safely, so the error omits it.
+            throw new AuthorizationError(
+                OAuthException::invalidRequest('"state" may only contain printable ASCII characters.'),
+                $redirectUri,
+                null,
+            );
+        }
         $fail = fn(OAuthException $error): AuthorizationError => new AuthorizationError($error, $redirectUri, $state);
         if ($repeated !== []) {
             throw $fail(OAuthException::invalidRequest(sprintf('"%s" was sent more than once.', $repeated[0])));

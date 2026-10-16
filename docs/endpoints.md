@@ -79,7 +79,7 @@ meaning of the request, so it is not worth breaking a login over.
 | `code_challenge_method` | yes | Must be `S256` |
 | `resource` | no | The resource the token is for. Default: the default resource |
 | `scope` | no | Space separated scopes. Default: the resource's `defaultScopes`. May include `offline_access` |
-| `state` | recommended | Returned unchanged |
+| `state` | recommended | Returned unchanged. Only printable ASCII (`%x20-7E`) is accepted: anything else gets a redirected `invalid_request` that omits `state` |
 
 What happens:
 

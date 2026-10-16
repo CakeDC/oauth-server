@@ -12,6 +12,7 @@ use CakeDC\OAuth\Server\Owner\SubjectType;
 use CakeDC\OAuth\Server\Test\Support\Fixtures;
 use CakeDC\OAuth\Server\Test\Support\ServerHarness;
 use CakeDC\OAuth\Server\Token\TokenGenerator;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Http\Message\UriInterface;
 
@@ -480,23 +481,30 @@ class AuthorizeHandlerTest extends TestCase
         $this->assertStringNotContainsString('Stay connected', $html);
     }
 
-    public function testInvalidUtf8StateNeverCausesAServerError(): void
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function badStates(): array
+    {
+        return ['invalid utf-8' => ["ab\xFFcd"], 'newline' => ["ab\ncd"], 'tab' => ["a\tb"]];
+    }
+
+    #[DataProvider('badStates')]
+    public function testAStateOutsideVschardIsARedirectableErrorWithoutEchoingIt(string $state): void
     {
         $client = $this->harness->publicClient();
         $this->harness->signIn();
 
-        $page = $this->harness->server->authorizeHandler()->handle(
-            $this->harness->request('GET', $this->harness->authorizeUrl($client, ['state' => "ab\xFFcd"])),
+        $response = $this->harness->server->authorizeHandler()->handle(
+            $this->harness->request('GET', $this->harness->authorizeUrl($client, ['state' => $state])),
         );
 
-        $this->assertSame(200, $page->getStatusCode());
-        $fields = ServerHarness::formFields((string)$page->getBody());
-        $this->assertArrayHasKey('consent_token', $fields);
-        $response = $this->harness->server->authorizeHandler()->handle(
-            $this->harness->form('https://example.com/oauth/authorize', $fields + ['decision' => 'approve']),
-        );
-        // The raw bytes cannot survive an HTML form, so approving is refused cleanly (never a 500).
-        $this->assertLessThan(500, $response->getStatusCode());
+        $this->assertSame(302, $response->getStatusCode());
+        $params = ServerHarness::redirectParams($response);
+        $this->assertSame('invalid_request', $params['error']);
+        $this->assertArrayNotHasKey('state', $params);
+        $this->assertSame('https://example.com', $params['iss']);
+        $this->assertStringStartsWith($client->redirectUris[0], $response->getHeaderLine('Location'));
     }
 
     public function testAClientIdentityIsNotAPersonWhoCanConsent(): void
