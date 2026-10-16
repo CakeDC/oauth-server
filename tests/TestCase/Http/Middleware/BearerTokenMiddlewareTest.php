@@ -72,6 +72,26 @@ class BearerTokenMiddlewareTest extends TestCase
         $this->assertSame('42', $this->seen?->getAttribute(ResourceOwner::class)?->subject);
     }
 
+    public function testRejectsARefreshTokenAsInvalid(): void
+    {
+        $client = $this->harness->publicClient();
+        $code = $this->harness->authorizationCode($client, ['scope' => 'content:publish']);
+        $pair = $this->harness->json($this->harness->exchange($client, $code));
+
+        $response = $this->call('Bearer ' . $pair['refresh_token'], ['content:read']);
+
+        $this->assertSame(401, $response->getStatusCode());
+        $this->assertNull($this->seen);
+        $this->assertSame(
+            ['error' => 'invalid_token', 'error_description' => 'The access token is invalid.'],
+            $this->harness->json($response),
+        );
+        $this->assertStringContainsString(
+            'error_description="The access token is invalid."',
+            $response->getHeaderLine('WWW-Authenticate'),
+        );
+    }
+
     public function testChallengesWithoutAToken(): void
     {
         $response = $this->call(null);

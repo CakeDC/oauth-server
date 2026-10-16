@@ -27,6 +27,12 @@ interface ClientRepositoryInterface
      *
      * Revocation is sticky: an update never clears a stored `revokedAt`. It may set one, but saving a client
      * whose `revokedAt` is null keeps the stored value, so a stale copy cannot undo a revocation.
+     *
+     * The `client_id` is unique: saving a client whose `client_id` belongs to another stored row (another
+     * internal id) throws, as a unique key would, and leaves both rows unchanged. Two concurrent first
+     * fetches of a metadata document rely on it: one insert wins, the other reads the winner back.
+     *
+     * @throws \RuntimeException When another row already has this `client_id`.
      */
     public function saveClient(Client $client): void;
 

@@ -67,6 +67,10 @@ final class InMemoryStorage implements StorageInterface
      */
     public function saveClient(Client $client): void
     {
+        $owner = $this->findClientByClientId($client->clientId);
+        if ($owner !== null && $owner->id !== $client->id) {
+            throw new RuntimeException(sprintf('A client with client_id "%s" already exists.', $client->clientId));
+        }
         $stored = $this->clients[$client->id] ?? null;
         if ($stored !== null && $stored->revokedAt !== null) {
             $client = $client->withRevokedAt($stored->revokedAt);
@@ -137,6 +141,27 @@ final class InMemoryStorage implements StorageInterface
         );
 
         return true;
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function deleteCodesBySubject(string $subject, ?string $clientInternalId = null): int
+    {
+        return $this->deletePendingCodes(
+            fn(AuthorizationCode $code): bool => $code->subject === $subject
+                && ($clientInternalId === null || $code->clientInternalId === $clientInternalId),
+        );
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function deleteCodesByClient(string $clientInternalId): int
+    {
+        return $this->deletePendingCodes(
+            fn(AuthorizationCode $code): bool => $code->clientInternalId === $clientInternalId,
+        );
     }
 
     /**
@@ -375,6 +400,24 @@ final class InMemoryStorage implements StorageInterface
         );
 
         return $before - count($this->consents);
+    }
+
+    /**
+     * Deletes the unused codes matching $match; returns how many.
+     *
+     * @param callable(\CakeDC\OAuth\Server\Grant\AuthorizationCode): bool $match Filter.
+     */
+    private function deletePendingCodes(callable $match): int
+    {
+        $count = 0;
+        foreach ($this->codes as $id => $code) {
+            if ($code->usedAt === null && $match($code)) {
+                unset($this->codes[$id]);
+                $count++;
+            }
+        }
+
+        return $count;
     }
 
     /**

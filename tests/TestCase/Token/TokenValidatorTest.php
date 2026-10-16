@@ -98,6 +98,28 @@ class TokenValidatorTest extends TestCase
         $this->assertStringContainsString('expired', $this->failure($expiring)->description);
     }
 
+    public function testARefreshTokenWithRealScopesIsRejectedForItsType(): void
+    {
+        $client = Fixtures::client();
+        $this->storage->saveClient($client);
+        $issued = $this->issuer->issue(
+            $client,
+            '42',
+            SubjectType::User,
+            Fixtures::resources()->defaultResource(),
+            ['content:publish'],
+            'f',
+            true,
+        );
+        $this->assertInstanceOf(ValidatedToken::class, $this->validator->validate($issued->accessToken, Fixtures::MCP));
+
+        $failure = $this->failure((string)$issued->refreshToken);
+
+        $this->assertSame('invalid_token', $failure->error);
+        $this->assertSame('The access token is invalid.', $failure->description);
+        $this->assertNull($this->storage->findTokenById((string)$issued->refresh?->id)?->lastUsedAt);
+    }
+
     public function testRevokedClientsAndGoneUsersLoseAccessAtOnce(): void
     {
         $client = Fixtures::client();

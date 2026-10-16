@@ -51,6 +51,8 @@ final class TokenIssuer
      * @param bool $withRefresh Whether to issue a refresh token.
      * @param string|null $parentId The refresh token being rotated.
      * @param \DateTimeImmutable|null $familyStartedAt When the family began; now by default.
+     * @param list<string>|null $refreshScopes Scopes of the refresh token when they differ from the access
+     *   token's: a refresh keeps the grant while the access token is narrowed. Null: the same as $scopes.
      */
     public function issue(
         ?Client $client,
@@ -62,8 +64,10 @@ final class TokenIssuer
         bool $withRefresh,
         ?string $parentId = null,
         ?DateTimeImmutable $familyStartedAt = null,
+        ?array $refreshScopes = null,
     ): IssuedTokens {
         $scopes = array_values(array_unique($scopes));
+        $refreshScopes = $refreshScopes === null ? $scopes : array_values(array_unique($refreshScopes));
         $now = $this->clock->now();
         $familyStartedAt ??= $now;
         $accessValue = $this->generator->accessToken();
@@ -101,7 +105,7 @@ final class TokenIssuer
             subject: $subject,
             subjectType: $subjectType,
             resource: $resource->identifier,
-            scopes: $scopes,
+            scopes: $refreshScopes,
             createdAt: $now,
             expiresAt: $expiresAt,
             parentId: $parentId,

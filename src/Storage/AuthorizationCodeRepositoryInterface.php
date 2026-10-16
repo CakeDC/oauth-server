@@ -28,4 +28,20 @@ interface AuthorizationCodeRepositoryInterface
      * calls only one returns true.
      */
     public function consumeCode(string $id, DateTimeImmutable $at, string $familyId): bool;
+
+    /**
+     * Deletes the codes of a subject that were not used yet, expired or not, and returns how many. With
+     * $clientInternalId, only the codes of that client. The subject is compared case-sensitively. Used
+     * codes stay, so a replayed code can still revoke the family it issued.
+     *
+     * One statement (`DELETE ... WHERE subject = ? AND used_at IS NULL`): a code consumed concurrently is
+     * either deleted before it is consumed, so `consumeCode()` returns false, or kept as used.
+     */
+    public function deleteCodesBySubject(string $subject, ?string $clientInternalId = null): int;
+
+    /**
+     * Deletes the codes of a client that were not used yet, expired or not, and returns how many. Used
+     * codes stay, like in deleteCodesBySubject().
+     */
+    public function deleteCodesByClient(string $clientInternalId): int;
 }

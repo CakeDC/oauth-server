@@ -48,6 +48,14 @@ What `prune()` deletes:
 
 `PruneResult` has `codes`, `tokens` and `clients`, counting cascaded rows as well.
 
+A client is deleted only if it is still unused when its turn comes. `PdoStorage` selects the
+candidates, then deletes each one in its own transaction that starts with a conditional claim (one
+`UPDATE` that repeats the conditions above), and deletes the client's rows only when the claim took it.
+So a client that a request used after the selection (a recorded use, or a new live token) is kept. On
+MySQL and PostgreSQL the client row is locked first, so a request inserting a token for it at that moment
+is waited for. On SQLite, turn foreign keys on for the connection (`PRAGMA foreign_keys = ON`): without
+them a token saved just after its client was pruned is stored as an orphan instead of being refused.
+
 A revoked client stays as a tombstone, whatever its type: its row is what keeps the revocation sticky,
 because a pruned revoked metadata document client would be fetched again and come back to life. Its tokens, codes and
 consents are still pruned by the normal rules.
@@ -88,7 +96,9 @@ After a password change, a suspected account takeover, or when someone leaves:
 $count = $server->tokenRevoker()->revokeAllForSubject('42'); // access, refresh and personal tokens
 ```
 
-Their connections stop working at once. If the person should be asked again, also forget their
+Their connections stop working at once. The person's authorization codes that were not exchanged yet
+are deleted too, so a code issued a moment before cannot open a new connection afterwards. End the
+person's sessions in your application first, so that no new code is issued while you revoke. If the person should be asked again, also forget their
 consents. Consents are per client and resource:
 
 ```php
@@ -97,7 +107,7 @@ $server->consentService()->forget('42', $client->id, 'https://example.com/mcp');
 
 ### Cutting a person off completely
 
-`revokeAllForSubject()` is token-only on purpose: it never deletes consents. To remove a person
+`revokeAllForSubject()` never deletes consents (only tokens and codes not exchanged yet). To remove a person
 completely, so that even a new authorization request has to start from scratch, do both:
 
 ```php
@@ -128,10 +138,44 @@ if ($client !== null) {
 
 Revocation of a client is permanent in storage: `saveClient()` never clears `revokedAt`, so a metadata
 refresh or a stale copy cannot bring the client back. Its tokens are rejected at once
-(`The client of this access token was revoked.`). Pruning never deletes a revoked client, so the revocation
-also survives the daily prune.
+(`The client of this access token was revoked.`), and `revokeAllForClient()` also deletes its codes that
+were not exchanged yet. Pruning never deletes a revoked client, so the revocation also survives the daily
+prune.
 
 To revoke all tokens of a client but let it work again, call `revokeAllForClient()` alone.
+
+### Undoing a client revocation
+
+The library never clears a revocation, on purpose. For a dynamic client that is usually fine: its program
+registers again and gets a new `client_id`. A metadata document client cannot do that, because its
+`client_id` is the fixed URL of its document. Revoking `https://claude.ai/oauth/mcp-oauth-client-metadata`
+cuts claude.ai off for every person, for good, until somebody changes the row by hand.
+
+To block a metadata document client for a while, prefer a switch you can turn back:
+
+- `cimd.allowedHosts` lists the hosts whose clients are accepted, and it applies to stored rows too:
+  remove a host and its clients are refused at the next request (no fetch, no new code, no refresh); put
+  it back and they work again. The list is an allow list, so this suits servers that already list their
+  hosts (for example `['claude.ai']`). `cimd.enabled => false` turns every metadata document client off.
+- Access tokens already issued stay valid until they expire (an hour by default). To end them at once,
+  call `revokeAllForClient($client)` without revoking the client: the people connect again once the host
+  is allowed again.
+
+To undo a revocation that was already made, edit the row in your database, for example:
+
+```sql
+-- Bring the client back. Its tokens stay revoked, so people connect again.
+UPDATE oauth_clients SET revoked_at = NULL
+WHERE client_id = 'https://claude.ai/oauth/mcp-oauth-client-metadata';
+
+-- Or forget the row completely: the next request fetches the document again and stores a new row.
+-- Its codes, tokens and consents go with it (ON DELETE CASCADE; on SQLite only with foreign keys on).
+DELETE FROM oauth_clients
+WHERE client_id = 'https://claude.ai/oauth/mcp-oauth-client-metadata';
+```
+
+Use your table prefix if it is not `oauth_`. Run either one only when you mean it: the revocation was
+probably made for a reason, and nothing in the library will make it again.
 
 ## Rotating the secret
 

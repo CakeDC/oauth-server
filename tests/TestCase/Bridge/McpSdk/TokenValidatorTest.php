@@ -66,6 +66,21 @@ class TokenValidatorTest extends TestCase
         $this->assertSame('invalid_token', $result->getError());
     }
 
+    public function testRejectsRefreshTokens(): void
+    {
+        $harness = new ServerHarness();
+        $client = $harness->publicClient();
+        $pair = $harness->json($harness->exchange($client, $harness->authorizationCode($client, ['scope' => 'content:publish'])));
+
+        $result = $harness->server->mcpTokenValidator(Fixtures::MCP)->validate($pair['refresh_token']);
+
+        $this->assertFalse($result->isAllowed());
+        $this->assertNull($result->getAccessToken());
+        $this->assertSame(401, $result->getStatusCode());
+        $this->assertSame('invalid_token', $result->getError());
+        $this->assertSame('The access token is invalid.', $result->getErrorDescription());
+    }
+
     public function testAnUndeclaredResourceFailsWhenBuilt(): void
     {
         $this->expectException(InvalidArgumentException::class);

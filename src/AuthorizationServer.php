@@ -308,7 +308,7 @@ final class AuthorizationServer
      */
     public function tokenRevoker(): TokenRevoker
     {
-        return $this->tokenRevoker ??= new TokenRevoker($this->storage, $this->clock, $this->events);
+        return $this->tokenRevoker ??= new TokenRevoker($this->storage, $this->storage, $this->clock, $this->events);
     }
 
     /**
@@ -351,6 +351,7 @@ final class AuthorizationServer
     public function connectionService(): ConnectionService
     {
         return $this->connectionService ??= new ConnectionService(
+            $this->storage,
             $this->storage,
             $this->storage,
             $this->storage,

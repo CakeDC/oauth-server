@@ -69,9 +69,11 @@ what `content:publish` implies.
 
 The answer is checked when the person approves, when the code is exchanged, at every refresh and on
 every request, so a role change applies immediately. A person who loses a scope loses it on all existing
-tokens, and a refresh or code exchange issues a pair with only what is still allowed: a grant of
-`content:write` for a person now limited to `content:read` becomes `content:read` (the result is reduced to
-its minimal set, and never widened). Returning `[]` means no access at all: tokens stop validating (`The token no longer
+tokens, and a refresh or code exchange issues an access token with only what is still allowed: a grant
+of `content:write` for a person now limited to `content:read` gives a `content:read` access token (the
+result is reduced to its minimal set, and never widened). A refresh keeps the grant itself on the new
+refresh token, so the person gets `content:write` back at the next refresh once your answer allows it
+again. Returning `[]` means no access at all: tokens stop validating (`The token no longer
 grants any scope.`), a code exchange or refresh answers `invalid_grant`, and a code is not consumed by a
 refused exchange.
 

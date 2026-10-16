@@ -80,8 +80,31 @@ Related rules:
   pruning.
 - A refresh token is bound to its client. Another client, or a confidential client that only sends its
   `client_id`, cannot use it.
-- Clients must serialize refreshes per token. Three or more concurrent refreshes with the same token
-  can revoke the family, and so can two concurrent grace retries.
+- A refresh keeps the grant (RFC 6749 section 6, OAuth 2.1 section 4.3.3): the new refresh token carries
+  the scopes of the one presented, minus scopes the resource no longer declares. A requested `scope`,
+  the client's registered scopes and the person's `scopesFor()` of today narrow only the new access
+  token. So a down-scoped refresh, a demotion or a narrowed client loses nothing for good: a person
+  promoted again gets the scopes back at the next refresh. Nothing is widened either, because every use
+  of a token recomputes its scopes ([protecting resources](protecting-resources.md)).
+- A refresh token is never a bearer token: a resource refuses it as `invalid_token` ("The access token is
+  invalid.") whatever scopes it carries.
+- Clients must serialize refreshes per token. See the known issue below.
+
+### Known issue: concurrent refreshes
+
+Two or more refreshes sent at the same time with the same refresh token can revoke the whole family.
+One request wins the rotation. The others find the token used: while the winner has not stored its new
+refresh token yet they get `invalid_grant` ("The refresh token is being rotated; try again."), and once
+it has, the first of them takes the grace path and the rest count as reuse. Measured with 16 parallel
+requests and the same token, the family ended revoked on PostgreSQL every time, and on MySQL and
+MariaDB as soon as the requests were spread over 50 to 300 milliseconds. Nothing unsafe happens (there
+are never two live chains), but the client loses its connection and `RefreshTokenReused` fires as a
+false alarm. Clients treat `invalid_grant` as a dead token.
+
+This is not fixed in `1.0.0-beta1`. It is being observed with claude.ai before `1.0.0`; if real clients
+refresh in parallel, a later beta will answer concurrent callers inside the grace window with the
+winner's response. Until then, a client must send one refresh at a time per token, and a burst of
+`RefreshTokenReused` from one client that otherwise behaves is a sign of parallel refreshes, not theft.
 
 ## The refresh grace window
 
@@ -92,6 +115,10 @@ The grace window (`lifetimes.refreshReuseGrace`, 30 seconds) handles this. If th
 presented again within the window **and the pair issued by the first rotation was never used**, the
 server issues a fresh pair and revokes the first one (event `TokenRevoked` with reason `grace`). Any
 other reuse revokes the family.
+
+The window absorbs a retry that follows a lost response. It does not absorb concurrent refreshes: only
+one retry can take the grace path, and the others revoke the family (see
+[the known issue](#known-issue-concurrent-refreshes)).
 
 The trade-off: for those seconds, a thief who copied the old refresh token could also get a pair. The
 person's real client then holds a revoked token, and its next refresh counts as reuse, so the family is
@@ -134,6 +161,13 @@ that, set it to `0`. Then a lost response costs one re-authorization.
   characters.
 - Nothing checks `canAuthorize()` after `/authorize`. When your policy changes, revoke the person's
   tokens with `TokenRevoker::revokeAllForSubject()`.
+- Revoking a person (`revokeAllForSubject()`), a connection (the connections page) or a client
+  (`revokeAllForClient()`) also deletes the codes issued to them that were not exchanged yet, so a code
+  issued a moment before the revocation cannot open a new connection afterwards. The codes are deleted
+  before the tokens are revoked: a code being exchanged at that moment is either deleted before it is
+  consumed (the exchange fails and revokes what it issued) or consumed with its tokens already stored,
+  which the revocation then reaches. Exchanged codes are kept, so a replayed code still revokes what it
+  issued.
 
 ## Secrets and tokens at rest
 
@@ -171,10 +205,15 @@ point it at your internal network. The fetcher defends in layers:
 
 7. Fetches are budgeted per client address (`rateLimit.cimd`, 10 per minute by default), so one address
    cannot make your server download documents without end or fill the client table with rows. The count
-   happens just before a download, never for a cached client. A failed fetch (a definite rejection or a
-   temporary error) is remembered per `client_id` for 60 seconds in the PSR-16 cache, so repeating the
-   same bad URL fails at once without a new download. Both need the cache argument of
-   `AuthorizationServer`; without one nothing is limited or remembered. Over the budget, `/authorize`
+   happens just before a download, never for a cached client. A definite rejection (a host or address
+   that is not allowed, HTTP 4xx other than 429, an invalid document) is remembered per `client_id` for
+   60 seconds in the PSR-16 cache, so repeating the same bad URL fails at once without a new download.
+   A temporary failure (network error, timeout, HTTP 5xx or 429) is never remembered as a rejection,
+   because the CIMD draft forbids caching error responses: the next request tries again, so a new
+   client works as soon as its host is back. It is remembered only while a stored copy of the client
+   stands in for it (below), so that the copy keeps serving for that minute instead of every request
+   waiting on the unreachable host. Both need the cache argument of `AuthorizationServer`; without one
+   nothing is limited or remembered. Over the budget, `/authorize`
    shows the error page with status 429 (never a redirect to the client) and `/token`, `/revoke` and
    `/introspect` answer 429 with `Retry-After`.
 

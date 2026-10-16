@@ -295,10 +295,16 @@ class ClientResolverTest extends TestCase
         $this->assertCount(2, $this->transport->requests);
     }
 
-    public function testATemporaryFailureIsRememberedToo(): void
+    /**
+     * CIMD: "The authorization server MUST NOT cache error responses." A first fetch that fails for a
+     * temporary reason is not remembered, so the client works as soon as its host answers again.
+     */
+    #[DataProvider('temporaryFailures')]
+    public function testATemporaryFailureOfAFirstFetchIsNotRemembered(Throwable|FetchedResponse $failure): void
     {
         $resolver = $this->limited(5);
-        $this->transport->responses[self::CLAUDE] = new RuntimeException('down');
+        $good = $this->transport->responses[self::CLAUDE];
+        $this->transport->responses[self::CLAUDE] = $failure;
 
         for ($i = 0; $i < 2; $i++) {
             try {
@@ -306,8 +312,60 @@ class ClientResolverTest extends TestCase
                 $this->fail('Resolved an unreachable client.');
             } catch (OAuthException $e) {
                 $this->assertTrue($e->temporary);
+                $this->assertSame('invalid_client', $e->error);
             }
         }
+        $this->assertCount(2, $this->transport->requests);
+
+        $this->transport->responses[self::CLAUDE] = $good;
+        $this->assertNotNull($resolver->resolve(self::CLAUDE));
+        $this->assertCount(3, $this->transport->requests);
+    }
+
+    /**
+     * @return array<string, array{\CakeDC\OAuth\Server\Client\Cimd\FetchedResponse}>
+     */
+    public static function definiteRejections(): array
+    {
+        return [
+            'http 404' => [new FetchedResponse(404, [], '')],
+            'not json' => [new FetchedResponse(200, ['content-type' => 'text/html'], '<html></html>')],
+            'client_id mismatch' => [new FetchedResponse(
+                200,
+                ['content-type' => 'application/json'],
+                (string)json_encode([
+                    'client_id' => 'https://elsewhere.example/c',
+                    'client_name' => 'X',
+                    'redirect_uris' => ['https://claude.ai/cb'],
+                ]),
+            )],
+            'no usable redirect URI' => [new FetchedResponse(
+                200,
+                ['content-type' => 'application/json'],
+                (string)json_encode([
+                    'client_id' => self::CLAUDE,
+                    'client_name' => 'X',
+                    'redirect_uris' => ['javascript:alert(1)'],
+                ]),
+            )],
+        ];
+    }
+
+    #[DataProvider('definiteRejections')]
+    public function testDefiniteRejectionsAreStillRemembered(FetchedResponse $rejection): void
+    {
+        $resolver = $this->limited(5);
+        $this->transport->responses[self::CLAUDE] = $rejection;
+
+        for ($i = 0; $i < 2; $i++) {
+            try {
+                $resolver->resolve(self::CLAUDE);
+                $this->fail('Resolved a rejected client.');
+            } catch (OAuthException $e) {
+                $this->assertFalse($e->temporary);
+            }
+        }
+
         $this->assertCount(1, $this->transport->requests);
     }
 
@@ -334,6 +392,24 @@ class ClientResolverTest extends TestCase
         $this->assertSame($first?->id, $resolver->resolve(self::CLAUDE)?->id);
         $this->assertSame($first?->id, $resolver->resolve(self::CLAUDE)?->id);
         $this->assertCount(2, $this->transport->requests);
+    }
+
+    public function testATemporaryFailureRememberedForAStaleCopyNeverRejectsOnItsOwn(): void
+    {
+        $resolver = $this->limited(5);
+        $first = $resolver->resolve(self::CLAUDE);
+        $this->clock->advance(600 + 86400 - 30);
+        $this->transport->responses[self::CLAUDE] = new RuntimeException('down');
+        $this->assertSame($first?->id, $resolver->resolve(self::CLAUDE)?->id);
+        $this->clock->advance(40);
+
+        try {
+            $resolver->resolve(self::CLAUDE);
+            $this->fail('Served a copy past the stale-if-error bound.');
+        } catch (OAuthException $e) {
+            $this->assertTrue($e->temporary);
+        }
+        $this->assertCount(3, $this->transport->requests);
     }
 
     public function testMetadataDocumentsAreIgnoredWhenDisabled(): void

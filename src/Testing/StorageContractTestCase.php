@@ -73,13 +73,13 @@ abstract class StorageContractTestCase extends TestCase
     /**
      * An unused code of $client.
      */
-    protected function makeCode(Client $client, int $expiresIn = 60): AuthorizationCode
+    protected function makeCode(Client $client, int $expiresIn = 60, string $subject = '42'): AuthorizationCode
     {
         return new AuthorizationCode(
             id: Uuid::v4(),
             codeHash: TokenGenerator::hash(Uuid::v4()),
             clientInternalId: $client->id,
-            subject: '42',
+            subject: $subject,
             redirectUri: 'https://app.example.com/cb',
             resource: 'https://example.com/mcp',
             scopes: ['content:read', 'offline_access'],
@@ -181,6 +181,45 @@ abstract class StorageContractTestCase extends TestCase
     }
 
     /**
+     * One row per `client_id`: a second client with another id and the same `client_id` is refused and the
+     * first row is kept as it was. Two rows would let a revocation hold on one and miss the other.
+     */
+    public function testASecondClientWithTheSameClientIdIsRefusedAndTheFirstIsKept(): void
+    {
+        $storage = $this->createStorage();
+        $clientId = 'https://client.example/metadata.json';
+        $first = $this->makeClient(ClientType::MetadataDocument, $clientId);
+        $storage->saveClient($first);
+        $second = new Client(...array_merge(
+            get_object_vars($this->makeClient(ClientType::MetadataDocument, $clientId)),
+            ['name' => 'Another row', 'revokedAt' => $this->at(5)],
+        ));
+
+        try {
+            $storage->saveClient($second);
+            $this->fail('A second client with the same client_id must be refused.');
+        } catch (RuntimeException) {
+            // Expected: a PDOException is a RuntimeException too.
+        }
+
+        $this->assertEquals($first, $storage->findClientByClientId($clientId));
+        $this->assertEquals($first, $storage->findClientById($first->id));
+        $this->assertNull($storage->findClientById($second->id));
+        $this->assertCount(1, $storage->findClients());
+
+        $other = $this->makeClient(ClientType::Dynamic);
+        $storage->saveClient($other);
+        try {
+            $storage->saveClient(new Client(...array_merge(get_object_vars($other), ['clientId' => $clientId])));
+            $this->fail('Updating a client to the client_id of another row must be refused.');
+        } catch (RuntimeException) {
+            // Expected.
+        }
+        $this->assertEquals($other, $storage->findClientById($other->id));
+        $this->assertEquals($first, $storage->findClientByClientId($clientId));
+    }
+
+    /**
      * Clients can be listed by type.
      */
     public function testFindsClientsByType(): void
@@ -263,6 +302,74 @@ abstract class StorageContractTestCase extends TestCase
         $this->assertEquals($code, $storage->findCodeByHash($code->codeHash));
         $this->assertNull($storage->findCodeByHash($other->codeHash));
         $this->assertTrue($storage->consumeCode($code->id, $this->at(5), '00000000-0000-4000-8000-0000000000f1'));
+    }
+
+    /**
+     * Revoking a person or a connection deletes the codes they have not exchanged yet. Used codes stay, so a
+     * replayed code can still revoke what it issued. The subject is compared exactly.
+     */
+    public function testDeletesThePendingCodesOfASubject(): void
+    {
+        $storage = $this->createStorage();
+        $first = $this->makeClient();
+        $second = $this->makeClient();
+        $storage->saveClient($first);
+        $storage->saveClient($second);
+        $pendingFirst = $this->makeCode($first);
+        $pendingSecond = $this->makeCode($second);
+        $expired = $this->makeCode($first, -10);
+        $used = $this->makeCode($first);
+        $foreign = $this->makeCode($first, 60, '43');
+        $otherCase = $this->makeCode($first, 60, 'Alice');
+        foreach ([$pendingFirst, $pendingSecond, $expired, $used, $foreign, $otherCase] as $code) {
+            $storage->saveCode($code);
+        }
+        $storage->consumeCode($used->id, $this->at(1), '00000000-0000-4000-8000-0000000000f1');
+
+        $this->assertSame(2, $storage->deleteCodesBySubject('42', $first->id));
+        $this->assertNull($storage->findCodeByHash($pendingFirst->codeHash));
+        $this->assertNull($storage->findCodeByHash($expired->codeHash));
+        $this->assertNotNull($storage->findCodeByHash($pendingSecond->codeHash));
+
+        $this->assertSame(1, $storage->deleteCodesBySubject('42'));
+        $this->assertSame(0, $storage->deleteCodesBySubject('42'));
+        $this->assertNull($storage->findCodeByHash($pendingSecond->codeHash));
+        $kept = $storage->findCodeByHash($used->codeHash);
+        $this->assertEquals($this->at(1), $kept?->usedAt);
+        $this->assertSame('00000000-0000-4000-8000-0000000000f1', $kept?->familyId);
+        $this->assertNotNull($storage->findCodeByHash($foreign->codeHash));
+
+        $this->assertSame(0, $storage->deleteCodesBySubject('alice'));
+        $this->assertSame(0, $storage->deleteCodesBySubject('Alice', $second->id));
+        $this->assertSame(1, $storage->deleteCodesBySubject('Alice'));
+    }
+
+    /**
+     * Revoking a client deletes its codes that were not exchanged yet, and only its codes.
+     */
+    public function testDeletesThePendingCodesOfAClient(): void
+    {
+        $storage = $this->createStorage();
+        $client = $this->makeClient();
+        $other = $this->makeClient();
+        $storage->saveClient($client);
+        $storage->saveClient($other);
+        $mine = $this->makeCode($client);
+        $someoneElses = $this->makeCode($client, 60, '43');
+        $used = $this->makeCode($client);
+        $notMine = $this->makeCode($other);
+        foreach ([$mine, $someoneElses, $used, $notMine] as $code) {
+            $storage->saveCode($code);
+        }
+        $storage->consumeCode($used->id, $this->at(1), '00000000-0000-4000-8000-0000000000f1');
+
+        $this->assertSame(2, $storage->deleteCodesByClient($client->id));
+        $this->assertSame(0, $storage->deleteCodesByClient($client->id));
+
+        $this->assertNull($storage->findCodeByHash($mine->codeHash));
+        $this->assertNull($storage->findCodeByHash($someoneElses->codeHash));
+        $this->assertNotNull($storage->findCodeByHash($used->codeHash));
+        $this->assertNotNull($storage->findCodeByHash($notMine->codeHash));
     }
 
     /**
@@ -508,6 +615,17 @@ abstract class StorageContractTestCase extends TestCase
         $this->assertEquals($this->at(9), $found->modifiedAt);
         $this->assertSame(['x'], $storage->findConsent('42', $client->id, 'https://example.com/api')?->scopes);
         $this->assertNull($storage->findConsent('43', $client->id, 'https://example.com/mcp'));
+
+        // Saved again under its own id, as ConsentService does for a known consent.
+        $resource = 'https://example.com/mcp';
+        $storage->saveConsent(
+            new Consent($first->id, '42', $client->id, $resource, ['a', 'b', 'c'], $this->at(), $this->at(20)),
+        );
+        $again = $storage->findConsent('42', $client->id, $resource);
+        $this->assertNotNull($again);
+        $this->assertSame(['a', 'b', 'c'], $again->scopes);
+        $this->assertEquals($this->at(20), $again->modifiedAt);
+        $this->assertCount(2, $storage->findConsentsBySubject('42'));
     }
 
     /**
@@ -721,6 +839,8 @@ abstract class StorageContractTestCase extends TestCase
             $this->assertFalse($storage->markTokenUsed($id, $this->at(1)));
             $this->assertSame(0, $storage->revokeTokenFamily($id, $this->at(1)));
             $this->assertSame(0, $storage->revokeTokensByClient($id, $this->at(1)));
+            $this->assertSame(0, $storage->deleteCodesByClient($id));
+            $this->assertSame(0, $storage->deleteCodesBySubject('42', $id));
             $this->assertSame([], $storage->findTokensByFamily($id));
             $this->assertNull($storage->findConsent('42', $id, 'https://example.com/mcp'));
             $storage->revokeToken($id, $this->at(1));

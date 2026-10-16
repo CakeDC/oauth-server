@@ -10,7 +10,7 @@ The server keeps clients, authorization codes, tokens and consents in a storage 
 | Interface | Stores | Methods |
 | --- | --- | --- |
 | `ClientRepositoryInterface` | Clients | `findClientByClientId`, `findClientById`, `saveClient`, `touchClient`, `findClients` |
-| `AuthorizationCodeRepositoryInterface` | Codes | `saveCode`, `findCodeByHash`, `consumeCode` |
+| `AuthorizationCodeRepositoryInterface` | Codes | `saveCode`, `findCodeByHash`, `consumeCode`, `deleteCodesBySubject`, `deleteCodesByClient` |
 | `TokenRepositoryInterface` | Access, refresh and personal tokens | `saveToken`, `findTokenByHash`, `findTokenById`, `markTokenUsed`, `revokeToken`, `revokeTokenFamily`, `revokeTokensBySubject`, `revokeTokensByClient`, `findTokensByFamily`, `findActiveTokensBySubject`, `touchToken` |
 | `ConsentRepositoryInterface` | Consents | `findConsent`, `saveConsent`, `deleteConsent`, `findConsentsBySubject`, `deleteConsentsBySubject` |
 | `MaintenanceInterface` | Housekeeping | `prune` |
@@ -35,6 +35,8 @@ $storage = new PdoStorage($pdo);           // prefix 'oauth_'
   With a custom prefix, table, index and constraint names get the prefix, and the column
   `oauth_client_id` keeps its name.
 - On MySQL use a DSN with `charset=utf8mb4`. Consider `PDO::ATTR_EMULATE_PREPARES => false`.
+- SQLite must be 3.24 or newer, because `saveConsent()` is an upsert (`ON CONFLICT`). The test suite
+  runs on MySQL 8.4, MariaDB 11.8 and PostgreSQL 17.
 - On SQLite the `REFERENCES` clauses are only enforced with `PRAGMA foreign_keys = ON`. Pruning deletes
   child rows explicitly, so it works either way.
 - Dates are stored in UTC.
@@ -91,11 +93,38 @@ storage would have a security bug in production.
 | `consumeCode($id, $at, $familyId)` | Marks the code used and records the family, in one step. Of two concurrent calls only one returns `true` | A code must work once, even when two requests race |
 | `markTokenUsed($id, $at)` | Marks a refresh token used in one step; `true` for one caller only. A revoked token is never marked (`false`) | Refresh rotation must have one winner, and a revocation beats a rotation in flight |
 | `revokeToken`, `revokeTokenFamily`, `revokeTokensBySubject`, `revokeTokensByClient` | Only change rows that are not revoked yet, and return how many they changed | Counts in events must be exact, and the first revocation time must not be overwritten |
+| `deleteCodesBySubject($subject, $clientInternalId = null)`, `deleteCodesByClient($clientInternalId)` | Delete the codes that were not used yet (expired or not) of a subject, optionally only of one client, or of a client, in one statement, and return how many. Used codes stay. The subject compares exactly | Revoking a person, a connection or a client must also stop the codes issued just before. A code consumed at that moment is either deleted first (so `consumeCode()` fails) or kept as used |
 | `saveCode`, `saveToken` | Insert only. A code or token whose id already exists makes the call throw a `RuntimeException` (a `PDOException` is one) and leaves the stored row unchanged | A stored token must never be overwritten by another one with the same id |
-| `saveClient` | Inserts or updates by internal id. Never clears a stored `revokedAt` | Revocation is permanent. A stale copy of a client must not undo it |
-| `saveConsent` | Inserts, or replaces the scopes of the consent with the same subject, client and resource, keeping its id and creation time | One consent per subject, client and resource |
+| `saveClient` | Inserts or updates by internal id. Never clears a stored `revokedAt`. A `client_id` that belongs to another row (another internal id) makes the call throw a `RuntimeException` and leaves both rows unchanged, as a unique key does | Revocation is permanent. A stale copy of a client must not undo it, and two rows for one `client_id` would let a revocation hold on one and miss the other. Two concurrent first fetches of a metadata document rely on the second insert failing |
+| `saveConsent` | Inserts, or replaces the scopes of the consent with the same subject, client and resource, keeping its id and creation time. Two first saves that race (a double click on "Allow") must not fail: the second replaces the scopes of the first | One consent per subject, client and resource |
 | `findConsentsBySubject`, `deleteConsentsBySubject` | List (oldest first) and delete every consent of one subject, comparing the subject exactly (`Alice` is not `alice`). The delete returns how many it removed | Removing a person completely, for example when an account is deleted |
-| `prune` | Deletes in the way described in [operations](operations.md) and returns a `PruneResult` that counts cascaded rows too | Housekeeping must not leave orphans |
+| `prune` | Deletes in the way described in [operations](operations.md) and returns a `PruneResult` that counts cascaded rows too. A client is deleted only if it is still unused at that moment (checked in the same statement that claims it), not merely when it was selected | Housekeeping must not leave orphans, nor delete a client that a request just used |
+
+### What the contract cannot prove
+
+The contract runs one call after another, so it cannot see a race. A storage that reads a row, checks it
+in PHP and writes it back (for example an ORM that loads an entity, changes it and saves it) passes every
+test and still fails in production, where two requests interleave between the read and the write. Each
+rule above that says "in one step", "only one returns `true`" or "must not fail" needs a single atomic
+statement in your database:
+
+- a conditional `UPDATE` whose `WHERE` repeats the condition, and whose affected row count is the
+  answer: `UPDATE ... SET used_at = ? WHERE id = ? AND used_at IS NULL` for `consumeCode()`, the same
+  plus `AND revoked_at IS NULL` for `markTokenUsed()`, `WHERE revoked_at IS NULL AND ...` for the
+  revocations;
+- a conditional `DELETE` for `deleteCodesBySubject()` and `deleteCodesByClient()`
+  (`... WHERE subject = ? AND used_at IS NULL`);
+- a unique key on the `client_id` (or a hash of it), so that `saveClient()` with another row's
+  `client_id` fails in the database, not after a lookup;
+- an upsert (`INSERT ... ON CONFLICT DO UPDATE`, `INSERT ... ON DUPLICATE KEY UPDATE`), or an insert that
+  falls back to an update when it hits the unique key, for `saveConsent()`;
+- for `prune()`, a check that is repeated in the statement that deletes or claims the client, not only
+  in the query that selected it.
+
+`PdoStorage` does all of this, and its own tests replay the races (another request committing between a
+read and a write) on SQLite, MySQL, MariaDB and PostgreSQL. With an ORM, use its query builder for these
+statements (`updateAll()`, `deleteAll()` or the equivalent) and check the returned count, rather than
+loading and saving entities.
 
 Other rules the contract pins:
 
@@ -155,6 +184,9 @@ Column types below are from the MySQL file. SQLite and PostgreSQL use their clos
 | `expires_at` | `DATETIME` | Expiry |
 | `used_at` | `DATETIME` null | When it was exchanged |
 | `created` | `DATETIME` | Row time |
+
+Indexes: the unique `code_hash`, and plain indexes on `oauth_client_id`, `expires_at` (serves `prune()`)
+and `subject` (serves `deleteCodesBySubject()`).
 
 ### `oauth_tokens`
 

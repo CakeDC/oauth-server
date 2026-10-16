@@ -68,4 +68,20 @@ final class RacingCodes implements AuthorizationCodeRepositoryInterface
 
         return $consumed;
     }
+
+    /**
+     * @inheritDoc
+     */
+    public function deleteCodesBySubject(string $subject, ?string $clientInternalId = null): int
+    {
+        return $this->inner->deleteCodesBySubject($subject, $clientInternalId);
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function deleteCodesByClient(string $clientInternalId): int
+    {
+        return $this->inner->deleteCodesByClient($clientInternalId);
+    }
 }

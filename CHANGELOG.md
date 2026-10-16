@@ -68,6 +68,50 @@ First release.
   anonymous POST gets the error page, not the login.
 - Standalone example: `setup.php` no longer records a consent, and `OAUTH_EXAMPLE_AUTO_APPROVE=1`
   (unsafe, used only by `tests/Conformance/run.sh`) answers the consent page with "Allow".
+- Refresh scopes (RFC 6749 section 6, OAuth 2.1 section 4.3.3): a refresh keeps the presented refresh
+  token's scopes on the new refresh token, minus scopes the resource no longer declares. A requested
+  `scope`, the client's registered scopes and the owner's current `scopesFor()` narrow only the new access
+  token, so a down-scoped refresh can ask for the wider scope again next time and a person demoted, then
+  promoted, gets the scopes back at the next refresh. The response's `scope` still describes the access
+  token. (This replaces the earlier rule that stored the narrowed, minimal set on the refresh token.)
+  `TokenIssuer::issue()` (internal) takes an optional trailing `$refreshScopes`.
+- Tests now pin that a refresh token with real scopes is refused as a bearer token ("The access token is
+  invalid.") by `TokenValidator`, `BearerTokenMiddleware` and the MCP bridge; removing the type check
+  fails them.
+- Revocation reaches pending codes: `TokenRevoker::revokeAllForSubject()` (for people), revoking a
+  connection (`ConnectionService::revokeConnection()`, the connections page) and
+  `TokenRevoker::revokeAllForClient()` delete the authorization codes that were not exchanged yet, so a
+  code issued just before can no longer open a new family. Codes are deleted before tokens are revoked, so
+  an exchange in flight either fails or has its tokens revoked. Exchanged codes are kept for replay
+  detection. `revokeAllForSubject()` with `SubjectType::Client` deletes no codes (codes belong to people).
+  The internal constructors of `TokenRevoker` (new second argument) and `ConnectionService` (new fourth
+  argument) take the `AuthorizationCodeRepositoryInterface`.
+- Storage interface additions (every storage must implement them; `InMemoryStorage` and `PdoStorage` do,
+  and `StorageContractTestCase` covers them):
+  `AuthorizationCodeRepositoryInterface::deleteCodesBySubject(string $subject, ?string $clientInternalId = null): int`
+  and `AuthorizationCodeRepositoryInterface::deleteCodesByClient(string $clientInternalId): int`. Both delete
+  only unused codes (expired or not) in one statement and return how many.
+- Storage contract: `saveClient()` with a `client_id` that belongs to another row (another internal id)
+  must throw a `RuntimeException` and leave both rows unchanged. `InMemoryStorage` used to keep two rows.
+  The contract also re-saves a consent under its own id. `StorageContractTestCase::makeCode()` takes an
+  optional `$subject`. `docs/storage.md` now states that atomic rules need one conditional statement or
+  an upsert, which a sequential contract cannot prove.
+- `PdoStorage::saveConsent()` is one upsert (`ON CONFLICT ... DO UPDATE` on SQLite and PostgreSQL,
+  `ON DUPLICATE KEY UPDATE` on MySQL and MariaDB): two concurrent first consents (a double click on
+  "Allow") no longer make one request fail with a unique-key error; the second updates the first.
+- `PdoStorage::prune()` claims each candidate client with one conditional `UPDATE` inside its transaction
+  (after locking the row on MySQL and PostgreSQL) and deletes it only when the claim succeeds, so a client
+  that a request used, or gave a live token, after it was selected is kept and its new token is not
+  cascaded away.
+- Schema: `oauth_authorization_codes` gains an index on `subject` (`oauth_authorization_codes_subject`).
+  Beta databases created earlier work without it; recreate the tables or add the index.
+- Client ID Metadata Documents: a temporary fetch failure (network error, timeout, HTTP 5xx or 429) is no
+  longer remembered as a rejection for 60 seconds (the CIMD draft forbids caching error responses), so a
+  new client works as soon as its host is back. It is remembered only while a stored copy of the client is
+  served instead (stale-if-error). Definite rejections are still remembered for 60 seconds.
+- Docs: how to undo a metadata document client revocation with SQL, and `cimd.allowedHosts` as the
+  reversible switch (`docs/operations.md`); the refresh grace window absorbs a lost response, not
+  concurrent refreshes (`docs/security.md`).
 - OAuth 2.1 authorization server library for PHP 8.2 and newer, built on PSR-7, PSR-15, PSR-14,
   PSR-16, PSR-17, PSR-20 and PSR-3.
 - Authorization code flow with mandatory PKCE (S256), exact redirect URI matching and loopback
@@ -102,3 +146,12 @@ First release.
   `MetadataDocumentFetcher`, `ConsentView`, `ConnectionsView`) are internal: build them through
   `AuthorizationServer`. Their documented methods and properties follow semantic versioning.
 - Schema changes after 1.0.0 ship as SQL files under `schema/upgrades/`; see `docs/storage.md`.
+
+### Known issues
+
+- Concurrent refreshes with the same refresh token can revoke the whole family: one request wins, the
+  others get `invalid_grant` and the reuse detection fires a false `RefreshTokenReused`. The grace window
+  does not absorb concurrent refreshes (only a retry after a lost response). Not fixed in this beta; it is
+  being observed with claude.ai, and if real clients refresh in parallel a later beta will answer
+  concurrent callers inside the grace window with the winner's response. Clients must send one refresh at
+  a time per token. See `docs/security.md`.

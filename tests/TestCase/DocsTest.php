@@ -52,6 +52,7 @@ class DocsTest extends TestCase
             'form_token', 'decision', 'family_id', 'token_id', 'create_token', 'revoke_connection',
             'revoke_token', 'bearerMiddleware', 'forClient', 'scopesFor', 'findBySubject', 'canAuthorize',
             'currentOwner', 'loginResponse', 'family_started_at', 'revokeAllForSubject', 'revokeAllForClient',
+            'deleteCodesBySubject', 'deleteCodesByClient',
             'tests/Conformance/run.sh', 'conformance.md',
         ];
         $items = array_merge($items, array_keys(Messages::DEFAULTS));

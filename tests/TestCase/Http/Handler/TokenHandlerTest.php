@@ -356,6 +356,44 @@ class TokenHandlerTest extends TestCase
         $this->assertEveryFamilyRevoked($racing, $code);
     }
 
+    /**
+     * The person is revoked while their code is being exchanged, before the exchange consumes it: the code
+     * is deleted, so the exchange fails and revokes what it issued.
+     */
+    public function testARevocationJustBeforeTheCodeIsConsumedLeavesNothingLive(): void
+    {
+        $client = $this->harness->publicClient();
+        $code = $this->harness->authorizationCode($client);
+        [$handler, $racing] = $this->racingHandler();
+        $racing->beforeConsume = function (): void {
+            $this->harness->server->tokenRevoker()->revokeAllForSubject('42');
+        };
+
+        $response = $handler->handle($this->harness->form('https://example.com/oauth/token', $this->codeFields($client, $code)));
+
+        $this->assertError($response, 'invalid_grant');
+        $this->assertSame([], $this->harness->storage->findActiveTokensBySubject('42', SubjectType::User, $this->harness->clock->now()));
+    }
+
+    /**
+     * The person is revoked right after the exchange consumed the code: the tokens were stored before the
+     * code was consumed, so the revocation reaches them.
+     */
+    public function testARevocationJustAfterTheCodeIsConsumedRevokesWhatItIssued(): void
+    {
+        $client = $this->harness->publicClient();
+        $code = $this->harness->authorizationCode($client);
+        [$handler, $racing] = $this->racingHandler();
+        $racing->afterConsume = function (): void {
+            $this->harness->server->tokenRevoker()->revokeAllForSubject('42');
+        };
+
+        $response = $handler->handle($this->harness->form('https://example.com/oauth/token', $this->codeFields($client, $code)));
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame([], $this->harness->storage->findActiveTokensBySubject('42', SubjectType::User, $this->harness->clock->now()));
+    }
+
     public function testRedirectUriIsRequiredWithSeveralRegisteredUris(): void
     {
         $multi = $this->harness->publicClient(['redirectUris' => ['https://app.example.com/cb', 'https://app.example.com/cb2']]);

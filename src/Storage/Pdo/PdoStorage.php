@@ -28,6 +28,11 @@ use Throwable;
  *
  * On SQLite the REFERENCES clauses are enforced only with PRAGMA foreign_keys = ON, and prune() deletes child
  * rows explicitly, so it does not depend on cascades.
+ *
+ * Every decision that concurrent requests could race on is one statement: a conditional UPDATE
+ * (consumeCode(), markTokenUsed(), the revocations, the claim of a client in prune()), a conditional DELETE
+ * (deleteCodesBySubject(), deleteCodesByClient()) or an upsert (saveConsent(): `ON CONFLICT` on SQLite and
+ * PostgreSQL, `ON DUPLICATE KEY UPDATE` on MySQL and MariaDB).
  */
 final class PdoStorage implements StorageInterface
 {
@@ -38,6 +43,8 @@ final class PdoStorage implements StorageInterface
     private string $tokens;
 
     private string $consents;
+
+    private string $driver;
 
     /**
      * @param \PDO $pdo The connection; switched to exception error mode.
@@ -52,6 +59,7 @@ final class PdoStorage implements StorageInterface
         $this->codes = $tablePrefix . 'authorization_codes';
         $this->tokens = $tablePrefix . 'tokens';
         $this->consents = $tablePrefix . 'consents';
+        $this->driver = (string)$this->pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
     }
 
     /**
@@ -241,6 +249,32 @@ final class PdoStorage implements StorageInterface
     /**
      * @inheritDoc
      */
+    public function deleteCodesBySubject(string $subject, ?string $clientInternalId = null): int
+    {
+        if ($clientInternalId === null) {
+            return $this->execute("DELETE FROM {$this->codes} WHERE subject = ? AND used_at IS NULL", [$subject]);
+        }
+
+        return $this->execute(
+            "DELETE FROM {$this->codes} WHERE subject = ? AND oauth_client_id = ? AND used_at IS NULL",
+            [$subject, $clientInternalId],
+        );
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function deleteCodesByClient(string $clientInternalId): int
+    {
+        return $this->execute(
+            "DELETE FROM {$this->codes} WHERE oauth_client_id = ? AND used_at IS NULL",
+            [$clientInternalId],
+        );
+    }
+
+    /**
+     * @inheritDoc
+     */
     public function saveToken(Token $token): void
     {
         $this->insert($this->tokens, [
@@ -421,25 +455,35 @@ final class PdoStorage implements StorageInterface
      */
     public function saveConsent(Consent $consent): void
     {
-        $existing = $this->findConsent($consent->subject, $consent->clientInternalId, $consent->resource);
-        if ($existing !== null) {
-            $this->update($this->consents, $existing->id, [
-                'scopes' => self::json($consent->scopes),
-                'modified' => Time::format($consent->modifiedAt),
-            ]);
+        // One upsert, so two first saves racing on the unique key (a double click on "Allow") cannot fail.
+        $scopes = self::json($consent->scopes);
+        $modified = Time::format($consent->modifiedAt);
+        $values = [
+            $consent->id,
+            $consent->subject,
+            $consent->clientInternalId,
+            $consent->resource,
+            hash('sha256', $consent->resource),
+            $scopes,
+            Time::format($consent->createdAt),
+            $modified,
+        ];
+        $insert = "INSERT INTO {$this->consents}"
+            . ' (id, subject, oauth_client_id, resource, resource_hash, scopes, created, modified)'
+            . ' VALUES (?, ?, ?, ?, ?, ?, ?, ?)';
+        if ($this->driver === 'mysql') {
+            $this->execute(
+                $insert . ' ON DUPLICATE KEY UPDATE scopes = ?, modified = ?',
+                [...$values, $scopes, $modified],
+            );
 
             return;
         }
-        $this->insert($this->consents, [
-            'id' => $consent->id,
-            'subject' => $consent->subject,
-            'oauth_client_id' => $consent->clientInternalId,
-            'resource' => $consent->resource,
-            'resource_hash' => hash('sha256', $consent->resource),
-            'scopes' => self::json($consent->scopes),
-            'created' => Time::format($consent->createdAt),
-            'modified' => Time::format($consent->modifiedAt),
-        ]);
+        $this->execute(
+            $insert . ' ON CONFLICT (subject, oauth_client_id, resource_hash)'
+            . ' DO UPDATE SET scopes = excluded.scopes, modified = excluded.modified',
+            $values,
+        );
     }
 
     /**
@@ -466,24 +510,24 @@ final class PdoStorage implements StorageInterface
             . ' OR (expires_at IS NOT NULL AND expires_at < ?)',
             [$cutoff, $cutoff],
         );
-        $candidates = $this->select(
-            "SELECT c.id FROM {$this->clients} c WHERE c.type IN (?, ?) AND c.revoked_at IS NULL AND c.created < ?"
-            . ' AND (c.last_used_at IS NULL OR c.last_used_at < ?)'
-            . " AND NOT EXISTS (SELECT 1 FROM {$this->tokens} t WHERE t.oauth_client_id = c.id"
-            . ' AND t.revoked_at IS NULL AND (t.expires_at IS NULL OR t.expires_at > ?))',
-            [
-                ClientType::Dynamic->value,
-                ClientType::MetadataDocument->value,
-                Time::format(Time::plus($now, -$unusedClientSeconds)),
-                $cutoff,
-                $nowText,
-            ],
-        );
+        $unused = [
+            ClientType::Dynamic->value,
+            ClientType::MetadataDocument->value,
+            Time::format(Time::plus($now, -$unusedClientSeconds)),
+            $cutoff,
+            $nowText,
+        ];
+        $candidates = $this->select("SELECT c.id FROM {$this->clients} c WHERE " . $this->unusedClient('c'), $unused);
         $clients = 0;
         foreach ($candidates as $candidate) {
             $id = (string)$candidate['id'];
             $this->pdo->beginTransaction();
             try {
+                if (!$this->claimUnusedClient($id, $unused, $nowText)) {
+                    // Used since it was selected: keep it.
+                    $this->pdo->rollBack();
+                    continue;
+                }
                 $tokens += $this->execute("DELETE FROM {$this->tokens} WHERE oauth_client_id = ?", [$id]);
                 $codes += $this->execute("DELETE FROM {$this->codes} WHERE oauth_client_id = ?", [$id]);
                 $this->execute("DELETE FROM {$this->consents} WHERE oauth_client_id = ?", [$id]);
@@ -496,6 +540,42 @@ final class PdoStorage implements StorageInterface
         }
 
         return new PruneResult($codes, $tokens, $clients);
+    }
+
+    /**
+     * The SQL condition of an unused client on $table (a name or an alias): a dynamic or metadata document
+     * client, not revoked, created and last used before the cutoffs, without a live token. Its five values
+     * are the `$unused` list of prune().
+     */
+    private function unusedClient(string $table): string
+    {
+        return "{$table}.type IN (?, ?) AND {$table}.revoked_at IS NULL AND {$table}.created < ?"
+            . " AND ({$table}.last_used_at IS NULL OR {$table}.last_used_at < ?)"
+            . " AND NOT EXISTS (SELECT 1 FROM {$this->tokens} t WHERE t.oauth_client_id = {$table}.id"
+            . ' AND t.revoked_at IS NULL AND (t.expires_at IS NULL OR t.expires_at > ?))';
+    }
+
+    /**
+     * Claims a pruning candidate inside the open transaction; true when it is still unused. The check and
+     * the claim are one conditional UPDATE (it marks the row revoked until the deletion commits), so a
+     * request that used the client after it was selected (it recorded a use or saved a live token) keeps
+     * it. On MySQL and PostgreSQL the row is locked first: that waits for a request inserting a token of
+     * this client right now (its foreign key check locks the row) and holds off later ones until the
+     * deletion is committed. SQLite has one writer at a time, and the claim is the transaction's first
+     * statement.
+     *
+     * @param list<string> $unused The values of unusedClient().
+     */
+    private function claimUnusedClient(string $id, array $unused, string $at): bool
+    {
+        if ($this->driver === 'mysql' || $this->driver === 'pgsql') {
+            $this->select("SELECT id FROM {$this->clients} WHERE id = ? FOR UPDATE", [$id]);
+        }
+
+        return $this->execute(
+            "UPDATE {$this->clients} SET revoked_at = ? WHERE id = ? AND " . $this->unusedClient($this->clients),
+            [$at, $id, ...$unused],
+        ) === 1;
     }
 
     /**

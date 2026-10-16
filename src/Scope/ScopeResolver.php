@@ -65,8 +65,9 @@ final class ScopeResolver
      * What remains of $scopes under the owner's current allowance. With no restriction the scopes are
      * returned as given. Otherwise the scopes are expanded, kept when the expanded allowance contains them,
      * and reduced to the minimal set (a scope implied by another kept scope is dropped), so a demotion
-     * from `write` to `read` narrows the grant to `read` instead of killing it. Nothing is ever added
-     * beyond what the grant implied.
+     * from `write` to `read` narrows what is issued to `read` instead of refusing it. Nothing is ever added
+     * beyond what the grant implied. A refresh applies it to the new access token only; the refresh token
+     * keeps the grant.
      *
      * @param \CakeDC\OAuth\Server\Resource\ProtectedResource $resource The resource.
      * @param list<string> $scopes Granted scopes.
@@ -103,7 +104,8 @@ final class ScopeResolver
     }
 
     /**
-     * The scopes of a refreshed token: the current ones, or a subset the client asks for.
+     * The scopes of a refreshed access token: the current ones, or a subset the client asks for. The new
+     * refresh token keeps the current ones either way.
      *
      * @param \CakeDC\OAuth\Server\Resource\ProtectedResource $resource The resource.
      * @param list<string> $current Scopes of the refresh token.

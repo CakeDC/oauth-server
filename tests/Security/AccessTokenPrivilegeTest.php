@@ -5,6 +5,7 @@ namespace CakeDC\OAuth\Server\Test\Security;
 
 use CakeDC\OAuth\Server\Test\Support\Fixtures;
 use CakeDC\OAuth\Server\Test\Support\ServerHarness;
+use CakeDC\OAuth\Server\Token\ValidationFailure;
 use Nyholm\Psr7\Response;
 use PHPUnit\Framework\TestCase;
 use Psr\Http\Message\ResponseInterface;
@@ -42,6 +43,35 @@ class AccessTokenPrivilegeTest extends TestCase
 
         $this->assertSame(200, $this->call($harness, Fixtures::MCP, $token));
         $this->assertSame(401, $this->call($harness, Fixtures::API, $token));
+    }
+
+    /**
+     * A refresh token lives 30 days and is meant for the token endpoint only. It must never open a
+     * resource, even with the scopes it carries.
+     */
+    public function testARefreshTokenIsNeverABearerToken(): void
+    {
+        $harness = new ServerHarness();
+        $client = $harness->publicClient();
+        $pair = $harness->json($harness->exchange($client, $harness->authorizationCode($client, ['scope' => 'content:publish'])));
+        $this->assertSame(200, $this->call($harness, Fixtures::MCP, $pair['access_token'], ['content:read']));
+
+        $response = $harness->server->bearerMiddleware(Fixtures::MCP)->process(
+            $harness->request('GET', Fixtures::MCP, ['Authorization' => 'Bearer ' . $pair['refresh_token']]),
+            new class implements RequestHandlerInterface {
+                public function handle(ServerRequestInterface $request): ResponseInterface
+                {
+                    return new Response(200);
+                }
+            },
+        );
+
+        $this->assertSame(401, $response->getStatusCode());
+        $this->assertStringContainsString('error="invalid_token"', $response->getHeaderLine('WWW-Authenticate'));
+        $this->assertSame('The access token is invalid.', $harness->json($response)['error_description']);
+        $validated = $harness->server->tokenValidator()->validate($pair['refresh_token'], Fixtures::MCP);
+        $this->assertInstanceOf(ValidationFailure::class, $validated);
+        $this->assertSame('The access token is invalid.', $validated->description);
     }
 
     public function testScopesShrinkAtOnceWhenTheOwnerLosesThem(): void

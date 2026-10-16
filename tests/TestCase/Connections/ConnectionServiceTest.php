@@ -8,11 +8,13 @@ use CakeDC\OAuth\Server\Config\Lifetimes;
 use CakeDC\OAuth\Server\Connections\ConnectionService;
 use CakeDC\OAuth\Server\Event\NullEventDispatcher;
 use CakeDC\OAuth\Server\Exception\OAuthException;
+use CakeDC\OAuth\Server\Grant\AuthorizationCode;
 use CakeDC\OAuth\Server\Grant\Consent;
 use CakeDC\OAuth\Server\Grant\ConsentService;
 use CakeDC\OAuth\Server\Owner\ResourceOwner;
 use CakeDC\OAuth\Server\Owner\SubjectType;
 use CakeDC\OAuth\Server\Storage\InMemory\InMemoryStorage;
+use CakeDC\OAuth\Server\Support\Uuid;
 use CakeDC\OAuth\Server\Test\Support\FakeUsers;
 use CakeDC\OAuth\Server\Test\Support\Fixtures;
 use CakeDC\OAuth\Server\Testing\FrozenClock;
@@ -47,8 +49,9 @@ class ConnectionServiceTest extends TestCase
             $this->storage,
             $this->storage,
             $this->storage,
+            $this->storage,
             $this->issuer,
-            new TokenRevoker($this->storage, $this->clock, $events),
+            new TokenRevoker($this->storage, $this->storage, $this->clock, $events),
             Fixtures::resources(),
             $this->users,
             $this->clock,
@@ -219,6 +222,40 @@ class ConnectionServiceTest extends TestCase
         $this->assertCount(1, $this->service->personalTokens($this->ada));
     }
 
+    private function pendingCode(Client $client, string $subject = '42'): AuthorizationCode
+    {
+        $code = new AuthorizationCode(
+            id: Uuid::v4(),
+            codeHash: TokenGenerator::hash(Uuid::v4()),
+            clientInternalId: $client->id,
+            subject: $subject,
+            redirectUri: 'https://app.example.com/cb',
+            resource: Fixtures::MCP,
+            scopes: ['content:read'],
+            codeChallenge: str_repeat('a', 43),
+            expiresAt: $this->clock->now()->modify('+60 seconds'),
+            createdAt: $this->clock->now(),
+        );
+        $this->storage->saveCode($code);
+
+        return $code;
+    }
+
+    public function testRevokingAConnectionDeletesThePendingCodesOfThatPersonAndClient(): void
+    {
+        $client = $this->connect('first');
+        $other = $this->connect('second');
+        $pending = $this->pendingCode($client);
+        $someoneElses = $this->pendingCode($client, '43');
+        $otherClient = $this->pendingCode($other);
+
+        $this->assertTrue($this->service->revokeConnection($this->ada, 'first'));
+
+        $this->assertNull($this->storage->findCodeByHash($pending->codeHash));
+        $this->assertNotNull($this->storage->findCodeByHash($someoneElses->codeHash));
+        $this->assertNotNull($this->storage->findCodeByHash($otherClient->codeHash));
+    }
+
     public function testRevokingADeadFamilyKeepsTheNewerConsent(): void
     {
         $client = $this->connect('old');
@@ -226,8 +263,11 @@ class ConnectionServiceTest extends TestCase
         $this->issuer->issue($client, '42', SubjectType::User, Fixtures::resources()->defaultResource(), ['content:read'], 'new', true);
         $this->storage->saveConsent(new Consent('c-new', '42', $client->id, Fixtures::MCP, ['content:read'], $this->clock->now(), $this->clock->now()));
 
+        $pending = $this->pendingCode($client);
+
         $this->assertFalse($this->service->revokeConnection($this->ada, 'old'));
         $this->assertNotNull($this->storage->findConsent('42', $client->id, Fixtures::MCP));
+        $this->assertNotNull($this->storage->findCodeByHash($pending->codeHash));
         $this->assertCount(1, $this->service->connections($this->ada));
     }
 

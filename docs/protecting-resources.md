@@ -160,8 +160,9 @@ a minute per token). Pass `false` to look without recording, as introspection do
 
 If the result is empty the token is refused outright (`invalid_token`, `The token no longer grants any
 scope.`): a token that holds nothing is not an authenticated request with no permissions. A refresh applies
-the same person allowance (step 4) to the stored scopes, so the new pair carries the intersection and
-`invalid_grant` is answered when nothing is left.
+the client and person allowances (steps 3 and 4) to the new access token and answers `invalid_grant` when
+nothing is left. The new refresh token keeps the scopes of the one presented (minus scopes the resource no
+longer declares), so a person promoted again gets the scopes back at the next refresh.
 
 So a role change, a removed scope in the configuration or a narrowed client takes effect at the next
 request, without revoking anything. A token for `content:publish` that implies `content:write` passes a

@@ -69,6 +69,36 @@ class RefreshTokenProtectionTest extends TestCase
         $this->assertSame('invalid_client', $harness->json($response)['error']);
     }
 
+    /**
+     * RFC 6749 section 6: "the refresh token scope MUST be identical to that of the refresh token included
+     * by the client in the request". A down-scoped refresh narrows the access token, not the grant.
+     */
+    public function testADownScopedRefreshKeepsTheGrant(): void
+    {
+        $harness = new ServerHarness();
+        $client = $harness->publicClient();
+        $first = $harness->json($harness->exchange($client, $harness->authorizationCode($client, ['scope' => 'content:write'])));
+        $this->assertSame('content:write', $first['scope']);
+        $refresh = fn(string $token, string $scope) => $harness->json($harness->server->tokenHandler()->handle(
+            $harness->form('https://example.com/oauth/token', [
+                'grant_type' => 'refresh_token',
+                'refresh_token' => $token,
+                'client_id' => $client->clientId,
+                'scope' => $scope,
+            ]),
+        ));
+
+        $narrow = $refresh($first['refresh_token'], 'content:read');
+        $this->assertSame('content:read', $narrow['scope']);
+        $this->assertSame(403, $harness->bearerStatus(Fixtures::MCP, $narrow['access_token'], ['content:write']));
+
+        $harness->clock->advance(60);
+        $broad = $refresh($narrow['refresh_token'], 'content:write');
+
+        $this->assertSame('content:write', $broad['scope'] ?? $broad);
+        $this->assertSame(200, $harness->bearerStatus(Fixtures::MCP, $broad['access_token'], ['content:write']));
+    }
+
     public function testReuseAlsoRevokesTheAccessTokenOfTheFamily(): void
     {
         $harness = new ServerHarness();

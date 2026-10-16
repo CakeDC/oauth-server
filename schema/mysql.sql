@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS oauth_authorization_codes (
     UNIQUE KEY oauth_authorization_codes_code_hash (code_hash),
     KEY oauth_authorization_codes_oauth_client_id (oauth_client_id),
     KEY oauth_authorization_codes_expires_at (expires_at),
+    KEY oauth_authorization_codes_subject (subject),
     CONSTRAINT oauth_authorization_codes_client FOREIGN KEY (oauth_client_id)
         REFERENCES oauth_clients (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;

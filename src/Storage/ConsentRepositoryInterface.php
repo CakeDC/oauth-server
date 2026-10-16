@@ -16,8 +16,10 @@ interface ConsentRepositoryInterface
     public function findConsent(string $subject, string $clientInternalId, string $resource): ?Consent;
 
     /**
-     * Inserts the consent, or replaces the scopes of the stored one for the same subject, client and
-     * resource (keeping its id and creation time).
+     * Inserts the consent, or replaces the scopes and modification time of the stored one for the same
+     * subject, client and resource (keeping its id and creation time). This holds when two first saves race
+     * (a double click on "Allow"): the second replaces the scopes of the first, it never fails on the
+     * unique key.
      */
     public function saveConsent(Consent $consent): void;
 

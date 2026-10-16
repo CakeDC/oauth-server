@@ -57,7 +57,7 @@ class RefreshTokenRotatorTest extends TestCase
         return new RefreshTokenRotator(
             $this->storage,
             $this->issuer,
-            new TokenRevoker($this->storage, $this->clock, $this->events),
+            new TokenRevoker($this->storage, $this->storage, $this->clock, $this->events),
             new ScopeResolver(),
             Fixtures::resources(),
             $this->clock,
@@ -162,6 +162,39 @@ class RefreshTokenRotatorTest extends TestCase
         $this->rotator()->rotate($this->client, (string)$narrow->refreshToken, null, ['content:publish']);
     }
 
+    /**
+     * RFC 6749 section 6 and OAuth 2.1 section 4.3.3: the new refresh token has the scope of the one
+     * presented. A requested scope narrows the access token only, so the grant is not lost.
+     */
+    public function testARequestedScopeNarrowsTheAccessTokenOnly(): void
+    {
+        $initial = $this->initial(['content:write']);
+
+        $narrow = $this->rotator()->rotate($this->client, (string)$initial->refreshToken, null, ['content:read']);
+
+        $this->assertSame(['content:read'], $narrow->access->scopes);
+        $this->assertSame(['content:write'], $narrow->refresh?->scopes);
+        $this->assertSame('content:read', $narrow->toResponse()['scope']);
+
+        $this->clock->advance(60);
+        $broad = $this->rotator()->rotate($this->client, (string)$narrow->refreshToken, null, ['content:write']);
+
+        $this->assertSame(['content:write'], $broad->access->scopes);
+        $this->assertSame(['content:write'], $broad->refresh?->scopes);
+    }
+
+    public function testTheGracePairKeepsTheGrantOfThePresentedToken(): void
+    {
+        $initial = $this->initial(['content:write']);
+        $this->rotator()->rotate($this->client, (string)$initial->refreshToken, null, ['content:read']);
+        $this->clock->advance(5);
+
+        $retry = $this->rotator()->rotate($this->client, (string)$initial->refreshToken, null, ['content:read']);
+
+        $this->assertSame(['content:read'], $retry->access->scopes);
+        $this->assertSame(['content:write'], $retry->refresh?->scopes);
+    }
+
     public function testScopesTheResourceNoLongerDeclaresAreNotReissued(): void
     {
         $initial = $this->initial(['content:read', 'legacy:scope']);
@@ -188,6 +221,8 @@ class RefreshTokenRotatorTest extends TestCase
         $rotated = $this->rotator()->rotate($client, (string)$initial->refreshToken, null, []);
 
         $this->assertSame(['content:read'], $rotated->access->scopes);
+        // The client's allowance is current policy, like the owner's: checked on every use, never stored.
+        $this->assertSame(['content:read', 'content:write'], $rotated->refresh?->scopes);
     }
 
     public function testRejectsTokensItShouldNotRotate(): void
@@ -531,7 +566,7 @@ class RefreshTokenRotatorTest extends TestCase
         $rotated = $this->rotator()->rotate($this->client, (string)$initial->refreshToken, null, []);
 
         $this->assertSame(['content:read'], $rotated->access->scopes);
-        $this->assertSame(['content:read'], $rotated->refresh?->scopes);
+        $this->assertSame(['content:read', 'content:write'], $rotated->refresh?->scopes);
         $this->assertSame('content:read', $rotated->toResponse()['scope']);
     }
 
@@ -553,8 +588,24 @@ class RefreshTokenRotatorTest extends TestCase
         $rotated = $this->rotator()->rotate($this->client, (string)$initial->refreshToken, null, []);
 
         $this->assertSame(['content:read'], $rotated->access->scopes);
-        $this->assertSame(['content:read'], $rotated->refresh?->scopes);
+        $this->assertSame(['content:write'], $rotated->refresh?->scopes);
         $this->assertSame('content:read', $rotated->toResponse()['scope']);
+    }
+
+    public function testAnOwnerPromotedAgainRegainsTheGrantOnTheNextRefresh(): void
+    {
+        $initial = $this->initial(['content:write']);
+        $this->users->scopes['42'] = ['content:read'];
+        $demoted = $this->rotator()->rotate($this->client, (string)$initial->refreshToken, null, []);
+        $this->assertSame(['content:read'], $demoted->access->scopes);
+
+        $this->users->scopes['42'] = null;
+        $this->clock->advance(60);
+        $promoted = $this->rotator()->rotate($this->client, (string)$demoted->refreshToken, null, []);
+
+        $this->assertSame(['content:write'], $promoted->access->scopes);
+        $this->assertSame(['content:write'], $promoted->refresh?->scopes);
+        $this->assertSame('content:write', $promoted->toResponse()['scope']);
     }
 
     public function testTheResultIsReducedToItsMinimalSet(): void

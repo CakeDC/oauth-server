@@ -196,7 +196,7 @@ Errors: `invalid_request`, `invalid_client`, `invalid_grant`, `unauthorized_clie
 | Parameter | Required | Meaning |
 | --- | --- | --- |
 | `refresh_token` | yes | The refresh token |
-| `scope` | no | A subset of the current scopes. Default: all of them |
+| `scope` | no | A subset of the scopes of the refresh token. Narrows the new access token only. Default: all of them |
 | `resource` | no | Must name the token's resource |
 
 ```bash
@@ -206,7 +206,13 @@ curl -s https://auth.example.com/oauth/token \
 
 Every refresh returns a new pair and retires the old refresh token. Presenting an old one again
 revokes the whole family (see [security](security.md#refresh-token-rotation-and-reuse)). A client must
-not refresh the same token from two places at once.
+not refresh the same token from two places at once: concurrent refreshes can revoke the family
+([known issue](security.md#known-issue-concurrent-refreshes)).
+
+The new refresh token keeps the scopes of the one presented (RFC 6749 section 6), minus scopes the
+resource no longer declares. A `scope` parameter narrows only the new access token, so a client that asks
+for `content:read` once can ask for `content:write` again at the next refresh. The response's `scope`
+describes the access token.
 
 Errors: `invalid_request`, `invalid_client`, `invalid_grant`, `unauthorized_client`, `invalid_scope`,
 `invalid_target`.

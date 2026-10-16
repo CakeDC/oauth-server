@@ -87,9 +87,9 @@ final class RefreshTokenRotator
         if ($token->isExpired($now)) {
             throw OAuthException::invalidGrant('The refresh token is no longer valid.');
         }
-        [$target, $scopes] = $this->prepare($client, $token, $resource, $requestedScopes);
+        [$target, $scopes, $refreshScopes] = $this->prepare($client, $token, $resource, $requestedScopes);
         if ($this->tokens->markTokenUsed($token->id, $now)) {
-            return $this->pair($client, $token, $target, $scopes);
+            return $this->pair($client, $token, $target, $scopes, $refreshScopes);
         }
         $current = $this->tokens->findTokenById($token->id) ?? $token;
         if ($current->revokedAt !== null) {
@@ -134,8 +134,15 @@ final class RefreshTokenRotator
     /**
      * Checks resource and scopes and works out the scopes of the new pair.
      *
+     * The new refresh token keeps the scopes of the presented one, minus those the resource no longer
+     * declares (RFC 6749 section 6, OAuth 2.1 section 4.3.3: its scope "MUST be identical"). Only the access
+     * token is narrowed: by a requested `scope`, by the client's allowance and by the owner's allowance of
+     * today. So a down-scoped refresh, a demotion or a narrowed client loses nothing for good, and the
+     * validator still recomputes the scopes on every use.
+     *
      * @param list<string> $requestedScopes Requested scopes.
-     * @return array{0: \CakeDC\OAuth\Server\Resource\ProtectedResource, 1: list<string>}
+     * @return array{0: \CakeDC\OAuth\Server\Resource\ProtectedResource, 1: list<string>, 2: list<string>} The
+     *   resource, the access token's scopes and the refresh token's scopes.
      * @throws \CakeDC\OAuth\Server\Exception\OAuthException
      */
     private function prepare(Client $client, Token $token, ?string $resource, array $requestedScopes): array
@@ -170,8 +177,12 @@ final class RefreshTokenRotator
         if ($scopes === []) {
             throw OAuthException::invalidGrant('The grant no longer allows any scope.');
         }
+        $grant = array_values(array_unique(array_filter(
+            $token->scopes,
+            fn(string $scope): bool => $target->hasScope($scope),
+        )));
 
-        return [$target, $scopes];
+        return [$target, $scopes, $grant];
     }
 
     /**
@@ -226,12 +237,12 @@ final class RefreshTokenRotator
                 throw OAuthException::invalidGrant('The refresh token is being rotated; try again.');
             }
             if ($refreshChildren !== [] && !$this->anyUsed($children)) {
-                [$target, $scopes] = $this->prepare($client, $token, $resource, $requestedScopes);
+                [$target, $scopes, $refreshScopes] = $this->prepare($client, $token, $resource, $requestedScopes);
                 $child = $refreshChildren[count($refreshChildren) - 1];
                 if ($this->tokens->markTokenUsed($child->id, $now)) {
                     $this->revoker->revokeTokens($children, 'grace', $token);
 
-                    return $this->pair($client, $token, $target, $scopes);
+                    return $this->pair($client, $token, $target, $scopes, $refreshScopes);
                 }
             }
         }
@@ -259,11 +270,17 @@ final class RefreshTokenRotator
     /**
      * Issues the pair that replaces $token, unless $token was revoked meanwhile.
      *
-     * @param list<string> $scopes Scopes.
+     * @param list<string> $scopes Scopes of the access token.
+     * @param list<string> $refreshScopes Scopes of the refresh token.
      * @throws \CakeDC\OAuth\Server\Exception\OAuthException
      */
-    private function pair(Client $client, Token $token, ProtectedResource $target, array $scopes): IssuedTokens
-    {
+    private function pair(
+        Client $client,
+        Token $token,
+        ProtectedResource $target,
+        array $scopes,
+        array $refreshScopes,
+    ): IssuedTokens {
         $issued = $this->issuer->issue(
             $client,
             $token->subject,
@@ -274,6 +291,7 @@ final class RefreshTokenRotator
             true,
             $token->id,
             $token->familyStartedAt ?? $token->createdAt,
+            $refreshScopes,
         );
         if ($this->tokens->findTokenById($token->id)?->revokedAt !== null) {
             $this->revoker->revokeTokens(

@@ -9,6 +9,7 @@ use CakeDC\OAuth\Server\Owner\ResourceOwner;
 use CakeDC\OAuth\Server\Owner\SubjectType;
 use CakeDC\OAuth\Server\Owner\UserProviderInterface;
 use CakeDC\OAuth\Server\Resource\ResourceRegistry;
+use CakeDC\OAuth\Server\Storage\AuthorizationCodeRepositoryInterface;
 use CakeDC\OAuth\Server\Storage\ClientRepositoryInterface;
 use CakeDC\OAuth\Server\Storage\ConsentRepositoryInterface;
 use CakeDC\OAuth\Server\Storage\TokenRepositoryInterface;
@@ -29,6 +30,7 @@ final class ConnectionService
      * @param \CakeDC\OAuth\Server\Storage\TokenRepositoryInterface $tokens Tokens.
      * @param \CakeDC\OAuth\Server\Storage\ClientRepositoryInterface $clients Clients.
      * @param \CakeDC\OAuth\Server\Storage\ConsentRepositoryInterface $consents Consents.
+     * @param \CakeDC\OAuth\Server\Storage\AuthorizationCodeRepositoryInterface $codes Codes.
      * @param \CakeDC\OAuth\Server\Token\TokenIssuer $issuer Issuer.
      * @param \CakeDC\OAuth\Server\Token\TokenRevoker $revoker Revoker.
      * @param \CakeDC\OAuth\Server\Resource\ResourceRegistry $resources Resources.
@@ -40,6 +42,7 @@ final class ConnectionService
         private readonly TokenRepositoryInterface $tokens,
         private readonly ClientRepositoryInterface $clients,
         private readonly ConsentRepositoryInterface $consents,
+        private readonly AuthorizationCodeRepositoryInterface $codes,
         private readonly TokenIssuer $issuer,
         private readonly TokenRevoker $revoker,
         private readonly ResourceRegistry $resources,
@@ -207,7 +210,11 @@ final class ConnectionService
     }
 
     /**
-     * Revokes one of the owner's connections and forgets its consent; false when it is not theirs.
+     * Revokes one of the owner's connections, deletes the owner's codes for that client that were not
+     * exchanged yet and forgets the consent; false when it is not theirs or no longer live.
+     *
+     * A code still pending when its row is deleted can no longer be exchanged. One exchanged a moment
+     * earlier opened a connection of its own, which the connections page lists.
      */
     public function revokeConnection(ResourceOwner $owner, string $familyId): bool
     {
@@ -227,6 +234,7 @@ final class ConnectionService
         if ($this->revoker->revokeFamily($familyId, 'connection', $first) === 0) {
             return false;
         }
+        $this->codes->deleteCodesBySubject($owner->subject, $first->clientInternalId);
         $this->consents->deleteConsent($owner->subject, $first->clientInternalId, $first->resource);
 
         return true;

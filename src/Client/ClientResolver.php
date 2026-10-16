@@ -25,7 +25,8 @@ use Throwable;
 final class ClientResolver
 {
     /**
-     * Seconds a failed fetch is remembered.
+     * Seconds a failed fetch is remembered: a definitive rejection always, a temporary failure only while a
+     * stored copy of the client stands in for it.
      */
     private const FAILURE_SECONDS = 60;
 
@@ -38,7 +39,8 @@ final class ClientResolver
      * @param bool $allowPrivateSchemes Native documents may use private-use redirect URI schemes.
      * @param \CakeDC\OAuth\Server\RateLimit\RateLimiter|null $limiter Counts the fetches of one requester
      *   (bucket `cimd`); null does not limit.
-     * @param \Psr\SimpleCache\CacheInterface|null $cache Remembers failed fetches for a minute; null does not.
+     * @param \Psr\SimpleCache\CacheInterface|null $cache Remembers failed fetches for a minute (see
+     *   FAILURE_SECONDS); null does not.
      */
     public function __construct(
         private readonly ClientRepositoryInterface $clients,
@@ -85,13 +87,12 @@ final class ClientResolver
         if ($existing !== null && ($existing->isRevoked() || $fresh)) {
             return $existing;
         }
+        $staleUsable = $existing !== null && $existing->metadataExpiresAt !== null
+            && $now < Time::plus($existing->metadataExpiresAt, $this->cacheMax);
         try {
-            $fetched = $this->fetchDocument($this->fetcher, $clientId, $requester);
+            $fetched = $this->fetchDocument($this->fetcher, $clientId, $requester, $staleUsable);
         } catch (OAuthException $e) {
-            if (
-                $e->temporary && $existing !== null && $existing->metadataExpiresAt !== null
-                && $now < Time::plus($existing->metadataExpiresAt, $this->cacheMax)
-            ) {
+            if ($e->temporary && $staleUsable) {
                 // Stale-if-error, for temporary unavailability only: serve the stored client for a bounded
                 // time. Read it back, a revocation may have been committed during the fetch.
                 return $this->clients->findClientByClientId($clientId) ?? $existing;
@@ -124,13 +125,25 @@ final class ClientResolver
     /**
      * Fetches the document, within the requester's budget and the memory of recent failures.
      *
+     * A definitive rejection (host policy, address, an invalid document, HTTP 4xx other than 429) is
+     * remembered for a minute, so repeating the client_id costs nothing. A temporary failure (network
+     * error, timeout, HTTP 5xx or 429) is never remembered as a rejection (the CIMD draft says the server
+     * MUST NOT cache error responses), so a new client works as soon as its host answers again. It is
+     * remembered only while $staleUsable, where it just keeps the stored copy in service for that minute
+     * instead of making every request wait on the same unreachable host and spend its `cimd` budget.
+     *
+     * @param bool $staleUsable Whether a stored copy may stand in for a temporary failure (stale-if-error).
      * @return array{document: array<string, mixed>, maxAge: int|null}
      * @throws \CakeDC\OAuth\Server\Exception\OAuthException
      */
-    private function fetchDocument(MetadataDocumentFetcher $fetcher, string $clientId, ?string $requester): array
-    {
+    private function fetchDocument(
+        MetadataDocumentFetcher $fetcher,
+        string $clientId,
+        ?string $requester,
+        bool $staleUsable,
+    ): array {
         $remembered = $this->rememberedFailure($clientId);
-        if ($remembered !== null) {
+        if ($remembered !== null && (!$remembered->temporary || $staleUsable)) {
             throw $remembered;
         }
         if ($requester !== null) {
@@ -139,7 +152,9 @@ final class ClientResolver
         try {
             return $fetcher->fetch($clientId);
         } catch (OAuthException $e) {
-            $this->rememberFailure($clientId, $e);
+            if (!$e->temporary || $staleUsable) {
+                $this->rememberFailure($clientId, $e);
+            }
 
             throw $e;
         }
@@ -177,7 +192,7 @@ final class ClientResolver
     }
 
     /**
-     * Remembers a failed fetch for a minute, so repeating the same client_id costs nothing.
+     * Remembers a failed fetch for a minute (see fetchDocument() for which ones).
      */
     private function rememberFailure(string $clientId, OAuthException $failure): void
     {

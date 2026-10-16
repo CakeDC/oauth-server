@@ -5,19 +5,27 @@ namespace CakeDC\OAuth\Server\Test\TestCase\Storage\Pdo;
 
 use CakeDC\OAuth\Server\Storage\Pdo\PdoStorage;
 use CakeDC\OAuth\Server\Storage\StorageInterface;
+use CakeDC\OAuth\Server\Test\Support\HookedPdo;
 use CakeDC\OAuth\Server\Testing\StorageContractTestCase;
 use InvalidArgumentException;
 use PDO;
 
 class PdoStorageSqliteTest extends StorageContractTestCase
 {
-    protected function createStorage(): StorageInterface
+    use PdoConcurrencyTestsTrait;
+
+    protected function connect(): HookedPdo
     {
-        $pdo = new PDO('sqlite::memory:');
+        $pdo = new HookedPdo('sqlite::memory:');
         PdoStorage::createTables($pdo);
         PdoStorage::createTables($pdo);
 
-        return new PdoStorage($pdo);
+        return $pdo;
+    }
+
+    protected function createStorage(): StorageInterface
+    {
+        return new PdoStorage($this->connect());
     }
 
     public function testRejectsAnUnsafeTablePrefix(): void

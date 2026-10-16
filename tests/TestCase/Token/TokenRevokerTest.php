@@ -5,8 +5,10 @@ namespace CakeDC\OAuth\Server\Test\TestCase\Token;
 
 use CakeDC\OAuth\Server\Config\Lifetimes;
 use CakeDC\OAuth\Server\Event\TokenRevoked;
+use CakeDC\OAuth\Server\Grant\AuthorizationCode;
 use CakeDC\OAuth\Server\Owner\SubjectType;
 use CakeDC\OAuth\Server\Storage\InMemory\InMemoryStorage;
+use CakeDC\OAuth\Server\Support\Uuid;
 use CakeDC\OAuth\Server\Test\Support\Fixtures;
 use CakeDC\OAuth\Server\Test\Support\RecordingEventDispatcher;
 use CakeDC\OAuth\Server\Testing\FrozenClock;
@@ -32,7 +34,7 @@ class TokenRevokerTest extends TestCase
         $this->events = new RecordingEventDispatcher();
         $clock = new FrozenClock();
         $this->issuer = new TokenIssuer($this->storage, new TokenGenerator(), $clock, $this->events, new Lifetimes());
-        $this->revoker = new TokenRevoker($this->storage, $clock, $this->events);
+        $this->revoker = new TokenRevoker($this->storage, $this->storage, $clock, $this->events);
     }
 
     public function testARefreshTokenTakesItsFamilyAndAnAccessTokenOnlyItself(): void
@@ -78,6 +80,54 @@ class TokenRevokerTest extends TestCase
             fn(TokenRevoked $e): string => $e->reason,
             $this->events->ofType(TokenRevoked::class),
         ));
+    }
+
+    private function code(string $clientInternalId, string $subject = '42'): AuthorizationCode
+    {
+        $code = new AuthorizationCode(
+            id: Uuid::v4(),
+            codeHash: TokenGenerator::hash(Uuid::v4()),
+            clientInternalId: $clientInternalId,
+            subject: $subject,
+            redirectUri: 'https://app.example.com/cb',
+            resource: Fixtures::MCP,
+            scopes: ['content:read'],
+            codeChallenge: str_repeat('a', 43),
+            expiresAt: new DateTimeImmutable('+60 seconds'),
+            createdAt: new DateTimeImmutable(),
+        );
+        $this->storage->saveCode($code);
+
+        return $code;
+    }
+
+    public function testRevokingAPersonDeletesTheirPendingCodesFirst(): void
+    {
+        $client = Fixtures::client();
+        $mine = $this->code($client->id);
+        $theirs = $this->code($client->id, '43');
+        $robot = $this->code($client->id, 'robot');
+
+        $this->revoker->revokeAllForSubject('42');
+        $this->revoker->revokeAllForSubject('robot', SubjectType::Client);
+
+        $this->assertNull($this->storage->findCodeByHash($mine->codeHash));
+        $this->assertNotNull($this->storage->findCodeByHash($theirs->codeHash));
+        // Codes belong to people: revoking a client identity with the same subject leaves them.
+        $this->assertNotNull($this->storage->findCodeByHash($robot->codeHash));
+    }
+
+    public function testRevokingAClientDeletesItsPendingCodes(): void
+    {
+        $client = Fixtures::client();
+        $other = Fixtures::client();
+        $mine = $this->code($client->id);
+        $notMine = $this->code($other->id);
+
+        $this->revoker->revokeAllForClient($client);
+
+        $this->assertNull($this->storage->findCodeByHash($mine->codeHash));
+        $this->assertNotNull($this->storage->findCodeByHash($notMine->codeHash));
     }
 
     public function testAForeignClientsRefreshTokenDoesNothing(): void

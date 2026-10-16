@@ -41,6 +41,8 @@ CREATE INDEX IF NOT EXISTS oauth_authorization_codes_oauth_client_id ON oauth_au
 
 CREATE INDEX IF NOT EXISTS oauth_authorization_codes_expires_at ON oauth_authorization_codes (expires_at);
 
+CREATE INDEX IF NOT EXISTS oauth_authorization_codes_subject ON oauth_authorization_codes (subject);
+
 CREATE TABLE IF NOT EXISTS oauth_tokens (
     id CHAR(36) NOT NULL PRIMARY KEY,
     token_hash CHAR(64) NOT NULL UNIQUE,
