@@ -36,4 +36,13 @@ class FormBodyTest extends TestCase
         $json = new ServerRequest('POST', '/token', ['Content-Type' => 'application/json']);
         $this->assertFalse(FormBody::isForm($json));
     }
+
+    public function testMediaTypeMustMatchExactly(): void
+    {
+        $make = fn(string $type) => new ServerRequest('POST', '/t', ['Content-Type' => $type]);
+
+        $this->assertFalse(FormBody::isForm($make('application/x-www-form-urlencodedX')));
+        $this->assertTrue(FormBody::isForm($make('application/x-www-form-urlencoded; charset=UTF-8')));
+        $this->assertTrue(FormBody::isForm($make(' Application/X-WWW-Form-Urlencoded ')));
+    }
 }

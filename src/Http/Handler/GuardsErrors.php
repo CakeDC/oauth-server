@@ -22,10 +22,13 @@ trait GuardsErrors
     private function guarded(callable $action): ResponseInterface
     {
         try {
-            $response = $action();
-        } catch (OAuthException $e) {
-            $response = $this->responder->error($e);
+            try {
+                $response = $action();
+            } catch (OAuthException $e) {
+                $response = $this->responder->error($e);
+            }
         } catch (Throwable $e) {
+            // Also reached when rendering an OAuth error fails.
             $this->logger->error(
                 'OAuth endpoint failed: {message}',
                 ['message' => $e->getMessage(), 'exception' => $e],

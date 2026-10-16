@@ -7,6 +7,7 @@ parameters:
         -
             identifier: property.onlyWritten
             path: src/AuthorizationServer.php
+        # Only tests use the trait until the JSON handlers (Tasks 19-20) do; PHPStan scans src/ only.
         -
             identifier: trait.unused
             path: src/Http/Handler/GuardsErrors.php

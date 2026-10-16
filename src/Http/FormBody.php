@@ -45,8 +45,8 @@ final class FormBody
      */
     public static function isForm(ServerRequestInterface $request): bool
     {
-        $type = strtolower($request->getHeaderLine('Content-Type'));
+        $type = strtolower(trim(explode(';', $request->getHeaderLine('Content-Type'))[0]));
 
-        return str_starts_with($type, 'application/x-www-form-urlencoded');
+        return $type === 'application/x-www-form-urlencoded';
     }
 }

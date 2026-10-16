@@ -36,7 +36,10 @@ final class HttpResponder
      */
     public function json(array $data, int $status = 200, array $headers = [], int $cacheSeconds = 0): ResponseInterface
     {
-        $body = json_encode($data === [] ? new stdClass() : $data, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+        $body = json_encode(
+            $data === [] ? new stdClass() : $data,
+            JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE,
+        );
         $response = $this->responses->createResponse($status)
             ->withHeader('Content-Type', 'application/json')
             ->withBody($this->streams->createStream($body));

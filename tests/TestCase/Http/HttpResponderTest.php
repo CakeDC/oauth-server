@@ -80,4 +80,12 @@ class HttpResponderTest extends TestCase
             $this->responder->methodNotAllowed('POST, OPTIONS')->getHeaderLine('Allow'),
         );
     }
+
+    public function testInvalidUtf8InAnErrorStillRendersValidJson(): void
+    {
+        $response = $this->responder->error(OAuthException::invalidScope("Unknown scope \xFF."));
+
+        $body = json_decode((string)$response->getBody(), true, 512, JSON_THROW_ON_ERROR);
+        $this->assertSame('invalid_scope', $body['error']);
+    }
 }
