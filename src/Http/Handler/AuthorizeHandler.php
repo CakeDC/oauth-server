@@ -144,17 +144,15 @@ final class AuthorizeHandler implements RequestHandlerInterface
         $allowed = $this->users->canAuthorize($owner, $client, $resource);
         $granted = [];
         $scopeError = null;
-        if ($allowed) {
-            try {
-                $granted = $this->scopes->resolve(
-                    $resource,
-                    $authorization->scopes,
-                    $client->scopes,
-                    $this->users->scopesFor($owner, $resource),
-                );
-            } catch (OAuthException $e) {
-                $scopeError = $e;
-            }
+        try {
+            $granted = $this->scopes->resolve(
+                $resource,
+                $authorization->scopes,
+                $client->scopes,
+                $this->users->scopesFor($owner, $resource),
+            );
+        } catch (OAuthException $e) {
+            $scopeError = $e;
         }
         // What the owner is asked to approve, offline_access included.
         $effective = $authorization->offlineAccess ? [...$granted, Scopes::OFFLINE_ACCESS] : $granted;
@@ -237,14 +235,16 @@ final class AuthorizeHandler implements RequestHandlerInterface
     }
 
     /**
-     * The request path as a single-slash absolute path, so it can never read as a protocol-relative URL.
+     * The request path as a single-slash absolute path, so it can never read as a protocol-relative URL;
+     * control characters and backslashes are refused.
      *
-     * @throws \CakeDC\OAuth\Server\Exception\OAuthException When the path contains a backslash.
+     * @throws \CakeDC\OAuth\Server\Exception\OAuthException When the path contains a control character or backslash.
      */
     private function safePath(ServerRequestInterface $request): string
     {
         $path = $request->getUri()->getPath();
-        if (str_contains($path, '\\')) {
+        // Browsers drop tab, CR and LF from URLs and read a backslash as a slash.
+        if (preg_match('/[\x00-\x1F\x7F\\\\]/', $path) === 1) {
             throw OAuthException::invalidRequest('The request path is not valid.');
         }
 

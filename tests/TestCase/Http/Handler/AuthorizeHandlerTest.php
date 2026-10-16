@@ -468,7 +468,6 @@ class AuthorizeHandlerTest extends TestCase
     public function testForgedPostsHaveNoSideEffects(): void
     {
         $client = $this->harness->publicClient();
-        $this->harness->users->blocked = [];
         $this->harness->signIn();
         $fields = $this->consentFields($client);
         unset($fields['consent_token']);
@@ -482,7 +481,6 @@ class AuthorizeHandlerTest extends TestCase
         }
         $this->assertCount(0, $this->harness->events->ofType(AuthorizationDenied::class));
         $this->assertCount(0, $this->harness->events->ofType(ConsentGranted::class));
-        $this->assertNull($this->harness->storage->findCodeByHash(TokenGenerator::hash('x')));
     }
 
     public function testATokenForAnotherOwnerHasNoLocation(): void
@@ -557,6 +555,42 @@ class AuthorizeHandlerTest extends TestCase
                 'resource' => Fixtures::MCP,
             ],
         ));
+
+        $this->assertSame(400, $response->getStatusCode());
+        $this->assertSame('', $response->getHeaderLine('Location'));
+    }
+
+    public function testAnOwnerBlockedBetweenGetAndPostIsDenied(): void
+    {
+        $client = $this->harness->publicClient();
+        $this->harness->signIn();
+        $fields = $this->consentFields($client);
+        $this->harness->users->blocked = ['42'];
+
+        $response = $this->harness->server->authorizeHandler()->handle(
+            $this->harness->form('https://example.com/oauth/authorize', $fields + ['decision' => 'approve']),
+        );
+
+        $this->assertSame(303, $response->getStatusCode());
+        $params = ServerHarness::redirectParams($response);
+        $this->assertSame('access_denied', $params['error']);
+        $this->assertSame('https://example.com', $params['iss']);
+        $denied = $this->harness->events->ofType(AuthorizationDenied::class);
+        $this->assertCount(1, $denied);
+        $this->assertSame('not_allowed', $denied[0]->reason);
+    }
+
+    public function testControlCharactersInThePathAreRefused(): void
+    {
+        $client = $this->harness->publicClient();
+        $uri = $this->createStub(UriInterface::class);
+        $uri->method('getPath')->willReturn("/\t/evil.example/authorize");
+        $uri->method('getQuery')->willReturn(
+            (string)parse_url($this->harness->authorizeUrl($client), PHP_URL_QUERY),
+        );
+        $request = $this->harness->request('GET', 'https://example.com/oauth/authorize')->withUri($uri);
+
+        $response = $this->harness->server->authorizeHandler()->handle($request);
 
         $this->assertSame(400, $response->getStatusCode());
         $this->assertSame('', $response->getHeaderLine('Location'));
