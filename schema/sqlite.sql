@@ -64,11 +64,12 @@ CREATE TABLE IF NOT EXISTS oauth_tokens (
 
 CREATE INDEX IF NOT EXISTS oauth_tokens_family_id ON oauth_tokens (family_id);
 
-CREATE INDEX IF NOT EXISTS oauth_tokens_subject ON oauth_tokens (subject, type);
+CREATE INDEX IF NOT EXISTS oauth_tokens_subject_subject_type ON oauth_tokens (subject, subject_type);
 
 CREATE INDEX IF NOT EXISTS oauth_tokens_oauth_client_id ON oauth_tokens (oauth_client_id);
 
 CREATE INDEX IF NOT EXISTS oauth_tokens_expires_at ON oauth_tokens (expires_at);
+CREATE INDEX IF NOT EXISTS oauth_tokens_revoked_at ON oauth_tokens (revoked_at);
 
 CREATE TABLE IF NOT EXISTS oauth_consents (
     id CHAR(36) NOT NULL PRIMARY KEY,

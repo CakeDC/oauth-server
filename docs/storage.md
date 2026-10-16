@@ -177,6 +177,9 @@ Column types below are from the MySQL file. SQLite and PostgreSQL use their clos
 | `family_started_at` | `DATETIME` null | When the family began |
 | `created`, `modified` | `DATETIME` | Row times |
 
+Indexes: the unique `token_hash`, and plain indexes on `family_id`, `(subject, subject_type)`,
+`oauth_client_id`, `expires_at` and `revoked_at` (the last two serve `prune()`).
+
 ### `oauth_consents`
 
 | Column | Type | Meaning |
@@ -190,3 +193,18 @@ Column types below are from the MySQL file. SQLite and PostgreSQL use their clos
 | `created`, `modified` | `DATETIME` | Row times |
 
 The pair `(subject, oauth_client_id, resource_hash)` is unique.
+
+## Upgrading the schema
+
+`PdoStorage::createTables()` runs `CREATE TABLE IF NOT EXISTS` and `CREATE INDEX IF NOT EXISTS`. It
+never alters a table that already exists, so a new version of the library does not change your tables
+by itself. The policy:
+
+- The schema files shipped in `1.0.0` are the baseline. Install them as they are on a new database.
+- A release that needs a schema change ships it as SQL files under `schema/upgrades/`, one per driver
+  and named by the version that introduced it (for example `schema/upgrades/1.1.0-mysql.sql`). The
+  changelog of that release says so. Run the files of every version between yours and the new one, in
+  order, before deploying the new code.
+- Each upgrade file is meant to run once. Take a backup first.
+- Until `1.0.0` the schema may still change without an upgrade file: recreate the tables of a beta
+  database.

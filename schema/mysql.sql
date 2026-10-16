@@ -67,9 +67,10 @@ CREATE TABLE IF NOT EXISTS oauth_tokens (
     PRIMARY KEY (id),
     UNIQUE KEY oauth_tokens_token_hash (token_hash),
     KEY oauth_tokens_family_id (family_id),
-    KEY oauth_tokens_subject (subject, type),
+    KEY oauth_tokens_subject_subject_type (subject, subject_type),
     KEY oauth_tokens_oauth_client_id (oauth_client_id),
     KEY oauth_tokens_expires_at (expires_at),
+    KEY oauth_tokens_revoked_at (revoked_at),
     CONSTRAINT oauth_tokens_client FOREIGN KEY (oauth_client_id)
         REFERENCES oauth_clients (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;

@@ -25,6 +25,15 @@ jobs:
         ports: ['3306:3306']
         options: >-
           --health-cmd="mysqladmin ping -proot" --health-interval=5s --health-timeout=5s --health-retries=20
+      mariadb:
+        image: mariadb:11.8
+        env:
+          MARIADB_ROOT_PASSWORD: root
+          MARIADB_DATABASE: oauth
+        ports: ['3307:3306']
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized" --health-interval=5s --health-timeout=5s
+          --health-retries=20
       postgres:
         image: postgres:17
         env:
@@ -51,6 +60,10 @@ jobs:
         with:
           dependency-versions: ${{ matrix.dependencies }}
       - run: vendor/bin/phpunit
+      - name: PDO contract on MariaDB 11.8
+        run: vendor/bin/phpunit --filter PdoStorageMysqlTest
+        env:
+          OAUTH_TEST_MYSQL_DSN: mysql:host=127.0.0.1;port=3307;dbname=oauth
 
   coding-standard:
     runs-on: ubuntu-24.04
