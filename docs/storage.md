@@ -12,7 +12,7 @@ The server keeps clients, authorization codes, tokens and consents in a storage 
 | `ClientRepositoryInterface` | Clients | `findClientByClientId`, `findClientById`, `saveClient`, `touchClient`, `findClients` |
 | `AuthorizationCodeRepositoryInterface` | Codes | `saveCode`, `findCodeByHash`, `consumeCode` |
 | `TokenRepositoryInterface` | Access, refresh and personal tokens | `saveToken`, `findTokenByHash`, `findTokenById`, `markTokenUsed`, `revokeToken`, `revokeTokenFamily`, `revokeTokensBySubject`, `revokeTokensByClient`, `findTokensByFamily`, `findActiveTokensBySubject`, `touchToken` |
-| `ConsentRepositoryInterface` | Consents | `findConsent`, `saveConsent`, `deleteConsent` |
+| `ConsentRepositoryInterface` | Consents | `findConsent`, `saveConsent`, `deleteConsent`, `findConsentsBySubject`, `deleteConsentsBySubject` |
 | `MaintenanceInterface` | Housekeeping | `prune` |
 
 Tokens, codes and client secrets are only ever stored as SHA-256 hashes. The raw value exists only
@@ -93,6 +93,7 @@ storage would have a security bug in production.
 | `revokeToken`, `revokeTokenFamily`, `revokeTokensBySubject`, `revokeTokensByClient` | Only change rows that are not revoked yet, and return how many they changed | Counts in events must be exact, and the first revocation time must not be overwritten |
 | `saveClient` | Inserts or updates by internal id. Never clears a stored `revokedAt` | Revocation is permanent. A stale copy of a client must not undo it |
 | `saveConsent` | Inserts, or replaces the scopes of the consent with the same subject, client and resource, keeping its id and creation time | One consent per subject, client and resource |
+| `findConsentsBySubject`, `deleteConsentsBySubject` | List (oldest first) and delete every consent of one subject, comparing the subject exactly (`Alice` is not `alice`). The delete returns how many it removed | Removing a person completely, for example when an account is deleted |
 | `prune` | Deletes in the way described in [operations](operations.md) and returns a `PruneResult` that counts cascaded rows too | Housekeeping must not leave orphans |
 
 Other rules the contract pins:

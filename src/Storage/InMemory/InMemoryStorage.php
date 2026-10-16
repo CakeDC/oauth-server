@@ -343,6 +343,34 @@ final class InMemoryStorage implements StorageInterface
     }
 
     /**
+     * @inheritDoc
+     */
+    public function findConsentsBySubject(string $subject): array
+    {
+        $found = array_values(array_filter(
+            $this->consents,
+            fn(Consent $consent): bool => $consent->subject === $subject,
+        ));
+        usort($found, fn(Consent $a, Consent $b): int => [$a->createdAt, $a->id] <=> [$b->createdAt, $b->id]);
+
+        return $found;
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function deleteConsentsBySubject(string $subject): int
+    {
+        $before = count($this->consents);
+        $this->consents = array_filter(
+            $this->consents,
+            fn(Consent $consent): bool => $consent->subject !== $subject,
+        );
+
+        return $before - count($this->consents);
+    }
+
+    /**
      * Revokes the live tokens matching $match.
      *
      * @param callable(\CakeDC\OAuth\Server\Token\Token): bool $match Filter.

@@ -373,8 +373,38 @@ final class PdoStorage implements StorageInterface
         if ($rows === []) {
             return null;
         }
-        $row = $rows[0];
 
+        return $this->consentFromRow($rows[0]);
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function findConsentsBySubject(string $subject): array
+    {
+        $rows = $this->select(
+            "SELECT * FROM {$this->consents} WHERE subject = ? ORDER BY created ASC, id ASC",
+            [$subject],
+        );
+
+        return array_map($this->consentFromRow(...), $rows);
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function deleteConsentsBySubject(string $subject): int
+    {
+        return $this->execute("DELETE FROM {$this->consents} WHERE subject = ?", [$subject]);
+    }
+
+    /**
+     * Builds a consent from a row.
+     *
+     * @param array<string, mixed> $row The row.
+     */
+    private function consentFromRow(array $row): Consent
+    {
         return new Consent(
             (string)$row['id'],
             (string)$row['subject'],

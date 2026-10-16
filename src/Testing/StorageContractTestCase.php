@@ -542,6 +542,44 @@ abstract class StorageContractTestCase extends TestCase
     }
 
     /**
+     * Consents of a subject are listed oldest first and deleted as a set, comparing the subject exactly.
+     */
+    public function testFindsAndDeletesConsentsBySubject(): void
+    {
+        $storage = $this->createStorage();
+        $first = $this->makeClient();
+        $second = $this->makeClient();
+        $storage->saveClient($first);
+        $storage->saveClient($second);
+        $resource = 'https://example.com/mcp';
+        $newest = new Consent(Uuid::v4(), 'Alice', $second->id, $resource, ['b'], $this->at(300), $this->at(300));
+        $oldest = new Consent(Uuid::v4(), 'Alice', $first->id, $resource, ['a'], $this->at(100), $this->at(100));
+        $lower = new Consent(Uuid::v4(), 'alice', $first->id, $resource, ['c'], $this->at(200), $this->at(200));
+        $elsewhere = 'https://other.example/api';
+        $other = new Consent(Uuid::v4(), 'Alice', $first->id, $elsewhere, ['d'], $this->at(200), $this->at(200));
+        foreach ([$newest, $oldest, $lower, $other] as $consent) {
+            $storage->saveConsent($consent);
+        }
+
+        $found = $storage->findConsentsBySubject('Alice');
+
+        $this->assertCount(3, $found);
+        $this->assertSame($oldest->id, $found[0]->id);
+        $this->assertSame($other->id, $found[1]->id);
+        $this->assertSame($newest->id, $found[2]->id);
+        $this->assertSame(['a'], $found[0]->scopes);
+        $this->assertCount(1, $storage->findConsentsBySubject('alice'));
+        $this->assertSame([], $storage->findConsentsBySubject('ALICE'));
+        $this->assertSame([], $storage->findConsentsBySubject('nobody'));
+
+        $this->assertSame(0, $storage->deleteConsentsBySubject('ALICE'));
+        $this->assertSame(3, $storage->deleteConsentsBySubject('Alice'));
+        $this->assertSame([], $storage->findConsentsBySubject('Alice'));
+        $this->assertNotNull($storage->findConsent('alice', $first->id, $resource));
+        $this->assertSame(0, $storage->deleteConsentsBySubject('Alice'));
+    }
+
+    /**
      * A revoked client is never pruned: the row is the tombstone that keeps the revocation sticky.
      */
     public function testPruneKeepsRevokedClients(): void

@@ -95,6 +95,19 @@ consents. Consents are per client and resource:
 $server->consentService()->forget('42', $client->id, 'https://example.com/mcp');
 ```
 
+### Cutting a person off completely
+
+`revokeAllForSubject()` is token-only on purpose: it never deletes consents. To remove a person
+completely, so that even a new authorization request has to start from scratch, do both:
+
+```php
+$server->tokenRevoker()->revokeAllForSubject('42');
+$deleted = $server->storage()->deleteConsentsBySubject('42'); // how many consents were removed
+```
+
+`$server->storage()->findConsentsBySubject('42')` lists what is there first (oldest first), for example
+for an export. The subject is compared exactly, including its case.
+
 You do not need to revoke when you deactivate the account: `findBySubject()` returning `null` already
 cuts every token. Revoking is still the right thing when the account is deleted for good, so no rows
 wait for reactivation.
