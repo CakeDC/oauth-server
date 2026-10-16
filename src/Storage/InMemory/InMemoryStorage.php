@@ -66,6 +66,10 @@ final class InMemoryStorage implements StorageInterface
      */
     public function saveClient(Client $client): void
     {
+        $stored = $this->clients[$client->id] ?? null;
+        if ($stored !== null && $stored->revokedAt !== null) {
+            $client = $client->withRevokedAt($stored->revokedAt);
+        }
         $this->clients[$client->id] = $client;
     }
 

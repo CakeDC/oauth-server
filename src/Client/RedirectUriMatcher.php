@@ -11,7 +11,7 @@ use CakeDC\OAuth\Server\Support\HostName;
  */
 final class RedirectUriMatcher
 {
-    private const URI_CHARACTERS = '/^[A-Za-z0-9\-._~:\/?\[\]@!$&\'()*+,;=%]+\z/';
+    public const URI_CHARACTERS = '/^[A-Za-z0-9\-._~:\/?\[\]@!$&\'()*+,;=%]+\z/';
 
     private const FORBIDDEN_SCHEMES = ['javascript', 'data', 'file', 'vbscript', 'about', 'blob'];
 

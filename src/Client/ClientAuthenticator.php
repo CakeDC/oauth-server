@@ -14,6 +14,8 @@ use Psr\Http\Message\ServerRequestInterface;
  */
 final class ClientAuthenticator
 {
+    private const FAILED = 'Client authentication failed.';
+
     /**
      * @param \CakeDC\OAuth\Server\Client\ClientResolver $clients Client lookup.
      */
@@ -56,20 +58,18 @@ final class ClientAuthenticator
             $method = $secret === null ? ClientAuthMethod::None : ClientAuthMethod::SecretPost;
         }
         $usedBasic = $basic !== null;
-        $client = $this->clients->resolve($clientId);
-        if ($client === null || $client->isRevoked()) {
-            throw OAuthException::invalidClient('Unknown client.', $usedBasic);
+        try {
+            $client = $this->clients->resolve($clientId);
+        } catch (OAuthException $e) {
+            throw $e->error === 'invalid_client' ? OAuthException::invalidClient($e->getMessage(), $usedBasic) : $e;
         }
-        if ($client->authMethod !== $method) {
-            throw OAuthException::invalidClient(
-                sprintf('This client authenticates with "%s".', $client->authMethod->value),
-                $usedBasic,
-            );
+        if ($client === null || $client->isRevoked() || $client->authMethod !== $method) {
+            throw OAuthException::invalidClient(self::FAILED, $usedBasic);
         }
         if ($method !== ClientAuthMethod::None) {
             $given = TokenGenerator::hash((string)$secret);
             if ($client->secretHash === null || !hash_equals($client->secretHash, $given)) {
-                throw OAuthException::invalidClient('Invalid client credentials.', $usedBasic);
+                throw OAuthException::invalidClient(self::FAILED, $usedBasic);
             }
         }
 

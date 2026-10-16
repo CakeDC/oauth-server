@@ -24,6 +24,9 @@ interface ClientRepositoryInterface
 
     /**
      * Inserts the client, or updates the stored one with the same internal id.
+     *
+     * Revocation is sticky: an update never clears a stored `revokedAt`. It may set one, but saving a client
+     * whose `revokedAt` is null keeps the stored value, so a stale copy cannot undo a revocation.
      */
     public function saveClient(Client $client): void;
 

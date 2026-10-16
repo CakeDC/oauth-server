@@ -162,6 +162,24 @@ abstract class StorageContractTestCase extends TestCase
     }
 
     /**
+     * A stale, un-revoked copy of a client cannot undo a revocation.
+     */
+    public function testRevocationIsSticky(): void
+    {
+        $storage = $this->createStorage();
+        $client = $this->makeClient();
+        $storage->saveClient($client);
+        $storage->saveClient($client->withRevokedAt($this->at(100)));
+        $storage->saveClient($client);
+        $storage->saveClient($client->withRevokedAt($this->at(200)));
+
+        $found = $storage->findClientById($client->id);
+        $this->assertNotNull($found);
+        $this->assertTrue($found->isRevoked());
+        $this->assertEquals($this->at(100), $found->revokedAt);
+    }
+
+    /**
      * Clients can be listed by type.
      */
     public function testFindsClientsByType(): void

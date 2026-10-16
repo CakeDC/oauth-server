@@ -12,8 +12,10 @@ use CakeDC\OAuth\Server\Storage\InMemory\InMemoryStorage;
 use CakeDC\OAuth\Server\Test\Support\FakeDns;
 use CakeDC\OAuth\Server\Test\Support\FakeTransport;
 use CakeDC\OAuth\Server\Test\Support\Fixtures;
+use CakeDC\OAuth\Server\Test\Support\FlakyClientRepository;
 use CakeDC\OAuth\Server\Testing\FrozenClock;
 use PHPUnit\Framework\TestCase;
+use RuntimeException;
 
 class ClientResolverTest extends TestCase
 {
@@ -143,5 +145,171 @@ class ClientResolverTest extends TestCase
         ]);
 
         $this->assertSame(ApplicationType::Native, $this->resolver()->resolve($url)?->applicationType);
+    }
+
+    public function testRevocationDuringTheFetchIsKept(): void
+    {
+        $first = $this->resolver()->resolve(self::CLAUDE);
+        $this->assertNotNull($first);
+        $this->clock->advance(601);
+        $this->transport->onGet = fn() => $this->storage->saveClient($first->withRevokedAt($this->clock->now()));
+
+        $client = $this->resolver()->resolve(self::CLAUDE);
+
+        $this->assertTrue($client?->isRevoked());
+        $this->assertTrue($this->storage->findClientByClientId(self::CLAUDE)?->isRevoked());
+    }
+
+    public function testServesTheStoredClientWhenARefetchFailsInsideTheGraceWindow(): void
+    {
+        $first = $this->resolver()->resolve(self::CLAUDE);
+        $this->clock->advance(601 + 86400 - 10);
+        $this->transport->responses[self::CLAUDE] = new RuntimeException('down');
+
+        $this->assertSame($first?->id, $this->resolver()->resolve(self::CLAUDE)?->id);
+    }
+
+    public function testAFailingRefetchPastTheGraceWindowThrows(): void
+    {
+        $this->resolver()->resolve(self::CLAUDE);
+        $this->clock->advance(600 + 86400 + 1);
+        $this->transport->responses[self::CLAUDE] = new RuntimeException('down');
+
+        $this->expectException(OAuthException::class);
+        $this->resolver()->resolve(self::CLAUDE);
+    }
+
+    public function testAFailingFirstFetchThrows(): void
+    {
+        $this->transport->responses[self::CLAUDE] = new RuntimeException('down');
+
+        $this->expectException(OAuthException::class);
+        $this->resolver()->resolve(self::CLAUDE);
+    }
+
+    public function testASaveFailureForTheSameRowIsNotSwallowed(): void
+    {
+        $storage = new FlakyClientRepository();
+        $resolver = new ClientResolver(
+            $storage,
+            $this->clock,
+            new MetadataDocumentFetcher(new FakeDns(), $this->transport),
+        );
+        $resolver->resolve(self::CLAUDE);
+        $this->clock->advance(601);
+        $storage->failSave = true;
+
+        $this->expectException(RuntimeException::class);
+        $resolver->resolve(self::CLAUDE);
+    }
+
+    public function testTheFirstFetchRaceReturnsTheWinner(): void
+    {
+        $storage = new FlakyClientRepository();
+        $winner = Fixtures::client(['clientId' => self::CLAUDE, 'type' => ClientType::MetadataDocument]);
+        $storage->raceWinner = $winner;
+        $resolver = new ClientResolver(
+            $storage,
+            $this->clock,
+            new MetadataDocumentFetcher(new FakeDns(), $this->transport),
+        );
+
+        $this->assertSame($winner->id, $resolver->resolve(self::CLAUDE)?->id);
+    }
+
+    public function testPrivateSchemesCanBeRefusedForDocuments(): void
+    {
+        $url = 'https://claude.ai/oauth/native';
+        $this->transport->serve($url, [
+            'client_id' => $url,
+            'client_name' => 'Native',
+            'application_type' => 'native',
+            'redirect_uris' => ['cursor://anysphere.cursor/oauth'],
+        ]);
+        $this->assertSame(ApplicationType::Native, $this->resolver()->resolve($url)?->applicationType);
+
+        $strict = new ClientResolver(
+            new InMemoryStorage(),
+            $this->clock,
+            new MetadataDocumentFetcher(new FakeDns(), $this->transport),
+            300,
+            86400,
+            false,
+        );
+        $this->expectExceptionMessage('no usable redirect_uris');
+        $strict->resolve($url);
+    }
+
+    public function testTheCacheTimeHasAnUpperClamp(): void
+    {
+        $this->transport->serve(self::CLAUDE, [
+            'client_id' => self::CLAUDE,
+            'client_name' => 'Claude',
+            'redirect_uris' => ['https://claude.ai/api/mcp/auth_callback'],
+        ], 'max-age=999999');
+
+        $client = $this->resolver()->resolve(self::CLAUDE);
+
+        $this->assertEquals($this->clock->now()->modify('+86400 seconds'), $client?->metadataExpiresAt);
+    }
+
+    public function testARefetchAppliesDocumentChangesKeepingIdentity(): void
+    {
+        $first = $this->resolver()->resolve(self::CLAUDE);
+        $this->transport->serve(self::CLAUDE, [
+            'client_id' => self::CLAUDE,
+            'client_name' => 'Claude 2',
+            'redirect_uris' => ['https://claude.ai/new/callback'],
+        ]);
+        $this->clock->advance(601);
+
+        $second = $this->resolver()->resolve(self::CLAUDE);
+
+        $this->assertNotNull($first);
+        $this->assertSame($first->id, $second?->id);
+        $this->assertEquals($first->createdAt, $second?->createdAt);
+        $this->assertSame(['https://claude.ai/new/callback'], $second?->redirectUris);
+        $this->assertSame('Claude 2', $second?->name);
+    }
+
+    public function testInvalidScopeSyntaxRejectsTheDocument(): void
+    {
+        $this->transport->serve(self::CLAUDE, [
+            'client_id' => self::CLAUDE,
+            'client_name' => 'Claude',
+            'redirect_uris' => ['https://claude.ai/api/mcp/auth_callback'],
+            'scope' => 'a"b',
+        ]);
+
+        $this->expectException(OAuthException::class);
+        $this->resolver()->resolve(self::CLAUDE);
+    }
+
+    public function testUnusableNamesFallBackToTheHostAndBadUrlsAreDropped(): void
+    {
+        $this->transport->serve(self::CLAUDE, [
+            'client_id' => self::CLAUDE,
+            'client_name' => "Evil\nName",
+            'redirect_uris' => ['https://claude.ai/api/mcp/auth_callback'],
+            'client_uri' => 'https://',
+            'logo_uri' => 'https://%65xample.com/logo.png',
+        ]);
+
+        $client = $this->resolver()->resolve(self::CLAUDE);
+
+        $this->assertSame('claude.ai', $client?->name);
+        $this->assertNull($client?->clientUri);
+        $this->assertNull($client?->logoUri);
+    }
+
+    public function testLongMultibyteNamesAreTruncatedByCharacters(): void
+    {
+        $this->transport->serve(self::CLAUDE, [
+            'client_id' => self::CLAUDE,
+            'client_name' => str_repeat('é', 300),
+            'redirect_uris' => ['https://claude.ai/api/mcp/auth_callback'],
+        ]);
+
+        $this->assertSame(str_repeat('é', 255), $this->resolver()->resolve(self::CLAUDE)?->name);
     }
 }

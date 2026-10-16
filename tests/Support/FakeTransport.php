@@ -5,6 +5,7 @@ namespace CakeDC\OAuth\Server\Test\Support;
 
 use CakeDC\OAuth\Server\Client\Cimd\FetchedResponse;
 use CakeDC\OAuth\Server\Client\Cimd\HttpTransportInterface;
+use Closure;
 use RuntimeException;
 use Throwable;
 
@@ -34,8 +35,16 @@ class FakeTransport implements HttpTransportInterface
         );
     }
 
+    /**
+     * Called on every request, for tests that change the world during a fetch.
+     */
+    public ?Closure $onGet = null;
+
     public function get(string $url, string $ip, int $timeout, int $maxBytes): FetchedResponse
     {
+        if ($this->onGet !== null) {
+            ($this->onGet)();
+        }
         $this->requests[] = [$url, $ip];
         $response = $this->responses[$url] ?? new RuntimeException('Could not resolve host');
         if ($response instanceof Throwable) {

@@ -3,11 +3,14 @@ declare(strict_types=1);
 
 namespace CakeDC\OAuth\Server\Test\TestCase\Client;
 
+use CakeDC\OAuth\Server\Client\Cimd\MetadataDocumentFetcher;
 use CakeDC\OAuth\Server\Client\ClientAuthenticator;
 use CakeDC\OAuth\Server\Client\ClientAuthMethod;
 use CakeDC\OAuth\Server\Client\ClientResolver;
 use CakeDC\OAuth\Server\Exception\OAuthException;
 use CakeDC\OAuth\Server\Storage\InMemory\InMemoryStorage;
+use CakeDC\OAuth\Server\Test\Support\FakeDns;
+use CakeDC\OAuth\Server\Test\Support\FakeTransport;
 use CakeDC\OAuth\Server\Test\Support\Fixtures;
 use CakeDC\OAuth\Server\Testing\FrozenClock;
 use DateTimeImmutable;
@@ -90,6 +93,60 @@ class ClientAuthenticatorTest extends TestCase
         $this->assertFails('invalid_request', $this->request('app:s3cret'), ['client_secret' => 's3cret'], 400);
         $this->assertFails('invalid_request', $this->request('app:s3cret'), ['client_id' => 'other'], 400);
         $this->assertFails('invalid_client', $this->request()->withHeader('Authorization', 'Basic !!!'), []);
+    }
+
+    public function testBasicEdgeCases(): void
+    {
+        $this->storage->saveClient(Fixtures::confidentialClient('s3cret', [
+            'clientId' => 'post-app',
+            'authMethod' => ClientAuthMethod::SecretPost,
+        ]));
+        $this->storage->saveClient(Fixtures::client(['clientId' => 'public-app']));
+
+        $noColon = $this->request()->withHeader('Authorization', 'Basic ' . base64_encode('nocolon'));
+        $e = $this->assertFails('invalid_client', $noColon, []);
+        $this->assertSame(['WWW-Authenticate' => 'Basic realm="oauth"'], $e->headers);
+        $this->assertFails('invalid_client', $this->request('post-app:s3cret'), []);
+        $this->assertFails('invalid_client', $this->request('public-app:'), []);
+    }
+
+    public function testEmptyClientSecretFails(): void
+    {
+        $this->storage->saveClient(Fixtures::confidentialClient('s3cret', [
+            'clientId' => 'post-app',
+            'authMethod' => ClientAuthMethod::SecretPost,
+        ]));
+        $this->storage->saveClient(Fixtures::client(['clientId' => 'public-app']));
+
+        $this->assertFails('invalid_client', $this->request(), ['client_id' => 'post-app', 'client_secret' => '']);
+        $this->assertFails('invalid_client', $this->request(), ['client_id' => 'public-app', 'client_secret' => '']);
+    }
+
+    public function testFailuresShareOneMessage(): void
+    {
+        $this->storage->saveClient(Fixtures::confidentialClient('s3cret', ['clientId' => 'app']));
+        $messages = [
+            $this->assertFails('invalid_client', $this->request('nobody:x'), [])->getMessage(),
+            $this->assertFails('invalid_client', $this->request('app:wrong'), [])->getMessage(),
+            $this->assertFails('invalid_client', $this->request(), ['client_id' => 'app'])->getMessage(),
+        ];
+        $this->assertSame(['Client authentication failed.'], array_unique($messages));
+    }
+
+    public function testUrlClientIdFailuresCarryTheBasicChallenge(): void
+    {
+        $authenticator = new ClientAuthenticator(new ClientResolver(
+            $this->storage,
+            new FrozenClock(),
+            new MetadataDocumentFetcher(new FakeDns(), new FakeTransport()),
+        ));
+        try {
+            $authenticator->authenticate($this->request('https://claude.ai/x:y'), []);
+            $this->fail('Authenticated');
+        } catch (OAuthException $e) {
+            $this->assertSame('invalid_client', $e->error);
+            $this->assertSame(['WWW-Authenticate' => 'Basic realm="oauth"'], $e->headers);
+        }
     }
 
     public function testRejectsNonStringParameters(): void

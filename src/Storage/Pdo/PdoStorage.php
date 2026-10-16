@@ -145,7 +145,14 @@ final class PdoStorage implements StorageInterface
             'modified' => gmdate(Time::FORMAT),
         ];
         if ($this->select("SELECT id FROM {$this->clients} WHERE id = ?", [$client->id]) !== []) {
+            unset($row['revoked_at']);
             $this->update($this->clients, $client->id, $row);
+            if ($client->revokedAt !== null) {
+                $this->execute(
+                    "UPDATE {$this->clients} SET revoked_at = COALESCE(revoked_at, ?) WHERE id = ?",
+                    [Time::format($client->revokedAt), $client->id],
+                );
+            }
 
             return;
         }

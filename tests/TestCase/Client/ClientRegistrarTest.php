@@ -116,6 +116,8 @@ class ClientRegistrarTest extends TestCase
             'http logo' => [$ok + ['logo_uri' => 'http://app.example.com/logo.png'], 'invalid_client_metadata', 'logo_uri'],
             'control chars' => [$ok + ['client_name' => "Evil\nApp"], 'invalid_client_metadata', 'client_name'],
             'scope syntax' => [$ok + ['scope' => 'a"b'], 'invalid_client_metadata', 'scope'],
+            'blank logo host' => [$ok + ['logo_uri' => 'https://'], 'invalid_client_metadata', 'logo_uri'],
+            'encoded client_uri host' => [$ok + ['client_uri' => 'https://%65xample.com'], 'invalid_client_metadata', 'client_uri'],
             'long name' => [$ok + ['client_name' => str_repeat('n', 256)], 'invalid_client_metadata', 'client_name'],
         ];
     }
@@ -157,5 +159,79 @@ class ClientRegistrarTest extends TestCase
         $this->expectExceptionMessage('confidential');
 
         $this->registrar->create('Bad', ['https://a.example/cb'], false, ['client_credentials']);
+    }
+
+    public function testOfflineAccessIsNotStoredAsAClientScope(): void
+    {
+        $result = $this->registrar->register([
+            'redirect_uris' => ['https://app.example.com/cb'],
+            'scope' => 'content:read offline_access',
+        ]);
+
+        $this->assertSame(['content:read'], $result['client']->scopes);
+    }
+
+    public function testSuppliedCredentialsAreIgnoredAndNotStored(): void
+    {
+        $result = $this->registrar->register([
+            'redirect_uris' => ['https://app.example.com/cb'],
+            'client_id' => 'chosen',
+            'client_secret' => 'chosen-secret',
+            'client_id_issued_at' => 1,
+            'registration_access_token' => 'x',
+        ]);
+
+        $client = $result['client'];
+        $this->assertNotSame('chosen', $client->clientId);
+        $this->assertNotSame(TokenGenerator::hash('chosen-secret'), $client->secretHash);
+        $this->assertSame(['redirect_uris' => ['https://app.example.com/cb']], $client->metadata);
+    }
+
+    public function testRegistersClientSecretPost(): void
+    {
+        $result = $this->registrar->register([
+            'redirect_uris' => ['https://app.example.com/cb'],
+            'token_endpoint_auth_method' => 'client_secret_post',
+        ]);
+
+        $this->assertSame(ClientAuthMethod::SecretPost, $result['client']->authMethod);
+        $this->assertNotNull($result['secret']);
+    }
+
+    /**
+     * @return array<string, array{array<string, mixed>, string}>
+     */
+    public static function invalidCreate(): array
+    {
+        return [
+            'unknown scope' => [['name' => 'A', 'scopes' => ['admin']], 'admin'],
+            'control chars' => [['name' => "A\nB"], 'control'],
+            'too many uris' => [['name' => 'A', 'uris' => array_fill(0, 11, 'https://a.example/cb')], 'at most 10'],
+            'non string uri' => [['name' => 'A', 'uris' => [42]], 'string'],
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $args
+     */
+    #[DataProvider('invalidCreate')]
+    public function testCreateFollowsTheRegistrationRules(array $args, string $message): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage($message);
+
+        $this->registrar->create($args['name'], $args['uris'] ?? ['https://a.example/cb'], true, scopes: $args['scopes'] ?? null);
+    }
+
+    public function testCreateAllowsPrivateSchemesForNativeAdminClients(): void
+    {
+        $result = $this->registrar->create(
+            'Desktop',
+            ['cursor://anysphere.cursor/oauth'],
+            false,
+            applicationType: ApplicationType::Native,
+        );
+
+        $this->assertSame(['cursor://anysphere.cursor/oauth'], $result['client']->redirectUris);
     }
 }

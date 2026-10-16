@@ -98,9 +98,10 @@ final class ClientRegistrar
             throw OAuthException::invalidClientMetadata('response_types must be ["code"].');
         }
         $name = self::optionalString($metadata, 'client_name');
-        $badName = $name !== null && (trim($name) === '' || strlen($name) > 255);
-        if ($name !== null && ($badName || preg_match('/[\x00-\x1F\x7F]/', $name) === 1)) {
-            throw OAuthException::invalidClientMetadata('client_name must have 1 to 255 characters.');
+        if ($name !== null && (strlen($name) > 255 || !ClientMetadata::isUsableName($name))) {
+            throw OAuthException::invalidClientMetadata(
+                'client_name must have 1 to 255 characters, without control characters.',
+            );
         }
         $scopes = null;
         $scope = self::optionalString($metadata, 'scope');
@@ -110,6 +111,8 @@ final class ClientRegistrar
             } catch (OAuthException $e) {
                 throw OAuthException::invalidClientMetadata($e->getMessage());
             }
+            // offline_access is not a resource scope: it is requested per authorization, never stored.
+            $scopes = array_values(array_diff($scopes, [Scopes::OFFLINE_ACCESS]));
             $known = $this->resources->allScopeNames();
             foreach ($scopes as $one) {
                 if (!in_array($one, $known, true)) {
@@ -134,7 +137,7 @@ final class ClientRegistrar
             scopes: $scopes,
             clientUri: self::optionalHttpsUrl($metadata, 'client_uri'),
             logoUri: self::optionalHttpsUrl($metadata, 'logo_uri'),
-            metadata: self::stringKeys($metadata),
+            metadata: self::storableMetadata($metadata),
         );
         $this->clients->saveClient($client);
         $this->events->dispatch(new ClientRegistered($client));
@@ -146,7 +149,7 @@ final class ClientRegistrar
      * Registers a client by hand, for example from a command.
      *
      * @param string $name Display name.
-     * @param list<string> $redirectUris Redirect URIs; may be empty for client credentials only.
+     * @param array<mixed> $redirectUris Redirect URIs (strings); may be empty for client credentials only.
      * @param bool $confidential Whether it gets a secret.
      * @param list<string> $grantTypes Grant types.
      * @param list<string>|null $scopes Allowed scopes; null for any.
@@ -164,8 +167,21 @@ final class ClientRegistrar
         bool $allowIntrospection = false,
         ApplicationType $applicationType = ApplicationType::Web,
     ): array {
-        if (trim($name) === '' || strlen($name) > 255) {
-            throw new InvalidArgumentException('The name must have 1 to 255 characters.');
+        if (strlen($name) > 255 || !ClientMetadata::isUsableName($name)) {
+            throw new InvalidArgumentException('The name must have 1 to 255 characters, without control characters.');
+        }
+        if ($scopes !== null) {
+            $known = $this->resources->allScopeNames();
+            foreach ($scopes as $one) {
+                if (!in_array($one, $known, true)) {
+                    throw new InvalidArgumentException(sprintf('The scope "%s" does not exist.', $one));
+                }
+            }
+        }
+        if (count($redirectUris) > self::MAX_REDIRECT_URIS) {
+            throw new InvalidArgumentException(
+                sprintf('Register at most %d redirect URIs.', self::MAX_REDIRECT_URIS),
+            );
         }
         foreach ($grantTypes as $grantType) {
             $known = [GrantType::AUTHORIZATION_CODE, GrantType::REFRESH_TOKEN, GrantType::CLIENT_CREDENTIALS];
@@ -179,11 +195,16 @@ final class ClientRegistrar
         if (in_array(GrantType::AUTHORIZATION_CODE, $grantTypes, true) && $redirectUris === []) {
             throw new InvalidArgumentException('The authorization code grant needs at least one redirect URI.');
         }
+        $uris = [];
         foreach ($redirectUris as $uri) {
+            if (!is_string($uri)) {
+                throw new InvalidArgumentException('Every redirect URI must be a string.');
+            }
             $error = RedirectUriMatcher::registrationError($uri, $applicationType, true);
             if ($error !== null) {
                 throw new InvalidArgumentException(sprintf('The redirect URI "%s" %s.', $uri, $error));
             }
+            $uris[] = $uri;
         }
         $secret = $confidential ? $this->generator->clientSecret() : null;
         $client = new Client(
@@ -192,7 +213,7 @@ final class ClientRegistrar
             type: ClientType::Registered,
             applicationType: $applicationType,
             name: trim($name),
-            redirectUris: $redirectUris,
+            redirectUris: $uris,
             grantTypes: $grantTypes,
             authMethod: $confidential ? ClientAuthMethod::SecretBasic : ClientAuthMethod::None,
             createdAt: $this->clock->now(),
@@ -286,7 +307,7 @@ final class ClientRegistrar
     private static function optionalHttpsUrl(array $metadata, string $key): ?string
     {
         $value = self::optionalString($metadata, $key);
-        if ($value !== null && (!str_starts_with($value, 'https://') || strlen($value) > 2000)) {
+        if ($value !== null && !ClientMetadata::isPublicHttpsUrl($value)) {
             throw OAuthException::invalidClientMetadata(sprintf('%s must be an https URL.', $key));
         }
 
@@ -294,16 +315,22 @@ final class ClientRegistrar
     }
 
     /**
-     * The metadata with string keys, for storage.
+     * The metadata with string keys, for storage, without members the server issues itself.
      *
      * @param array<mixed> $metadata Metadata.
      * @return array<string, mixed>
      */
-    private static function stringKeys(array $metadata): array
+    private static function storableMetadata(array $metadata): array
     {
+        $issued = [
+            'client_id', 'client_secret', 'client_id_issued_at', 'client_secret_expires_at',
+            'registration_access_token',
+        ];
         $result = [];
         foreach ($metadata as $key => $value) {
-            $result[(string)$key] = $value;
+            if (!in_array((string)$key, $issued, true)) {
+                $result[(string)$key] = $value;
+            }
         }
 
         return $result;

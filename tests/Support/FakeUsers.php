@@ -47,7 +47,7 @@ class FakeUsers implements UserProviderInterface
 
     public function remove(string $subject): void
     {
-        unset($this->users[$subject]);
+        unset($this->users[$subject], $this->scopes[$subject]);
     }
 
     public function findBySubject(string $subject): ?ResourceOwner

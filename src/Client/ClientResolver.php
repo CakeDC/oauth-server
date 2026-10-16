@@ -11,6 +11,7 @@ use CakeDC\OAuth\Server\Support\Time;
 use CakeDC\OAuth\Server\Support\Uuid;
 use DateTimeImmutable;
 use Psr\Clock\ClockInterface;
+use RuntimeException;
 use Throwable;
 
 /**
@@ -25,6 +26,7 @@ final class ClientResolver
      * @param \CakeDC\OAuth\Server\Client\Cimd\MetadataDocumentFetcher|null $fetcher Null disables metadata documents.
      * @param int $cacheMin Shortest cache time of a document, seconds.
      * @param int $cacheMax Longest cache time of a document, seconds.
+     * @param bool $allowPrivateSchemes Native documents may use private-use redirect URI schemes.
      */
     public function __construct(
         private readonly ClientRepositoryInterface $clients,
@@ -32,6 +34,7 @@ final class ClientResolver
         private readonly ?MetadataDocumentFetcher $fetcher = null,
         private readonly int $cacheMin = 300,
         private readonly int $cacheMax = 86400,
+        private readonly bool $allowPrivateSchemes = true,
     ) {
     }
 
@@ -57,20 +60,33 @@ final class ClientResolver
         if ($existing !== null && ($existing->isRevoked() || $fresh)) {
             return $existing;
         }
-        $fetched = $this->fetcher->fetch($clientId);
+        try {
+            $fetched = $this->fetcher->fetch($clientId);
+        } catch (OAuthException | RuntimeException $e) {
+            if (
+                $existing !== null && $existing->metadataExpiresAt !== null
+                && $now < Time::plus($existing->metadataExpiresAt, $this->cacheMax)
+            ) {
+                // Stale-if-error: keep serving the stored client for a bounded time.
+                return $existing;
+            }
+
+            throw $e;
+        }
         $client = $this->fromDocument($clientId, $fetched['document'], $fetched['maxAge'], $existing, $now);
         try {
             $this->clients->saveClient($client);
         } catch (Throwable $e) {
             $stored = $this->clients->findClientByClientId($clientId);
-            if ($stored === null) {
+            if ($stored === null || $stored->id === $client->id) {
                 throw $e;
             }
 
             return $stored;
         }
 
-        return $client;
+        // Read back: revocation is sticky in storage and may have been committed during the fetch.
+        return $this->clients->findClientByClientId($clientId) ?? $client;
     }
 
     /**
@@ -97,7 +113,11 @@ final class ClientResolver
             : ApplicationType::Web;
         $usable = array_values(array_filter(
             $redirectUris,
-            fn(string $uri): bool => RedirectUriMatcher::registrationError($uri, $applicationType, true) === null,
+            fn(string $uri): bool => RedirectUriMatcher::registrationError(
+                $uri,
+                $applicationType,
+                $this->allowPrivateSchemes,
+            ) === null,
         ));
         if ($usable === []) {
             throw OAuthException::invalidClient('The metadata document has no usable redirect_uris.');
@@ -110,8 +130,15 @@ final class ClientResolver
             try {
                 $scopes = Scopes::parse($document['scope']);
             } catch (OAuthException) {
-                $scopes = null;
+                throw OAuthException::invalidClient('The metadata document has an invalid scope.');
             }
+        }
+        $name = isset($document['client_name']) && is_string($document['client_name'])
+            ? mb_substr(trim($document['client_name']), 0, 255)
+            : '';
+        if (!ClientMetadata::isUsableName($name)) {
+            $host = parse_url($clientId, PHP_URL_HOST);
+            $name = is_string($host) ? $host : 'Unnamed client';
         }
         $ttl = max($this->cacheMin, min($this->cacheMax, $maxAge ?? $this->cacheMin));
 
@@ -120,7 +147,7 @@ final class ClientResolver
             clientId: $clientId,
             type: ClientType::MetadataDocument,
             applicationType: $applicationType,
-            name: substr(trim((string)$document['client_name']), 0, 255),
+            name: $name,
             redirectUris: $usable,
             grantTypes: array_values(array_diff($grantTypes, [GrantType::CLIENT_CREDENTIALS])),
             authMethod: ClientAuthMethod::None,
@@ -140,6 +167,6 @@ final class ClientResolver
      */
     private static function httpsUrl(mixed $value): ?string
     {
-        return is_string($value) && str_starts_with($value, 'https://') && strlen($value) <= 2000 ? $value : null;
+        return is_string($value) && ClientMetadata::isPublicHttpsUrl($value) ? $value : null;
     }
 }
