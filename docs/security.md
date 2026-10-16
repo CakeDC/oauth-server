@@ -119,12 +119,18 @@ that, set it to `0`. Then a lost response costs one re-authorization.
   addresses `0.0.0.0` and `::`, which reach the local machine on macOS and Linux, count as this
   computer. A local client therefore shows the page on every new connection; its refresh tokens keep an
   existing connection alive without it.
-- Names: the consent page headlines a self-registered client by the host of its redirect URI and shows
-  the name it declared only as a quoted, unverified line, so a client called `claude.ai` cannot
-  produce the title or heading of the real one. Client and token names reject Unicode control and
-  format characters (`Cc`, `Cf`: bidirectional overrides, zero-width characters), names without a
-  visible character. A name that looks like a host is accepted: it never headlines the page. Length
-  limits count characters.
+- Names: the consent page and the connections page headline a self-registered client by the host its
+  answer goes to, never by its name or by a redirect URI it merely listed. A client that redirects to
+  a private-use scheme gets the fixed text "An application on this computer", because anyone can claim
+  the scheme `claude.ai:`. The name it declared appears only as a quoted (`<q>`), unverified line, so
+  a client called `claude.ai` cannot produce the title or heading of the real one, and a name
+  containing quote characters cannot close the quote. Client and token names must contain a letter,
+  number, punctuation or symbol and reject control characters, line and paragraph separators,
+  bidirectional controls, every other format character (`Cf`) except the soft hyphen, tag characters
+  and U+200C/U+200D between two visible characters (Persian, Indic scripts, emoji sequences),
+  characters that draw nothing (fillers, U+034F, U+FFFC) and runs of more than four combining marks.
+  A name that looks like a host is accepted: it never headlines the page. Length limits count
+  characters.
 - Nothing checks `canAuthorize()` after `/authorize`. When your policy changes, revoke the person's
   tokens with `TokenRevoker::revokeAllForSubject()`.
 

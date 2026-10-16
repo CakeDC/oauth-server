@@ -60,7 +60,7 @@ negative.
 | --- | --- | --- | --- |
 | `mode` | string | `open` | `open`: anyone may register. `token`: only callers with `Authorization: Bearer <initialAccessToken>`. `closed`: the endpoint answers `access_denied` and is left out of the metadata |
 | `initialAccessToken` | string | `null` | Required when `mode` is `token`. Choose a long random value |
-| `allowPrivateSchemes` | bool | `false` | `true` lets native clients use private-use URI schemes such as `cursor://anysphere.cursor/oauth` or `com.example.app:/cb` (the dangerous schemes `javascript`, `data`, `file`, `vbscript`, `about` and `blob` stay refused). `false` limits redirect URIs to https and loopback http, as the MCP authorization spec requires. It applies to dynamic registration and to metadata documents. Clients you create with `ClientRegistrar::create()` may always use them. Enable it on purpose, for example for mobile apps or desktop tools that use such a scheme; every such client sees the consent page on each connection |
+| `allowPrivateSchemes` | bool | `false` | `true` lets native clients use private-use URI schemes such as `com.example.app:/oauth/callback` (the dangerous schemes `javascript`, `data`, `file`, `vbscript`, `about` and `blob` stay refused). `false` limits redirect URIs to https and loopback http, as the MCP authorization spec requires. It applies to dynamic registration and to metadata documents. Clients you create with `ClientRegistrar::create()` may always use them. Enable it on purpose, for example for mobile apps or desktop tools that use such a scheme; every such client sees the consent page on each connection |
 
 ## `cimd`
 

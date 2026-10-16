@@ -63,8 +63,9 @@ final class HtmlConnectionsRenderer implements ConnectionsRendererInterface
     }
 
     /**
-     * The client cell: a metadata document is named by its host (its own name is self-asserted) and a
-     * dynamically registered client (one that chose its own name) is marked unverified.
+     * The client cell: a metadata document is named by its host (its own name is self-asserted); a
+     * dynamically registered client (one that chose its own name) is named by the hosts of its redirect
+     * URIs, with its name as a quoted secondary line, and marked unverified.
      */
     private function client(Client $client): string
     {
@@ -72,13 +73,19 @@ final class HtmlConnectionsRenderer implements ConnectionsRendererInterface
         if ($client->type === ClientType::MetadataDocument && $host !== '') {
             return Html::e($host);
         }
-        $html = Html::e($client->name) . '<br><span class="muted">' . Html::e($host) . '</span>';
-        if ($client->type === ClientType::Dynamic) {
-            $html .= '<br><span class="warning">' . Html::e($this->messages->get('connections.unverified'))
-                . '</span>';
+        if ($client->type !== ClientType::Dynamic) {
+            return Html::e($client->name) . '<br><span class="muted">' . Html::e($host) . '</span>';
+        }
+        // A name is chosen by the client: the hosts of its redirect URIs lead, the name follows as a quote.
+        $label = $client->hostLabel();
+        $html = Html::e($label !== '' ? $label : $this->messages->get('client.local'));
+        if ($client->name !== $label) {
+            $html .= '<br><span class="muted">'
+                . Html::withQuotedName($this->messages->get('consent.declaredName'), $client->name) . '</span>';
         }
 
-        return $html;
+        return $html . '<br><span class="warning">' . Html::e($this->messages->get('connections.unverified'))
+            . '</span>';
     }
 
     /**

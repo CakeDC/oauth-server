@@ -24,20 +24,26 @@ consent cannot vouch for (see [endpoints](endpoints.md#get-start)). It shows:
 
 - A title and a heading: "{client} wants to access {resource}". Only a client an administrator
   registered is named by `Client::$name`. A metadata document client is named by the host of its
-  `client_id` URL, and a dynamically registered one by the host its answer is sent to (the scheme for a
-  private-use redirect URI), because a name is self-asserted: anyone can register a client called
-  `claude.ai`. A dynamic client's own name appears only as a quoted, unverified line below
-  ("It calls itself ..."), and only when it differs from that host.
+  `client_id` URL, and a dynamically registered one by the host its answer is sent to, because a name
+  is self-asserted: anyone can register a client called `claude.ai`. A dynamic client whose answer goes
+  to a private-use scheme has no host at all (anyone can claim the scheme `claude.ai:`), so it gets the
+  fixed text of the `client.local` message, "An application on this computer"; the scheme appears only
+  as the destination. A dynamic client's own name appears below as a quoted (`<q>`), unverified line
+  ("It calls itself ..."), always for the private-scheme case and otherwise when it differs from the
+  host.
 - Where the request comes from and where the answer goes: "The request comes from {host}. Your answer
-  is sent to {redirect}." The host is the client's display host (the `client_id` host for a metadata
-  document, otherwise the host of its first redirect URI), so the person can spot a client
-  pretending to be something else.
+  is sent to {redirect}." For a metadata document the host is the `client_id` host; for a client that
+  registered itself it is the host the answer goes to (never a redirect URI it merely listed), or the
+  fixed text above for a private-use scheme; for an administrator's client, the host of its first
+  redirect URI.
 - An **unverified** notice for dynamically registered clients: they chose their own name.
 - A **loopback** warning when the answer goes to the person's own computer: a loopback or unspecified
   address (`127.0.0.0/8`, `::1`, `0.0.0.0`, `::`), a `.localhost` name, or a private-use scheme. It does
   not reassure: any program on that computer can listen on the address, so the text asks the person to
-  continue only when they just started the flow from an application there. The warning shows exactly
-  when a remembered consent is not enough, so "approved before" never appears without it.
+  continue only when they just started the flow from an application there. It shows whenever the answer
+  goes to this computer, including every case where a remembered consent is not enough for a public
+  client, so "approved before" never appears without it (a confidential client with a loopback redirect
+  also gets the warning, but its remembered consent skips the page).
 - An **approved before** notice when a remembered consent already covers the request but the page is
   shown anyway because the client's identity cannot be assured: the person is asked to continue only if
   they started this themselves.
@@ -100,7 +106,7 @@ interface ConsentRendererInterface
 | `redirectUri` | Where the answer goes |
 | `formAction` | The path the form must post to |
 | `fields` | Hidden fields to post back, as `name => value` |
-| `clientHost()` | The host that names the client |
+| `clientHost()` | The host that names the client: the `client_id` host of a metadata document, the host the answer goes to for a self-registered client (empty for a private-use scheme), the first redirect URI host for an administrator's client |
 | `clientLabel()` | What the title and heading call the client: its name for a registered client, a host for the others |
 | `declaredName()` | The name a dynamic client declared, to show as an unverified line, or `null` |
 | `redirectHost()` | The host of the redirect URI (the scheme for a private-use URI), the same rule as `RedirectNoticeView::redirectHost()` |
@@ -127,7 +133,10 @@ final class MyConsentRenderer implements ConsentRendererInterface
         }
         $items = implode('', array_map(fn (string $d): string => '<li>' . $e($d) . '</li>', $view->scopes));
 
-        return '<h1>' . $e($view->clientHost()) . ' wants access to ' . $e($view->resource->name) . '</h1>'
+        // clientLabel() is '' for a self-registered client that redirects to a private-use scheme.
+        $label = $view->clientLabel() !== '' ? $view->clientLabel() : 'An application on this computer';
+
+        return '<h1>' . $e($label) . ' wants access to ' . $e($view->resource->name) . '</h1>'
             . '<ul>' . $items . '</ul>'
             . '<form method="post" action="' . $e($view->formAction) . '">' . $hidden
             . '<button name="decision" value="approve">Allow</button>'
@@ -137,7 +146,10 @@ final class MyConsentRenderer implements ConsentRendererInterface
 ```
 
 Keep the safety messages in your page: say where the answer goes (`redirectHost()`), and show the
-unverified, loopback and approved before notices.
+unverified, loopback and approved before notices. For a client that registered itself, `$view->client->name`
+and the registered redirect URIs are chosen by the client: name it with `clientLabel()` and show
+`declaredName()` only as a clearly quoted, unverified line (put the escaped name in its own element, such
+as `<q>`, never between quote characters of your own text).
 
 ### `ConnectionsRendererInterface`
 
@@ -242,7 +254,8 @@ Every key, with its default text:
 | `consent.title` | Authorize {client} | `{client}` |
 | `consent.heading` | {client} wants to access {resource} | `{client}`, `{resource}` |
 | `consent.from` | The request comes from {host}. Your answer is sent to {redirect}. | `{host}`, `{redirect}` |
-| `consent.declaredName` | It calls itself "{name}". Anyone can choose that name. | `{name}` |
+| `client.local` | An application on this computer |  |
+| `consent.declaredName` | It calls itself {name}. Anyone can choose that name. | `{name}` (the page puts the escaped name in a `<q>` element) |
 | `consent.unverified` | This application registered itself; its name is not verified. |  |
 | `consent.loopback` | Only continue if you just started this from an application on this computer: any program on this computer can use this address. |  |
 | `consent.approvedBefore` | You approved this application before. It is asked again because its identity cannot be confirmed: only continue if you started this yourself. |  |

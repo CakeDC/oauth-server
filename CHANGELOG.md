@@ -31,21 +31,35 @@ First release.
   new `ConsentService::hasConsented()` and `ConsentService::identityIsAssured()`;
   `AuthorizationError` carries the `Client` (`$client`). The constructor defaults of `ClientRegistrar` and
   `ClientResolver` for private schemes are now `false`.
-- Consent page identity: a dynamically registered client is headlined by the host its answer goes to
-  (like a metadata document client), and its own name is shown only as a quoted, unverified line, so a
-  client called `claude.ai` no longer produces the title and heading of the real one. Client names
-  (dynamic registration, metadata documents, `ClientRegistrar::create()`) and personal token names
-  reject Unicode control and format characters (`Cc`, `Cf`) and names without a visible character;
-  length limits count characters, not bytes. New `Support\HostClass` is the one classification of loopback, unspecified
-  (`0.0.0.0`, `::`) and `.localhost` hosts used by the redirect URI matcher, the consent memory
-  (`ConsentService::identityIsAssured()`) and the consent page, so the "any program on this computer"
-  warning shows exactly when a remembered consent is not enough; `https://0.0.0.0/...` and
-  `https://[::]/...` are no longer treated as assured. `ConsentView::redirectHost()` now returns the
-  scheme of a private-use URI, as `RedirectNoticeView::redirectHost()` does. New `ConsentView::clientLabel()`
-  and `declaredName()`, new `Messages` key `consent.declaredName`, new `ClientMetadata::characterLength()`.
-  Names that look like hosts stay accepted, because the page never headlines a name. `Client::redirectsOnlyToLoopback()` now also counts `.localhost` names,
-  `127.0.0.0/8`, unspecified addresses and private-use schemes. The redirect URI matcher accepts the
-  same URIs as before.
+- Consent page identity: a name is chosen by the client, so it no longer names a self-registered
+  client. The consent page and the connections page headline such a client by the host its answer goes
+  to (like a metadata document client), never by its name or by a redirect URI it merely listed; when
+  the answer goes to a private-use scheme (anyone can claim the scheme `claude.ai:`) the label is the
+  fixed, translatable text "An application on this computer" (new `Messages` key `client.local`) and the
+  scheme appears only as the destination. The declared name is shown only as a quoted `<q>` line
+  ("It calls itself ...", `consent.declaredName`, which no longer contains quote characters), so a name
+  cannot close the quote and speak for the server. Custom renderer authors: `client->name` and
+  `ConsentView::clientHost()` of earlier code were spoofable for dynamic clients; use
+  `ConsentView::clientLabel()` (empty for a private-use redirect, show a fixed text then) and
+  `declaredName()`. `clientHost()` is now the host the answer goes to for a self-registered client.
+  New `Client::hostLabel()` does the same for the connections page.
+- Names: client names (dynamic registration, `ClientRegistrar::create()`) and personal token names
+  must contain a letter, number, punctuation or symbol and reject control characters, line and paragraph
+  separators, bidirectional controls and every other format character (`Cf`) except the soft hyphen,
+  tag characters and U+200C/U+200D between two visible characters (Persian, Indic scripts, emoji
+  sequences); also characters that draw nothing (U+034F, fillers, U+FFFC) and runs of more than four
+  combining marks. A metadata document name that fails these checks falls back to the host of its
+  `client_id`. Length limits count characters, not bytes. Names that look like host names stay
+  accepted, because no page headlines a name.
+- One host classification: new `Support\HostClass` covers loopback, unspecified (`0.0.0.0`, `::`) and
+  `.localhost` hosts for the consent memory (`ConsentService::identityIsAssured()`) and the consent page,
+  so `https://0.0.0.0/...` and `https://[::]/...` are no longer treated as assured and the "any program
+  on this computer" warning always appears when "approved before" does. The redirect URI matcher still
+  uses only the loopback literals of RFC 8252 and accepts the same URIs as before.
+  `ConsentView::redirectHost()` now returns the scheme of a private-use URI, as
+  `RedirectNoticeView::redirectHost()` does. `Client::redirectsOnlyToLoopback()` now also counts
+  `.localhost` names, `127.0.0.0/8`, unspecified addresses and private-use schemes. New
+  `ConsentView::clientLabel()` and `declaredName()`, `ClientMetadata::characterLength()`.
 - Docs: `docs/users.md` teaches identifying a client by `clientId`, not by its name, and says an
   anonymous POST gets the error page, not the login.
 - Standalone example: `setup.php` no longer records a consent, and `OAUTH_EXAMPLE_AUTO_APPROVE=1`

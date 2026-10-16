@@ -246,6 +246,15 @@ class ConnectionServiceTest extends TestCase
         $this->assertSame(100, mb_strlen((string)$result['token']->name));
     }
 
+    public function testAcceptsAHundredJapaneseCharacters(): void
+    {
+        $name = str_repeat("\u{3042}", 100);
+
+        $result = $this->service->createPersonalToken($this->ada, $name, Fixtures::MCP, ['content:read'], 7);
+
+        $this->assertSame($name, $result['token']->name);
+    }
+
     public function testRevokingAConnectionMakesTheClientUntrustedAgain(): void
     {
         $client = $this->connect('first');

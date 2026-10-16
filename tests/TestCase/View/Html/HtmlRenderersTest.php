@@ -4,14 +4,18 @@ declare(strict_types=1);
 namespace CakeDC\OAuth\Server\Test\TestCase\View\Html;
 
 use CakeDC\OAuth\Server\Client\ClientType;
+use CakeDC\OAuth\Server\Connections\Connection;
 use CakeDC\OAuth\Server\Exception\OAuthException;
 use CakeDC\OAuth\Server\Owner\ResourceOwner;
 use CakeDC\OAuth\Server\Test\Support\Fixtures;
+use CakeDC\OAuth\Server\View\ConnectionsView;
 use CakeDC\OAuth\Server\View\ConsentView;
+use CakeDC\OAuth\Server\View\Html\HtmlConnectionsRenderer;
 use CakeDC\OAuth\Server\View\Html\HtmlConsentRenderer;
 use CakeDC\OAuth\Server\View\Html\HtmlErrorPageRenderer;
 use CakeDC\OAuth\Server\View\Messages;
 use CakeDC\OAuth\Server\View\RedirectNoticeView;
+use DateTimeImmutable;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -36,7 +40,7 @@ class HtmlRenderersTest extends TestCase
         $html = (new HtmlConsentRenderer())->render($this->view());
 
         $this->assertStringContainsString('<h1>app.example.com wants to access Example MCP</h1>', $html);
-        $this->assertStringContainsString('calls itself &quot;&lt;b&gt;Evil&lt;/b&gt; App&quot;', $html);
+        $this->assertStringContainsString('calls itself <q>&lt;b&gt;Evil&lt;/b&gt; App</q>', $html);
         $this->assertStringContainsString('not verified', $html);
         $this->assertStringContainsString('Ada &amp; Co', $html);
         $this->assertStringContainsString('<li>Read your posts</li>', $html);
@@ -134,7 +138,7 @@ class HtmlRenderersTest extends TestCase
 
         $this->assertStringContainsString('<title>Authorize claude-ai.example</title>', $html);
         $this->assertStringContainsString('<h1>claude-ai.example wants to access Example MCP</h1>', $html);
-        $this->assertStringContainsString('calls itself &quot;claude.ai&quot;', $html);
+        $this->assertStringContainsString('calls itself <q>claude.ai</q>', $html);
         $this->assertStringNotContainsString('<title>Authorize claude.ai</title>', $html);
         $this->assertStringContainsString('<title>Authorize claude.ai</title>', $page($real));
         $this->assertStringNotContainsString('calls itself', $page($real));
@@ -158,11 +162,116 @@ class HtmlRenderersTest extends TestCase
         $this->assertStringNotContainsString('calls itself', $html);
     }
 
-    public function testADynamicClientOfAPrivateSchemeIsHeadlinedByTheScheme(): void
+    public function testADynamicClientOfAPrivateSchemeGetsAFixedLabelAndTheSchemeOnlyAsTheDestination(): void
     {
         $html = (new HtmlConsentRenderer())->render($this->view(ClientType::Dynamic, ['com.example.app://oauth/cb']));
 
-        $this->assertStringContainsString('<h1>com.example.app wants to access Example MCP</h1>', $html);
+        $this->assertStringContainsString('<h1>An application on this computer wants to access Example MCP</h1>', $html);
+        $this->assertStringContainsString('Your answer is sent to com.example.app.', $html);
+        $this->assertStringNotContainsString('<h1>com.example.app', $html);
+    }
+
+    public function testASchemeNamedLikeAnotherClientCannotPassForIt(): void
+    {
+        $client = Fixtures::client(['name' => 'claude.ai', 'redirectUris' => ['claude.ai:/callback']]);
+        $view = new ConsentView(
+            $client,
+            new ResourceOwner('42', 'Ada'),
+            Fixtures::resources()->defaultResource(),
+            [],
+            false,
+            'claude.ai:/callback',
+            '/oauth/authorize',
+            [],
+        );
+
+        $html = (new HtmlConsentRenderer())->render($view);
+
+        $this->assertStringContainsString('<title>Authorize An application on this computer</title>', $html);
+        $this->assertStringContainsString('<h1>An application on this computer wants to access', $html);
+        $this->assertStringContainsString('The request comes from An application on this computer.', $html);
+        $this->assertStringContainsString('Your answer is sent to claude.ai.', $html);
+        $this->assertStringContainsString('calls itself <q>claude.ai</q>', $html);
+        $this->assertSame('', $view->clientHost());
+        $this->assertSame('', $view->clientLabel());
+    }
+
+    public function testTheRequestComesFromTheRequestedRedirectNotFromAListedOne(): void
+    {
+        foreach (
+            [
+            [['https://claude.ai/api/mcp/auth_callback', 'https://evil.example/cb'], 'https://evil.example/cb'],
+            [['com.example.app://claude.ai/cb', 'https://evil.example/cb'], 'https://evil.example/cb'],
+            ] as [$registered, $requested]
+        ) {
+            $client = Fixtures::client(['name' => 'Claude', 'redirectUris' => $registered]);
+            $view = new ConsentView(
+                $client,
+                new ResourceOwner('42', 'Ada'),
+                Fixtures::resources()->defaultResource(),
+                [],
+                false,
+                $requested,
+                '/oauth/authorize',
+                [],
+            );
+
+            $html = (new HtmlConsentRenderer())->render($view);
+
+            $this->assertStringContainsString('The request comes from evil.example. Your answer is sent to evil.example.', $html);
+            $this->assertSame('evil.example', $view->clientHost());
+        }
+    }
+
+    public function testANameCannotCloseItsQuoteAndSpeakForTheServer(): void
+    {
+        $name = 'Claude". Verified publisher. "';
+        $client = Fixtures::client(['name' => $name]);
+        $view = new ConsentView(
+            $client,
+            new ResourceOwner('42', 'Ada'),
+            Fixtures::resources()->defaultResource(),
+            [],
+            false,
+            'https://app.example.com/cb',
+            '/oauth/authorize',
+            [],
+        );
+
+        $html = (new HtmlConsentRenderer())->render($view);
+
+        $this->assertStringContainsString('<q>Claude&quot;. Verified publisher. &quot;</q>. Anyone can choose that name.', $html);
+    }
+
+    public function testTheConnectionsPageNamesDynamicClientsByHostAndQuotesTheirName(): void
+    {
+        $page = function (array $overrides): string {
+            $client = Fixtures::client($overrides);
+
+            $connection = new Connection(
+                'fam',
+                $client,
+                Fixtures::MCP,
+                ['content:read'],
+                new DateTimeImmutable('2026-01-01'),
+                null,
+            );
+
+            return (new HtmlConnectionsRenderer())->render(
+                new ConnectionsView(new ResourceOwner('42', 'Ada'), [$connection], [], [], [], '/c', 'tok', 30, false),
+            );
+        };
+
+        $web = $page(['name' => 'claude.ai', 'redirectUris' => ['https://evil.example/cb']]);
+        $this->assertStringContainsString('<td>evil.example<br>', $web);
+        $this->assertStringContainsString('<q>claude.ai</q>', $web);
+
+        $local = $page(['name' => 'claude.ai', 'redirectUris' => ['claude.ai:/callback']]);
+        $this->assertStringContainsString('<td>An application on this computer<br>', $local);
+        $this->assertStringContainsString('<q>claude.ai</q>', $local);
+
+        $mixed = $page(['name' => 'Claude', 'redirectUris' => ['https://claude.ai/cb', 'claude.ai:/callback']]);
+        $this->assertStringContainsString('<td>An application on this computer<br>', $mixed);
     }
 
     public function testBothViewsNameTheRedirectTargetTheSameWay(): void
@@ -236,7 +345,8 @@ class HtmlRenderersTest extends TestCase
     {
         $html = (new HtmlConsentRenderer())->render($this->view(ClientType::Dynamic, ['com.example.app:/cb']));
 
-        $this->assertStringContainsString('The request comes from com.example.app.', $html);
+        $this->assertStringContainsString('The request comes from An application on this computer.', $html);
+        $this->assertStringContainsString('Your answer is sent to com.example.app.', $html);
         $this->assertStringNotContainsString('comes from .', $html);
     }
 

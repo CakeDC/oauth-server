@@ -67,7 +67,7 @@ class ClientResolverTest extends TestCase
 
     public function testAMetadataDocumentNameWithInvisibleCharactersIsReplacedByTheHost(): void
     {
-        foreach (["Claude\u{202E}", "Cla\u{200B}ude", "\u{00A0}"] as $i => $name) {
+        foreach (["Claude\u{202E}", "Cla\u{200B}ude", "\u{00A0}", "\u{200B}\u{200D}\u{2060}"] as $i => $name) {
             $url = 'https://claude.ai/metadata' . $i . '.json';
             $this->transport->serve($url, [
                 'client_id' => $url,

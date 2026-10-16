@@ -63,16 +63,30 @@ final class HostClass
     }
 
     /**
+     * The host of an http(s) URI, lowercase, or null for anything else (a private-use scheme has no host
+     * that anyone vouches for: the app that claims the scheme chose it).
+     */
+    public static function webHost(string $uri): ?string
+    {
+        $scheme = strtolower((string)parse_url($uri, PHP_URL_SCHEME));
+        $host = parse_url($uri, PHP_URL_HOST);
+
+        return ($scheme === 'http' || $scheme === 'https') && is_string($host) && $host !== ''
+            ? strtolower($host)
+            : null;
+    }
+
+    /**
      * What names the destination of a redirect to $uri: the host of an http(s) URI, the scheme of a
      * private-use one (what follows it is chosen by the app), the whole string when it has neither.
      */
     public static function redirectTarget(string $uri): string
     {
-        $scheme = strtolower((string)parse_url($uri, PHP_URL_SCHEME));
-        $host = parse_url($uri, PHP_URL_HOST);
-        if (($scheme === 'http' || $scheme === 'https') && is_string($host) && $host !== '') {
-            return strtolower($host);
+        $host = self::webHost($uri);
+        if ($host !== null) {
+            return $host;
         }
+        $scheme = strtolower((string)parse_url($uri, PHP_URL_SCHEME));
 
         return $scheme !== '' && $scheme !== 'http' && $scheme !== 'https' ? $scheme : $uri;
     }

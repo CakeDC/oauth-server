@@ -38,8 +38,7 @@ document needs at least one usable URI, or the client is refused with `invalid_c
   says `"application_type": "web"` may not use it (RFC 9700 section 2.6: a web client uses https).
   Without `application_type` it is accepted, see below. Metadata documents and `create()` accept
   loopback `http` for web clients too.
-- Any other scheme (a private-use scheme such as `cursor://anysphere.cursor/oauth` or
-  `com.example.app:/cb`): only for native clients, and only if `registration.allowPrivateSchemes` is
+- Any other scheme (a private-use scheme such as `com.example.app:/oauth/callback`): only for native clients, and only if `registration.allowPrivateSchemes` is
   `true`. It is `false` by default, because the MCP authorization spec requires localhost or https
   redirect URIs. The setting applies to dynamic registration and metadata documents; `create()` always
   allows private-use schemes. The dangerous schemes above stay refused either way.
@@ -93,7 +92,7 @@ create(
 
 | Argument | Meaning |
 | --- | --- |
-| `name` | 1 to 255 characters (counted as characters, not bytes), with at least one visible character and no control or invisible characters (Unicode `Cc` and `Cf`: newlines, bidirectional overrides, zero-width characters) |
+| `name` | 1 to 255 characters (counted as characters, not bytes), with a letter, number, punctuation or symbol, and no control, bidirectional or other invisible characters (see [security](security.md#authorization-codes-and-consent)); the joiners U+200C and U+200D between visible characters, tag characters and the soft hyphen are allowed |
 | `redirectUris` | Up to 10. May be empty only without the authorization code grant |
 | `confidential` | `true` gives the client a secret (`<prefix>_cs_...`) and `client_secret_basic` authentication. `false` makes it public |
 | `grantTypes` | Any of `GrantType::AUTHORIZATION_CODE`, `GrantType::REFRESH_TOKEN`, `GrantType::CLIENT_CREDENTIALS` |

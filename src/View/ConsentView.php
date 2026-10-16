@@ -41,10 +41,16 @@ final class ConsentView
     }
 
     /**
-     * The host that names the client.
+     * The host that names the client. For a client that registered itself it is the host the answer
+     * goes to (empty for a private-use redirect), never a host the client merely listed: both the name and
+     * the registered redirect URIs are chosen by the client.
      */
     public function clientHost(): string
     {
+        if ($this->client->type === ClientType::Dynamic) {
+            return HostClass::webHost($this->redirectUri) ?? '';
+        }
+
         return $this->client->displayHost();
     }
 
@@ -58,22 +64,25 @@ final class ConsentView
     }
 
     /**
-     * What names the client in the title and the heading: the host of its metadata document, or, for a
-     * client that registered itself, the host its answer is sent to. Neither can be chosen freely, unlike
-     * a name, which anyone can set to "claude.ai". An administrator's own name is trusted.
+     * What names the client in the title and the heading: its name for a client an administrator
+     * registered, otherwise a host the client cannot choose freely: the `client_id` host of a metadata
+     * document, the host its answer goes to for a self-registered client. It is an empty string when no
+     * host names the client (a self-registered client with a private-use redirect: anyone can pick any
+     * scheme, `claude.ai` included); show a fixed text then, such as the `client.local` message. Never use
+     * `client->name` or the registered redirect URIs to name a self-registered client.
      */
     public function clientLabel(): string
     {
         return match ($this->client->type) {
             ClientType::MetadataDocument => $this->clientHost() !== '' ? $this->clientHost() : $this->client->name,
-            ClientType::Dynamic => $this->redirectHost(),
+            ClientType::Dynamic => $this->clientHost(),
             default => $this->client->name,
         };
     }
 
     /**
-     * The name the client declared for itself, to show as an unverified secondary line; null when the
-     * client is not self-registered or the name adds nothing to the label.
+     * The name a self-registered client declared for itself, to show as an unverified secondary line;
+     * null for other clients, or when the name only repeats the host label.
      */
     public function declaredName(): ?string
     {

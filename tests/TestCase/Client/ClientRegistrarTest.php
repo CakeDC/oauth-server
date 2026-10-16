@@ -66,7 +66,7 @@ class ClientRegistrarTest extends TestCase
         $this->assertArrayNotHasKey('client_secret', $body);
     }
 
-    public function testAHundredJapaneseCharactersAreWithinTheLimitOfCharacters(): void
+    public function testTheLimitIs255CharactersNotBytes(): void
     {
         $name = str_repeat("\u{3042}", 255);
 
@@ -84,9 +84,19 @@ class ClientRegistrarTest extends TestCase
         }
     }
 
+    public function testFourByteCharactersAtTheLimitRegister(): void
+    {
+        $name = str_repeat("\u{1F680}", 255);
+
+        $result = $this->registrar->register(['client_name' => $name, 'redirect_uris' => ['https://app.example.com/cb']]);
+
+        $this->assertSame($name, $result['client']->name);
+        $this->assertSame(1020, strlen($result['client']->name));
+    }
+
     public function testNamesWithPunctuationAndSpacesStillRegister(): void
     {
-        foreach (['Claude Code (work)', 'Mr. Smith', "\u{c9}clair \u{1F680}", 'Acme, Inc.'] as $name) {
+        foreach (['Claude Code (work)', 'Mr. Smith', "\u{c9}clair \u{1F680}", 'Acme, Inc.', "\u{0645}\u{06CC}\u{200C}\u{062E}\u{0648}"] as $name) {
             $result = $this->registrar->register(['client_name' => $name, 'redirect_uris' => ['https://app.example.com/cb']]);
 
             $this->assertSame($name, $result['client']->name);

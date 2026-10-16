@@ -15,7 +15,8 @@ final class Html
         . 'padding:.6rem 1.2rem;border-radius:8px;border:0;background:#1d4ed8;color:#fff;cursor:pointer}'
         . 'button.secondary{background:#e5e7eb;color:#1d2330}table{width:100%;border-collapse:collapse}'
         . 'td,th{text-align:left;padding:.4rem;border-bottom:1px solid #eee}code{word-break:break-all}'
-        . 'label{display:block;margin:.4rem 0}input[type=text],input[type=number],select{padding:.4rem}';
+        . 'q{background:#eef2f7;padding:0 .25rem;border-radius:4px}label{display:block;margin:.4rem 0}'
+        . 'input[type=text],input[type=number],select{padding:.4rem}';
 
     /**
      * Escapes text for HTML content and attributes.
@@ -23,6 +24,20 @@ final class Html
     public static function e(string $text): string
     {
         return htmlspecialchars($text, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+    }
+
+    /**
+     * $template (a message with a `{name}` placeholder) escaped, with $name inside a `<q>` element: the
+     * boundary of a name that anyone can choose is drawn in markup, so no character in it can close a quote
+     * and go on as if the server were speaking.
+     */
+    public static function withQuotedName(string $template, string $name): string
+    {
+        $parts = explode('{name}', $template, 2);
+
+        return count($parts) === 2
+            ? self::e($parts[0]) . '<q>' . self::e($name) . '</q>' . self::e($parts[1])
+            : self::e($template);
     }
 
     /**

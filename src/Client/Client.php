@@ -92,6 +92,25 @@ final class Client
     }
 
     /**
+     * The host or hosts that name a self-registered client without trusting what it says: the distinct
+     * hosts of its redirect URIs, or an empty string when any of them is not an http(s) host (a
+     * private-use scheme is chosen by the client, so it vouches for nothing).
+     */
+    public function hostLabel(): string
+    {
+        $hosts = [];
+        foreach ($this->redirectUris as $uri) {
+            $host = HostClass::webHost($uri);
+            if ($host === null) {
+                return '';
+            }
+            $hosts[$host] = true;
+        }
+
+        return implode(', ', array_keys($hosts));
+    }
+
+    /**
      * Whether every redirect URI stays on this computer (a loopback or unspecified address, a `.localhost`
      * name, or a private-use scheme), where any program can receive the answer.
      */

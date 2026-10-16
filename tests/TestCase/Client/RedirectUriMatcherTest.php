@@ -123,4 +123,25 @@ class RedirectUriMatcherTest extends TestCase
             $this->assertStringContainsString($error, $result);
         }
     }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function notLoopbackLiterals(): array
+    {
+        return [
+            'loopback range' => ['http://127.0.0.5/cb'],
+            'unspecified' => ['http://0.0.0.0/cb'],
+            '.localhost name' => ['http://app.localhost/cb'],
+            'unspecified IPv6' => ['http://[::]/cb'],
+        ];
+    }
+
+    #[DataProvider('notLoopbackLiterals')]
+    public function testPlainHttpIsOnlyForTheLoopbackLiteralsOfRfc8252(string $uri): void
+    {
+        $this->assertNotNull(RedirectUriMatcher::registrationError($uri, ApplicationType::Native, true));
+        $this->assertFalse(RedirectUriMatcher::matches($uri, ['http://127.0.0.1/cb']));
+        $this->assertFalse(RedirectUriMatcher::matches('http://127.0.0.1/cb', [$uri]));
+    }
 }

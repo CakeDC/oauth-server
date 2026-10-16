@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace CakeDC\OAuth\Server\View\Html;
 
+use CakeDC\OAuth\Server\Client\ClientType;
 use CakeDC\OAuth\Server\View\ConsentRendererInterface;
 use CakeDC\OAuth\Server\View\ConsentView;
 use CakeDC\OAuth\Server\View\Messages;
@@ -47,10 +48,15 @@ final class HtmlConsentRenderer implements ConsentRendererInterface
             $fields .= sprintf('<input type="hidden" name="%s" value="%s">', Html::e($name), Html::e($value));
         }
         // A name is self-asserted, so the title and the heading use a host the client cannot choose freely.
-        $client = $view->clientLabel();
+        $client = $view->clientLabel() !== '' ? $view->clientLabel() : $m->get('client.local');
+        $from = $view->clientHost() !== '' ? $view->clientHost() : $view->redirectHost();
+        if ($view->client->type === ClientType::Dynamic && $view->clientHost() === '') {
+            // The scheme of a private-use redirect is chosen by the client: it is shown only as the destination.
+            $from = $client;
+        }
         $declared = $view->declaredName();
         if ($declared !== null) {
-            $notes = '<p class="muted">' . Html::e($m->get('consent.declaredName', ['name' => $declared]))
+            $notes = '<p class="muted">' . Html::withQuotedName($m->get('consent.declaredName'), $declared)
                 . '</p>' . $notes;
         }
         $body = '<h1>' . Html::e($m->get('consent.heading', [
@@ -58,7 +64,7 @@ final class HtmlConsentRenderer implements ConsentRendererInterface
                 'resource' => $view->resource->name,
             ])) . '</h1>'
             . '<p class="muted">' . Html::e($m->get('consent.from', [
-                'host' => $view->clientHost() !== '' ? $view->clientHost() : $view->redirectHost(),
+                'host' => $from,
                 'redirect' => $view->redirectHost(),
             ])) . '</p>'
             . $notes
