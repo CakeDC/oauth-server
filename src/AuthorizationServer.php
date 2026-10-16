@@ -21,6 +21,9 @@ use CakeDC\OAuth\Server\Grant\ConsentService;
 use CakeDC\OAuth\Server\Http\ClientIp;
 use CakeDC\OAuth\Server\Http\Handler\AuthorizationServerMetadataHandler;
 use CakeDC\OAuth\Server\Http\Handler\AuthorizeHandler;
+use CakeDC\OAuth\Server\Http\Handler\IntrospectHandler;
+use CakeDC\OAuth\Server\Http\Handler\RegisterHandler;
+use CakeDC\OAuth\Server\Http\Handler\RevokeHandler;
 use CakeDC\OAuth\Server\Http\Handler\TokenHandler;
 use CakeDC\OAuth\Server\Http\HttpResponder;
 use CakeDC\OAuth\Server\Maintenance\Pruner;
@@ -438,6 +441,54 @@ final class AuthorizationServer
         );
     }
 
-    // Task 20: registerHandler(), revokeHandler(),
-    // introspectHandler(); Task 21: connectionsHandler(); Task 22: bearerMiddleware(), mcpTokenValidator().
+    /**
+     * POST {routePrefix}/register: dynamic client registration.
+     */
+    public function registerHandler(): RegisterHandler
+    {
+        return new RegisterHandler(
+            $this->config,
+            $this->clientRegistrar(),
+            $this->rateLimiter(),
+            $this->responder,
+            $this->logger,
+            $this->clientIp,
+        );
+    }
+
+    /**
+     * POST {routePrefix}/revoke: token revocation.
+     */
+    public function revokeHandler(): RevokeHandler
+    {
+        return new RevokeHandler(
+            $this->clientAuthenticator(),
+            $this->tokenRevoker(),
+            $this->rateLimiter(),
+            $this->responder,
+            $this->logger,
+            $this->clientIp,
+        );
+    }
+
+    /**
+     * POST {routePrefix}/introspect: token introspection.
+     */
+    public function introspectHandler(): IntrospectHandler
+    {
+        return new IntrospectHandler(
+            $this->config,
+            $this->clientAuthenticator(),
+            $this->storage,
+            $this->storage,
+            $this->tokenValidator(),
+            $this->rateLimiter(),
+            $this->responder,
+            $this->clock,
+            $this->logger,
+            $this->clientIp,
+        );
+    }
+
+    // Task 21: connectionsHandler(); Task 22: bearerMiddleware(), mcpTokenValidator().
 }
