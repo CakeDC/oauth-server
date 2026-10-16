@@ -31,6 +31,7 @@ class ScopesTest extends TestCase
         $this->assertSame('a b', Scopes::format(['a', 'b']));
         $this->assertTrue(Scopes::isValid('files:write'));
         $this->assertFalse(Scopes::isValid(''));
+        $this->assertFalse(Scopes::isValid("a\n"));
         $this->assertFalse(Scopes::isValid('back\\slash'));
     }
 }

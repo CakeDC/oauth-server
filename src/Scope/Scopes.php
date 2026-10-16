@@ -48,6 +48,6 @@ final class Scopes
      */
     public static function isValid(string $scope): bool
     {
-        return preg_match('/^[\x21\x23-\x5B\x5D-\x7E]+$/', $scope) === 1;
+        return preg_match('/^[\x21\x23-\x5B\x5D-\x7E]+\z/', $scope) === 1;
     }
 }
