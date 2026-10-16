@@ -77,4 +77,23 @@ class HtmlRenderersTest extends TestCase
         $this->assertStringContainsString('The request comes from com.example.app:/cb.', $html);
         $this->assertStringNotContainsString('comes from .', $html);
     }
+
+    public function testScriptPayloadsAreEscaped(): void
+    {
+        $view = new ConsentView(
+            Fixtures::client(['name' => '<script>alert(1)</script>']),
+            new ResourceOwner('42', '<script>u</script>'),
+            Fixtures::resources()->defaultResource(),
+            ['content:read' => '<script>scope</script>'],
+            false,
+            'https://app.example.com/cb',
+            '/oauth/authorize',
+            ['a"><script>' => '"><script>v</script>'],
+        );
+
+        $html = (new HtmlConsentRenderer())->render($view);
+
+        $this->assertStringNotContainsString('<script', $html);
+        $this->assertStringContainsString('&lt;script&gt;scope&lt;/script&gt;', $html);
+    }
 }

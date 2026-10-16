@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace CakeDC\OAuth\Server\View\Html;
 
+use CakeDC\OAuth\Server\Client\ClientType;
 use CakeDC\OAuth\Server\View\ConsentRendererInterface;
 use CakeDC\OAuth\Server\View\ConsentView;
 use CakeDC\OAuth\Server\View\Messages;
@@ -43,8 +44,12 @@ final class HtmlConsentRenderer implements ConsentRendererInterface
         foreach ($view->fields as $name => $value) {
             $fields .= sprintf('<input type="hidden" name="%s" value="%s">', Html::e($name), Html::e($value));
         }
+        // A metadata document names itself; the host of its client_id URL is what can be trusted.
+        $client = $view->client->type === ClientType::MetadataDocument && $view->clientHost() !== ''
+            ? $view->clientHost()
+            : $view->client->name;
         $body = '<h1>' . Html::e($m->get('consent.heading', [
-                'client' => $view->client->name,
+                'client' => $client,
                 'resource' => $view->resource->name,
             ])) . '</h1>'
             . '<p class="muted">' . Html::e($m->get('consent.from', [
@@ -60,6 +65,6 @@ final class HtmlConsentRenderer implements ConsentRendererInterface
             . '<button type="submit" name="decision" value="deny" class="secondary">'
             . Html::e($m->get('consent.deny')) . '</button></form>';
 
-        return Html::page($m->get('consent.title', ['client' => $view->client->name]), $body);
+        return Html::page($m->get('consent.title', ['client' => $client]), $body);
     }
 }

@@ -20,6 +20,7 @@ use CakeDC\OAuth\Server\Owner\UserContextInterface;
 use CakeDC\OAuth\Server\Owner\UserProviderInterface;
 use CakeDC\OAuth\Server\RateLimit\RateLimiter;
 use CakeDC\OAuth\Server\Scope\ScopeResolver;
+use CakeDC\OAuth\Server\Scope\Scopes;
 use CakeDC\OAuth\Server\Security\FormToken;
 use CakeDC\OAuth\Server\View\ConsentRendererInterface;
 use CakeDC\OAuth\Server\View\ConsentView;
@@ -115,12 +116,14 @@ final class AuthorizeHandler implements RequestHandlerInterface
         if ($method !== 'GET' && $method !== 'POST') {
             return $this->responder->methodNotAllowed('GET, POST');
         }
+        $path = $this->safePath($request);
         if ($method === 'GET') {
             [$params, $repeated] = Params::parse($request->getUri()->getQuery());
         } else {
             [$params, $repeated] = FormBody::read($request);
-            $repeated = array_values(array_intersect($repeated, AuthorizationRequest::PARAMETERS));
         }
+        // Only repeats of authorization parameters count (RFC 6749 section 3.1).
+        $repeated = array_values(array_intersect($repeated, AuthorizationRequest::PARAMETERS));
         $authorization = $this->validator->validate($params, $repeated);
         $owner = $this->userContext->currentOwner($request);
         if ($owner === null) {
@@ -128,14 +131,7 @@ final class AuthorizeHandler implements RequestHandlerInterface
                 throw OAuthException::accessDenied('Your session ended. Start again from the application.');
             }
 
-            return $this->userContext->loginResponse($request, $this->returnTo($request));
-        }
-        $context = 'consent:' . $authorization->fingerprint();
-        $token = $params['consent_token'] ?? '';
-        if ($method === 'POST' && !$this->formTokens->verify($token, $context, $owner->subject)) {
-            throw OAuthException::invalidRequest(
-                'The consent form expired or was changed. Start again from the application.',
-            );
+            return $this->userContext->loginResponse($request, $this->returnTo($request, $path));
         }
         $client = $authorization->client;
         $resource = $authorization->resource;
@@ -144,25 +140,45 @@ final class AuthorizeHandler implements RequestHandlerInterface
             $authorization->redirectUri,
             $authorization->state,
         );
-        if (!$this->users->canAuthorize($owner, $client, $resource)) {
+        // Decide first, act later: a forged POST must not cause events or redirects.
+        $allowed = $this->users->canAuthorize($owner, $client, $resource);
+        $granted = [];
+        $scopeError = null;
+        if ($allowed) {
+            try {
+                $granted = $this->scopes->resolve(
+                    $resource,
+                    $authorization->scopes,
+                    $client->scopes,
+                    $this->users->scopesFor($owner, $resource),
+                );
+            } catch (OAuthException $e) {
+                $scopeError = $e;
+            }
+        }
+        // What the owner is asked to approve, offline_access included.
+        $effective = $authorization->offlineAccess ? [...$granted, Scopes::OFFLINE_ACCESS] : $granted;
+        $context = 'consent:' . $authorization->fingerprint() . ':' . implode(' ', $effective);
+        if ($method === 'POST') {
+            $token = $params['consent_token'] ?? '';
+            if (!$this->formTokens->verify($token, $context, $owner->subject)) {
+                throw OAuthException::invalidRequest(
+                    'The consent form expired or was changed. Start again from the application.',
+                );
+            }
+        }
+        if (!$allowed) {
             $this->events->dispatch(new AuthorizationDenied($client, $owner, 'not_allowed'));
             throw $fail(OAuthException::accessDenied('You may not authorize this application.'));
         }
-        try {
-            $granted = $this->scopes->resolve(
-                $resource,
-                $authorization->scopes,
-                $client->scopes,
-                $this->users->scopesFor($owner, $resource),
-            );
-        } catch (OAuthException $e) {
-            throw $fail($e);
+        if ($scopeError !== null) {
+            throw $fail($scopeError);
         }
         if ($granted === []) {
             throw $fail(OAuthException::invalidScope('None of the requested permissions can be granted.'));
         }
         if ($method === 'GET') {
-            if ($this->consents->isGranted($owner, $client, $resource, $granted)) {
+            if ($this->consents->isGranted($owner, $client, $resource, $effective)) {
                 return $this->approve($authorization, $owner, $granted, 302);
             }
             $descriptions = [];
@@ -175,9 +191,9 @@ final class AuthorizeHandler implements RequestHandlerInterface
                 $owner,
                 $resource,
                 $descriptions,
-                $authorization->offlineAccess,
+                $this->config->issuesRefreshTokens($authorization->offlineAccess),
                 $authorization->redirectUri,
-                $request->getUri()->getPath(),
+                $path,
                 $authorization->formFields() + ['consent_token' => $this->formTokens->issue($context, $owner->subject)],
             )));
         }
@@ -185,7 +201,7 @@ final class AuthorizeHandler implements RequestHandlerInterface
             $this->events->dispatch(new AuthorizationDenied($client, $owner, 'user_denied'));
             throw $fail(OAuthException::accessDenied('You denied the request.'));
         }
-        $this->consents->grant($owner, $client, $resource, $granted);
+        $this->consents->grant($owner, $client, $resource, $effective);
 
         return $this->approve($authorization, $owner, $granted, 303);
     }
@@ -213,11 +229,26 @@ final class AuthorizeHandler implements RequestHandlerInterface
     /**
      * The relative URL to come back to after the login.
      */
-    private function returnTo(ServerRequestInterface $request): string
+    private function returnTo(ServerRequestInterface $request, string $path): string
     {
         $query = $request->getUri()->getQuery();
 
-        return $request->getUri()->getPath() . ($query === '' ? '' : '?' . $query);
+        return $path . ($query === '' ? '' : '?' . $query);
+    }
+
+    /**
+     * The request path as a single-slash absolute path, so it can never read as a protocol-relative URL.
+     *
+     * @throws \CakeDC\OAuth\Server\Exception\OAuthException When the path contains a backslash.
+     */
+    private function safePath(ServerRequestInterface $request): string
+    {
+        $path = $request->getUri()->getPath();
+        if (str_contains($path, '\\')) {
+            throw OAuthException::invalidRequest('The request path is not valid.');
+        }
+
+        return '/' . ltrim($path, '/');
     }
 
     /**

@@ -3,12 +3,15 @@ declare(strict_types=1);
 
 namespace CakeDC\OAuth\Server\Test\TestCase\Http\Handler;
 
+use CakeDC\OAuth\Server\Client\Client;
 use CakeDC\OAuth\Server\Event\AuthorizationDenied;
 use CakeDC\OAuth\Server\Event\ConsentGranted;
+use CakeDC\OAuth\Server\Grant\Pkce;
 use CakeDC\OAuth\Server\Test\Support\Fixtures;
 use CakeDC\OAuth\Server\Test\Support\ServerHarness;
 use CakeDC\OAuth\Server\Token\TokenGenerator;
 use PHPUnit\Framework\TestCase;
+use Psr\Http\Message\UriInterface;
 
 class AuthorizeHandlerTest extends TestCase
 {
@@ -322,5 +325,240 @@ class AuthorizeHandlerTest extends TestCase
 
         $this->assertSame(303, $response->getStatusCode());
         $this->assertSame('https://example.com', ServerHarness::redirectParams($response)['iss']);
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function consentFields(
+        Client $client,
+        array $params = [],
+    ): array {
+        $page = $this->harness->server->authorizeHandler()->handle(
+            $this->harness->request('GET', $this->harness->authorizeUrl($client, $params)),
+        );
+        $this->assertSame(200, $page->getStatusCode());
+
+        return ServerHarness::formFields((string)$page->getBody());
+    }
+
+    public function testARememberedConsentDoesNotCoverOfflineAccess(): void
+    {
+        $client = $this->harness->publicClient();
+        $this->harness->authorizationCode($client, ['scope' => 'content:read']);
+
+        $again = $this->harness->server->authorizeHandler()->handle(
+            $this->harness->request('GET', $this->harness->authorizeUrl($client, ['scope' => 'content:read offline_access'])),
+        );
+        $this->assertSame(200, $again->getStatusCode());
+        $this->assertStringContainsString('Stay connected', (string)$again->getBody());
+
+        $this->harness->authorizationCode($client, ['scope' => 'content:read offline_access']);
+        $covered = $this->harness->server->authorizeHandler()->handle(
+            $this->harness->request('GET', $this->harness->authorizeUrl($client, ['scope' => 'content:read offline_access'])),
+        );
+        $this->assertSame(302, $covered->getStatusCode());
+    }
+
+    public function testAMetadataDocumentClientIsHeadlinedByItsHost(): void
+    {
+        $id = 'https://evil.example/client.json';
+        $this->harness->dns->answers['evil.example'] = ['93.184.216.35'];
+        $this->harness->transport->serve($id, [
+            'client_id' => $id,
+            'client_name' => 'Claude',
+            'redirect_uris' => ['https://evil.example/cb'],
+            'token_endpoint_auth_method' => 'none',
+        ]);
+        $stub = Fixtures::client(['clientId' => $id, 'redirectUris' => ['https://evil.example/cb']]);
+        $this->harness->signIn();
+
+        $html = (string)$this->harness->server->authorizeHandler()->handle(
+            $this->harness->request('GET', $this->harness->authorizeUrl($stub)),
+        )->getBody();
+
+        $this->assertStringContainsString('<h1>evil.example wants to access Example MCP</h1>', $html);
+        $this->assertStringContainsString('<title>Authorize evil.example</title>', $html);
+        $this->assertStringNotContainsString('<h1>Claude', $html);
+    }
+
+    public function testDoubleSlashPathsAreNormalised(): void
+    {
+        $client = $this->harness->publicClient();
+        $url = str_replace('/oauth/authorize', '//evil.example/authorize', $this->harness->authorizeUrl($client));
+
+        $this->harness->server->authorizeHandler()->handle($this->harness->request('GET', $url));
+        $this->assertStringStartsWith('/evil.example/authorize?', (string)$this->harness->userContext->returnTo);
+
+        $this->harness->signIn();
+        $html = (string)$this->harness->server->authorizeHandler()->handle(
+            $this->harness->request('GET', $url),
+        )->getBody();
+        $this->assertStringContainsString('action="/evil.example/authorize"', $html);
+    }
+
+    public function testBackslashPathsAreRefused(): void
+    {
+        $client = $this->harness->publicClient();
+        $uri = $this->createStub(UriInterface::class);
+        $uri->method('getPath')->willReturn('/\\evil.example/authorize');
+        $uri->method('getQuery')->willReturn(
+            (string)parse_url($this->harness->authorizeUrl($client), PHP_URL_QUERY),
+        );
+        $request = $this->harness->request('GET', 'https://example.com/oauth/authorize')->withUri($uri);
+
+        $response = $this->harness->server->authorizeHandler()->handle($request);
+
+        $this->assertSame(400, $response->getStatusCode());
+        $this->assertSame('', $response->getHeaderLine('Location'));
+    }
+
+    public function testTheTokenIsBoundToTheScopesShown(): void
+    {
+        $client = $this->harness->publicClient();
+        $this->harness->users->scopes['42'] = ['content:read'];
+        $this->harness->signIn();
+        $fields = $this->consentFields($client, ['scope' => 'content:read content:publish']);
+
+        $this->harness->users->scopes['42'] = null;
+        $response = $this->harness->server->authorizeHandler()->handle(
+            $this->harness->form('https://example.com/oauth/authorize', $fields + ['decision' => 'approve']),
+        );
+
+        $this->assertSame(400, $response->getStatusCode());
+        $this->assertSame('', $response->getHeaderLine('Location'));
+        $this->assertCount(0, $this->harness->events->ofType(ConsentGranted::class));
+    }
+
+    public function testRepeatedUnrelatedNamesAreIgnoredOnGet(): void
+    {
+        $client = $this->harness->publicClient();
+        $this->harness->signIn();
+
+        $response = $this->harness->server->authorizeHandler()->handle(
+            $this->harness->request('GET', $this->harness->authorizeUrl($client) . '&x=1&x=2'),
+        );
+
+        $this->assertSame(200, $response->getStatusCode());
+    }
+
+    public function testTheOfflineLineFollowsTheRefreshTokenMode(): void
+    {
+        $always = new ServerHarness();
+        $client = $always->publicClient();
+        $always->signIn();
+        $html = (string)$always->server->authorizeHandler()->handle(
+            $always->request('GET', $always->authorizeUrl($client)),
+        )->getBody();
+        $this->assertStringContainsString('Stay connected', $html);
+
+        $onDemand = new ServerHarness(['refreshTokens' => 'offline_access']);
+        $client = $onDemand->publicClient();
+        $onDemand->signIn();
+        $without = (string)$onDemand->server->authorizeHandler()->handle(
+            $onDemand->request('GET', $onDemand->authorizeUrl($client)),
+        )->getBody();
+        $this->assertStringNotContainsString('Stay connected', $without);
+        $with = (string)$onDemand->server->authorizeHandler()->handle(
+            $onDemand->request('GET', $onDemand->authorizeUrl($client, ['scope' => 'content:read offline_access'])),
+        )->getBody();
+        $this->assertStringContainsString('Stay connected', $with);
+    }
+
+    public function testForgedPostsHaveNoSideEffects(): void
+    {
+        $client = $this->harness->publicClient();
+        $this->harness->users->blocked = [];
+        $this->harness->signIn();
+        $fields = $this->consentFields($client);
+        unset($fields['consent_token']);
+
+        foreach (['approve', 'deny'] as $decision) {
+            $response = $this->harness->server->authorizeHandler()->handle(
+                $this->harness->form('https://example.com/oauth/authorize', $fields + ['decision' => $decision]),
+            );
+            $this->assertSame(400, $response->getStatusCode());
+            $this->assertSame('', $response->getHeaderLine('Location'));
+        }
+        $this->assertCount(0, $this->harness->events->ofType(AuthorizationDenied::class));
+        $this->assertCount(0, $this->harness->events->ofType(ConsentGranted::class));
+        $this->assertNull($this->harness->storage->findCodeByHash(TokenGenerator::hash('x')));
+    }
+
+    public function testATokenForAnotherOwnerHasNoLocation(): void
+    {
+        $client = $this->harness->publicClient();
+        $this->harness->signIn();
+        $fields = $this->consentFields($client);
+        $this->harness->signIn('43');
+
+        $response = $this->harness->server->authorizeHandler()->handle(
+            $this->harness->form('https://example.com/oauth/authorize', $fields + ['decision' => 'approve']),
+        );
+
+        $this->assertSame(400, $response->getStatusCode());
+        $this->assertSame('', $response->getHeaderLine('Location'));
+        $this->assertCount(0, $this->harness->events->ofType(ConsentGranted::class));
+    }
+
+    public function testPutIsNotAllowed(): void
+    {
+        $response = $this->harness->server->authorizeHandler()->handle(
+            $this->harness->request('PUT', 'https://example.com/oauth/authorize'),
+        );
+
+        $this->assertSame(405, $response->getStatusCode());
+    }
+
+    public function testAMissingOrUnknownDecisionIsADenial(): void
+    {
+        $client = $this->harness->publicClient();
+        $this->harness->signIn();
+        $fields = $this->consentFields($client);
+
+        foreach ([$fields, $fields + ['decision' => 'maybe']] as $post) {
+            $response = $this->harness->server->authorizeHandler()->handle(
+                $this->harness->form('https://example.com/oauth/authorize', $post),
+            );
+            $this->assertSame(303, $response->getStatusCode());
+            $this->assertSame('access_denied', ServerHarness::redirectParams($response)['error']);
+        }
+    }
+
+    public function testAnUnregisteredRedirectUriGetsThePageAndNoRedirect(): void
+    {
+        $client = $this->harness->publicClient();
+        $this->harness->signIn();
+
+        $response = $this->harness->server->authorizeHandler()->handle($this->harness->request(
+            'GET',
+            $this->harness->authorizeUrl($client, ['redirect_uri' => 'https://evil.example/cb']),
+        ));
+
+        $this->assertSame(400, $response->getStatusCode());
+        $this->assertSame('', $response->getHeaderLine('Location'));
+    }
+
+    public function testAPostWithoutTokenIsRefusedEvenWithARememberedConsent(): void
+    {
+        $client = $this->harness->publicClient();
+        $this->harness->authorizationCode($client);
+
+        $response = $this->harness->server->authorizeHandler()->handle($this->harness->form(
+            'https://example.com/oauth/authorize',
+            ['decision' => 'approve'] + [
+                'response_type' => 'code',
+                'client_id' => $client->clientId,
+                'redirect_uri' => $client->redirectUris[0],
+                'state' => 'st4te',
+                'code_challenge' => Pkce::challengeFor(ServerHarness::VERIFIER),
+                'code_challenge_method' => 'S256',
+                'scope' => 'content:write',
+                'resource' => Fixtures::MCP,
+            ],
+        ));
+
+        $this->assertSame(400, $response->getStatusCode());
+        $this->assertSame('', $response->getHeaderLine('Location'));
     }
 }
