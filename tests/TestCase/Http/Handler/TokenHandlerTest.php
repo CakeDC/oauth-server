@@ -115,6 +115,19 @@ class TokenHandlerTest extends TestCase
         $this->assertSame('content:read', $body['scope']);
     }
 
+    public function testADemotionBetweenConsentAndExchangeNarrowsTheGrant(): void
+    {
+        $client = $this->harness->publicClient();
+        $code = $this->harness->authorizationCode($client, ['scope' => 'content:write']);
+        $this->harness->users->scopes['42'] = ['content:read'];
+
+        $body = $this->harness->json($this->harness->exchange($client, $code));
+
+        $this->assertSame('content:read', $body['scope']);
+        $validated = $this->harness->server->tokenValidator()->validate($body['access_token'], Fixtures::MCP);
+        $this->assertSame(['content:read'], $validated->scopes);
+    }
+
     public function testACodeWithNoScopeLeftIsRefusedAndNotConsumed(): void
     {
         $client = $this->harness->publicClient();

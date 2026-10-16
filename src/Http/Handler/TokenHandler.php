@@ -178,7 +178,10 @@ final class TokenHandler implements RequestHandlerInterface
         // What the person may hold now, not what they could at /authorize. Nothing left: the code is not consumed.
         $scopes = $this->scopes->withinOwnerAllowance(
             $resource,
-            array_values(array_diff($code->scopes, [Scopes::OFFLINE_ACCESS])),
+            array_values(array_filter(
+                array_diff($code->scopes, [Scopes::OFFLINE_ACCESS]),
+                fn(string $scope): bool => $resource->hasScope($scope),
+            )),
             $this->users->scopesFor($owner, $resource),
         );
         if ($scopes === []) {

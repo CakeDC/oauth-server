@@ -62,11 +62,14 @@ final class ScopeResolver
     }
 
     /**
-     * The $scopes the owner may still hold. The allowance is compared with what it implies, but the
-     * scopes returned are the given ones, never expanded: a token keeps the scopes it was granted.
+     * What remains of $scopes under the owner's current allowance. With no restriction the scopes are
+     * returned as given. Otherwise the scopes are expanded, kept when the expanded allowance contains them,
+     * and reduced to the minimal set (a scope implied by another kept scope is dropped), so a demotion
+     * from `write` to `read` narrows the grant to `read` instead of killing it. Nothing is ever added
+     * beyond what the grant implied.
      *
      * @param \CakeDC\OAuth\Server\Resource\ProtectedResource $resource The resource.
-     * @param list<string> $scopes Candidate scopes.
+     * @param list<string> $scopes Granted scopes.
      * @param list<string>|null $ownerAllowed The owner's scopes; null for any.
      * @return list<string>
      */
@@ -76,8 +79,27 @@ final class ScopeResolver
             return $scopes;
         }
         $allowed = $resource->expand($ownerAllowed);
+        $kept = array_values(array_filter(
+            $resource->expand($scopes),
+            fn(string $scope): bool => in_array($scope, $allowed, true),
+        ));
 
-        return array_values(array_filter($scopes, fn(string $scope): bool => in_array($scope, $allowed, true)));
+        return array_values(array_filter(
+            $kept,
+            function (string $scope) use ($resource, $kept): bool {
+                foreach ($kept as $other) {
+                    if (
+                        $other !== $scope
+                        && in_array($scope, $resource->expand([$other]), true)
+                        && !in_array($other, $resource->expand([$scope]), true)
+                    ) {
+                        return false;
+                    }
+                }
+
+                return true;
+            },
+        ));
     }
 
     /**

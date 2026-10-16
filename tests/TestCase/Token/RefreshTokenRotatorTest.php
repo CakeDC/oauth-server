@@ -545,6 +545,39 @@ class RefreshTokenRotatorTest extends TestCase
         $this->assertSame(['content:read'], $rotated->access->scopes);
     }
 
+    public function testADemotionNarrowsTheGrantInsteadOfKillingIt(): void
+    {
+        $initial = $this->initial(['content:write']);
+        $this->users->scopes['42'] = ['content:read'];
+
+        $rotated = $this->rotator()->rotate($this->client, (string)$initial->refreshToken, null, []);
+
+        $this->assertSame(['content:read'], $rotated->access->scopes);
+        $this->assertSame(['content:read'], $rotated->refresh?->scopes);
+        $this->assertSame('content:read', $rotated->toResponse()['scope']);
+    }
+
+    public function testTheResultIsReducedToItsMinimalSet(): void
+    {
+        $initial = $this->initial(['content:write', 'content:read']);
+        $this->users->scopes['42'] = ['content:read'];
+
+        $this->assertSame(
+            ['content:read'],
+            $this->rotator()->rotate($this->client, (string)$initial->refreshToken, null, [])->access->scopes,
+        );
+    }
+
+    public function testAnUnrestrictedOwnerKeepsTheGrantAsItIs(): void
+    {
+        $initial = $this->initial(['content:publish']);
+
+        $this->assertSame(
+            ['content:publish'],
+            $this->rotator()->rotate($this->client, (string)$initial->refreshToken, null, [])->access->scopes,
+        );
+    }
+
     public function testNarrowingToNothingKeepsInvalidScope(): void
     {
         $initial = $this->initial(['content:read']);
