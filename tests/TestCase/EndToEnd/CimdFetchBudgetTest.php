@@ -9,6 +9,8 @@ use Nyholm\Psr7\ServerRequest;
 use PHPUnit\Framework\TestCase;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
+use ReflectionProperty;
+use RuntimeException;
 
 /**
  * Metadata document fetches are budgeted per IP at every endpoint that resolves a client_id.
@@ -98,6 +100,23 @@ class CimdFetchBudgetTest extends TestCase
         $this->assertSame('', $response->getHeaderLine('Location'));
         $this->assertStringContainsString('text/html', $response->getHeaderLine('Content-Type'));
         $this->assertCount(2, $this->harness->transport->requests);
+    }
+
+    public function testEveryCacheKeyTheLibraryBuildsIsPsr16Safe(): void
+    {
+        $this->token($this->document(1));
+        $this->authorize($this->document(2));
+        $this->harness->transport->responses['https://client.example/c/9'] = new RuntimeException('down');
+        $this->token('https://client.example/c/9');
+
+        $items = (new ReflectionProperty($this->harness->cache, 'items'))->getValue($this->harness->cache);
+        $this->assertIsArray($items);
+        $this->assertNotSame([], $items);
+        foreach (array_keys($items) as $key) {
+            $this->assertLessThanOrEqual(64, strlen((string)$key), (string)$key);
+            $this->assertSame(1, preg_match('/\A[A-Za-z0-9_.]+\z/', (string)$key), (string)$key);
+        }
+        $this->assertGreaterThanOrEqual(2, count($items));
     }
 
     public function testKnownClientsCostNothing(): void

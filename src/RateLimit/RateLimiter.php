@@ -45,7 +45,8 @@ final class RateLimiter
         [$max, $window] = $this->limits[$endpoint];
         $now = $this->clock->now()->getTimestamp();
         $start = intdiv($now, $window) * $window;
-        $cacheKey = 'oauth_rate_' . hash('sha256', $endpoint . "\n" . $key . "\n" . $start);
+        // PSR-16 only guarantees 64 characters: a short prefix and 160 bits of the digest.
+        $cacheKey = 'oauth_rl_' . substr(hash('sha256', $endpoint . "\n" . $key . "\n" . $start), 0, 40);
         $count = (int)$this->cache->get($cacheKey, 0) + 1;
         $this->cache->set($cacheKey, $count, $window);
         if ($count > $max) {

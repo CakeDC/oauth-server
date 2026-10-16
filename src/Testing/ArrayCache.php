@@ -141,7 +141,7 @@ final class ArrayCache implements CacheInterface
      */
     private function checkKey(mixed $key): void
     {
-        if (!is_string($key) || $key === '' || strpbrk($key, '{}()/\\@:') !== false) {
+        if (!is_string($key) || $key === '' || strlen($key) > 64 || strpbrk($key, '{}()/\\@:') !== false) {
             throw new InvalidCacheKey('Invalid cache key.');
         }
     }

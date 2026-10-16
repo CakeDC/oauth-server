@@ -150,7 +150,8 @@ final class ClientResolver
      */
     private static function failureKey(string $clientId): string
     {
-        return 'oauth_cimd_failure_' . hash('sha256', $clientId);
+        // PSR-16 only guarantees 64 characters: a short prefix and 160 bits of the digest.
+        return 'oauth_cf_' . substr(hash('sha256', $clientId), 0, 40);
     }
 
     /**
