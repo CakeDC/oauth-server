@@ -16,6 +16,30 @@ jobs:
           - php-version: '8.2'
             dependencies: 'lowest'
     name: PHP ${{ matrix.php-version }} (${{ matrix.dependencies }})
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: oauth
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="mysqladmin ping -proot" --health-interval=5s --health-timeout=5s --health-retries=20
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: root
+          POSTGRES_DB: oauth
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd="pg_isready" --health-interval=5s --health-timeout=5s --health-retries=20
+    env:
+      OAUTH_TEST_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=oauth
+      OAUTH_TEST_MYSQL_USER: root
+      OAUTH_TEST_MYSQL_PASSWORD: root
+      OAUTH_TEST_PGSQL_DSN: pgsql:host=127.0.0.1;port=5432;dbname=oauth
+      OAUTH_TEST_PGSQL_USER: postgres
+      OAUTH_TEST_PGSQL_PASSWORD: root
     steps:
       - uses: actions/checkout@v4
       - uses: shivammathur/setup-php@v2

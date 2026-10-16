@@ -202,12 +202,12 @@ abstract class StorageContractTestCase extends TestCase
         $storage->saveCode($code);
 
         $this->assertEquals($code, $storage->findCodeByHash($code->codeHash));
-        $this->assertTrue($storage->consumeCode($code->id, $this->at(5), 'family-1'));
-        $this->assertFalse($storage->consumeCode($code->id, $this->at(6), 'family-2'));
+        $this->assertTrue($storage->consumeCode($code->id, $this->at(5), '00000000-0000-4000-8000-0000000000f1'));
+        $this->assertFalse($storage->consumeCode($code->id, $this->at(6), '00000000-0000-4000-8000-0000000000f2'));
 
         $used = $storage->findCodeByHash($code->codeHash);
         $this->assertEquals($this->at(5), $used?->usedAt);
-        $this->assertSame('family-1', $used?->familyId);
+        $this->assertSame('00000000-0000-4000-8000-0000000000f1', $used?->familyId);
         $this->assertNull($storage->findCodeByHash('unknown'));
     }
 
