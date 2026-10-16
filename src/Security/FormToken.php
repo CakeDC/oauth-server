@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace CakeDC\OAuth\Server\Security;
 
+use InvalidArgumentException;
 use Psr\Clock\ClockInterface;
 
 /**
@@ -21,6 +22,9 @@ final class FormToken
         private readonly ClockInterface $clock,
         private readonly int $ttl = 900,
     ) {
+        if (strlen($secret) < 32) {
+            throw new InvalidArgumentException('The form token secret must be at least 32 bytes.');
+        }
     }
 
     /**
@@ -38,7 +42,7 @@ final class FormToken
      */
     public function verify(string $token, string $context, string $subject): bool
     {
-        if (preg_match('/^(\d{1,12})\.([a-f0-9]{64})\z/', $token, $matches) !== 1) {
+        if (preg_match('/^([1-9]\d{0,11})\.([a-f0-9]{64})\z/', $token, $matches) !== 1) {
             return false;
         }
         $expires = (int)$matches[1];
@@ -54,6 +58,11 @@ final class FormToken
      */
     private function mac(string $context, string $subject, int $expires): string
     {
-        return hash_hmac('sha256', $context . "\n" . $subject . "\n" . $expires, $this->secret);
+        return hash_hmac(
+            'sha256',
+            'oauth-form-token-v1|' . strlen($context) . ':' . $context . '|' . strlen($subject) . ':' . $subject
+                . '|' . $expires,
+            $this->secret,
+        );
     }
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace CakeDC\OAuth\Server\RateLimit;
 
 use CakeDC\OAuth\Server\Exception\OAuthException;
+use InvalidArgumentException;
 use Psr\Clock\ClockInterface;
 use Psr\SimpleCache\CacheInterface;
 
@@ -24,6 +25,11 @@ final class RateLimiter
         private readonly ClockInterface $clock,
         private readonly array $limits,
     ) {
+        foreach ($limits as $endpoint => [$max, $window]) {
+            if ($max < 1 || $window < 1) {
+                throw new InvalidArgumentException("Rate limit for `{$endpoint}` must be at least 1 per 1 second.");
+            }
+        }
     }
 
     /**
@@ -39,7 +45,7 @@ final class RateLimiter
         [$max, $window] = $this->limits[$endpoint];
         $now = $this->clock->now()->getTimestamp();
         $start = intdiv($now, $window) * $window;
-        $cacheKey = 'oauth_rate_' . sha1($endpoint . "\n" . $key . "\n" . $start);
+        $cacheKey = 'oauth_rate_' . hash('sha256', $endpoint . "\n" . $key . "\n" . $start);
         $count = (int)$this->cache->get($cacheKey, 0) + 1;
         $this->cache->set($cacheKey, $count, $window);
         if ($count > $max) {

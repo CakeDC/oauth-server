@@ -5,7 +5,6 @@ namespace CakeDC\OAuth\Server\Testing;
 
 use CakeDC\OAuth\Server\Clock\SystemClock;
 use DateInterval;
-use DateTimeImmutable;
 use Psr\Clock\ClockInterface;
 use Psr\SimpleCache\CacheInterface;
 
@@ -34,6 +33,8 @@ final class ArrayCache implements CacheInterface
      */
     public function get(string $key, mixed $default = null): mixed
     {
+        $this->checkKey($key);
+
         return $this->has($key) ? $this->items[$key][0] : $default;
     }
 
@@ -42,8 +43,9 @@ final class ArrayCache implements CacheInterface
      */
     public function set(string $key, mixed $value, null|int|DateInterval $ttl = null): bool
     {
+        $this->checkKey($key);
         if ($ttl instanceof DateInterval) {
-            $ttl = (new DateTimeImmutable('@0'))->add($ttl)->getTimestamp();
+            $ttl = $this->clock->now()->add($ttl)->getTimestamp() - $this->clock->now()->getTimestamp();
         }
         $this->items[$key] = [$value, $ttl === null ? null : $this->clock->now()->getTimestamp() + $ttl];
 
@@ -55,6 +57,7 @@ final class ArrayCache implements CacheInterface
      */
     public function delete(string $key): bool
     {
+        $this->checkKey($key);
         unset($this->items[$key]);
 
         return true;
@@ -77,6 +80,7 @@ final class ArrayCache implements CacheInterface
     {
         $values = [];
         foreach ($keys as $key) {
+            $this->checkKey($key);
             $values[$key] = $this->get($key, $default);
         }
 
@@ -91,7 +95,8 @@ final class ArrayCache implements CacheInterface
     public function setMultiple(iterable $values, null|int|DateInterval $ttl = null): bool
     {
         foreach ($values as $key => $value) {
-            $this->set((string)$key, $value, $ttl);
+            $this->checkKey($key);
+            $this->set($key, $value, $ttl);
         }
 
         return true;
@@ -103,6 +108,7 @@ final class ArrayCache implements CacheInterface
     public function deleteMultiple(iterable $keys): bool
     {
         foreach ($keys as $key) {
+            $this->checkKey($key);
             $this->delete($key);
         }
 
@@ -114,6 +120,7 @@ final class ArrayCache implements CacheInterface
      */
     public function has(string $key): bool
     {
+        $this->checkKey($key);
         if (!isset($this->items[$key])) {
             return false;
         }
@@ -125,5 +132,17 @@ final class ArrayCache implements CacheInterface
         }
 
         return true;
+    }
+
+    /**
+     * Rejects keys PSR-16 forbids.
+     *
+     * @throws \CakeDC\OAuth\Server\Testing\InvalidCacheKey
+     */
+    private function checkKey(mixed $key): void
+    {
+        if (!is_string($key) || $key === '' || strpbrk($key, '{}()/\\@:') !== false) {
+            throw new InvalidCacheKey('Invalid cache key.');
+        }
     }
 }
