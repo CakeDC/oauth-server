@@ -54,6 +54,13 @@ final class ClientResolver
             return null;
         }
         $existing = $this->clients->findClientByClientId($clientId);
+        // The host policy is current policy, not history: a cached or revoked row is held to it too.
+        if ($existing !== null && !$this->fetcher->allowsClientId($clientId)) {
+            throw OAuthException::invalidClient(sprintf(
+                'Clients from %s are not accepted.',
+                strtolower((string)parse_url($clientId, PHP_URL_HOST)),
+            ));
+        }
         $now = $this->clock->now();
         $fresh = $existing !== null && $existing->metadataExpiresAt !== null && $existing->metadataExpiresAt > $now;
         if ($existing !== null && ($existing->isRevoked() || $fresh)) {

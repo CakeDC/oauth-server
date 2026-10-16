@@ -67,7 +67,7 @@ negative.
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
 | `enabled` | bool | `true` | Accept `client_id` values that are https URLs |
-| `allowedHosts` | list of strings | `null` (any host) | Only fetch documents from these hosts, for example `['claude.ai']`. Matching ignores case and is exact (no wildcards) |
+| `allowedHosts` | list of strings | `null` (any host) | Only fetch documents from these hosts, for example `['claude.ai']`. Matching ignores case and is exact (no wildcards). The list also applies to clients already cached: removing a host refuses its clients at the next request, with no fetch |
 | `timeout` | int | `5` | Seconds to wait for the document |
 | `maxBytes` | int | `10240` | Largest document accepted |
 | `cacheMin` | int | `300` | Shortest time a fetched document is kept. Between `0` and `cacheMax` |

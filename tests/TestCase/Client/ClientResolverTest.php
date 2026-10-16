@@ -134,6 +134,35 @@ class ClientResolverTest extends TestCase
         $this->assertCount(1, $this->transport->requests);
     }
 
+    public function testTheHostPolicyAppliesToCachedClients(): void
+    {
+        $allowed = new MetadataDocumentFetcher(new FakeDns(), $this->transport, allowedHosts: ['claude.ai']);
+        $this->assertNotNull((new ClientResolver($this->storage, $this->clock, $allowed))->resolve(self::CLAUDE));
+        $restricted = new MetadataDocumentFetcher(new FakeDns(), $this->transport, allowedHosts: ['other.example']);
+        $resolver = new ClientResolver($this->storage, $this->clock, $restricted);
+
+        try {
+            $resolver->resolve(self::CLAUDE);
+            $this->fail('The cached client of a removed host must be refused.');
+        } catch (OAuthException $e) {
+            $this->assertSame('invalid_client', $e->error);
+        }
+        $this->assertCount(1, $this->transport->requests);
+    }
+
+    public function testTheHostPolicyAppliesToStaleAndRevokedRows(): void
+    {
+        $client = $this->resolver()->resolve(self::CLAUDE);
+        $this->assertNotNull($client);
+        $restricted = new MetadataDocumentFetcher(new FakeDns(), $this->transport, allowedHosts: ['other.example']);
+        $resolver = new ClientResolver($this->storage, $this->clock, $restricted);
+        $this->clock->advance(700);
+        $this->storage->saveClient($client->withRevokedAt($this->clock->now()));
+
+        $this->expectException(OAuthException::class);
+        $resolver->resolve(self::CLAUDE);
+    }
+
     public function testMetadataDocumentsAreIgnoredWhenDisabled(): void
     {
         $this->assertNull($this->resolver(false)->resolve(self::CLAUDE));

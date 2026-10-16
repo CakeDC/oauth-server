@@ -48,6 +48,26 @@ final class MetadataDocumentFetcher
     }
 
     /**
+     * Whether the current host policy accepts $clientId: a clean https URL whose host is allowed (when
+     * `allowedHosts` is set). Cached clients are held to it as well, so a policy change takes effect at once.
+     */
+    public function allowsClientId(string $clientId): bool
+    {
+        $parts = self::parse($clientId);
+
+        return $parts !== null && $this->hostAllowed(strtolower((string)$parts['host']));
+    }
+
+    /**
+     * Whether $host (lower case) passes the allowed hosts.
+     */
+    private function hostAllowed(string $host): bool
+    {
+        return $this->allowedHosts === null
+            || in_array($host, array_map('strtolower', $this->allowedHosts), true);
+    }
+
+    /**
      * Fetches and checks the document of $clientId.
      *
      * @return array{document: array<string, mixed>, maxAge: int|null}
@@ -60,7 +80,7 @@ final class MetadataDocumentFetcher
             throw OAuthException::invalidClient('The client_id is not a valid metadata document URL.');
         }
         $host = strtolower((string)$parts['host']);
-        if ($this->allowedHosts !== null && !in_array($host, array_map('strtolower', $this->allowedHosts), true)) {
+        if (!$this->hostAllowed($host)) {
             throw OAuthException::invalidClient(sprintf('Clients from %s are not accepted.', $host));
         }
         $literal = trim($host, '[]');
