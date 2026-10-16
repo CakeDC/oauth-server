@@ -234,4 +234,24 @@ class ClientRegistrarTest extends TestCase
 
         $this->assertSame(['cursor://anysphere.cursor/oauth'], $result['client']->redirectUris);
     }
+
+    public function testPrivateSchemesCanBeRefusedForNativeRegistrations(): void
+    {
+        $registrar = new ClientRegistrar(
+            $this->storage,
+            new TokenGenerator('test'),
+            new FrozenClock(),
+            Fixtures::resources(),
+            $this->events,
+            false,
+        );
+
+        try {
+            $registrar->register(['application_type' => 'native', 'redirect_uris' => ['cursor://anysphere.cursor/oauth']]);
+            $this->fail('Registered');
+        } catch (OAuthException $e) {
+            $this->assertSame('invalid_redirect_uri', $e->error);
+        }
+        $this->assertSame([], $this->storage->findClients());
+    }
 }

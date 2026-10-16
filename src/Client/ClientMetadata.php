@@ -19,9 +19,11 @@ final class ClientMetadata
     }
 
     /**
-     * Whether $url is a plain https URL: RFC 3986 characters only, no user information, a strict host.
+     * Whether $url is a plain https URL: RFC 3986 characters only, no user information, a strict host name or
+     * IP literal. This is a syntax check for display: the server never fetches these URLs, and renderers
+     * must still escape them.
      */
-    public static function isPublicHttpsUrl(string $url): bool
+    public static function isDisplayableHttpsUrl(string $url): bool
     {
         if (strlen($url) > 2000 || preg_match(RedirectUriMatcher::URI_CHARACTERS, $url) !== 1) {
             return false;

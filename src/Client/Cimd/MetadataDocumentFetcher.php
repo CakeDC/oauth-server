@@ -76,10 +76,11 @@ final class MetadataDocumentFetcher
         try {
             $response = $this->transport->get($clientId, $addresses[0], $this->timeout, $this->maxBytes);
         } catch (RuntimeException $e) {
-            throw OAuthException::invalidClient('The client metadata document could not be fetched.');
+            throw OAuthException::clientUnavailable('The client metadata document could not be fetched.');
         }
         if ($response->status !== 200) {
-            throw OAuthException::invalidClient(
+            $temporary = $response->status >= 500 || $response->status === 429;
+            throw ($temporary ? OAuthException::clientUnavailable(...) : OAuthException::invalidClient(...))(
                 sprintf('The client metadata document answered HTTP %d.', $response->status),
             );
         }

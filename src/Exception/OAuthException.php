@@ -15,12 +15,15 @@ final class OAuthException extends RuntimeException
      * @param string $description For the client developer; sent as `error_description`.
      * @param int $status HTTP status of a JSON error response.
      * @param array<string, string> $headers Extra response headers.
+     * @param bool $temporary Whether the failure is a temporary unavailability of something the server
+     *   depends on (for example a client metadata host), so a cached answer may stand in.
      */
     public function __construct(
         public readonly string $error,
         string $description,
         public readonly int $status = 400,
         public readonly array $headers = [],
+        public readonly bool $temporary = false,
     ) {
         parent::__construct($description);
     }
@@ -51,6 +54,15 @@ final class OAuthException extends RuntimeException
         $headers = $basic ? ['WWW-Authenticate' => 'Basic realm="oauth"'] : [];
 
         return new self('invalid_client', $description, 401, $headers);
+    }
+
+    /**
+     * The client could not be checked right now (network error, timeout, HTTP 5xx or 429). Same answer as
+     * invalidClient() for the client, but flagged so a stored copy of the client may be used instead.
+     */
+    public static function clientUnavailable(string $description): self
+    {
+        return new self('invalid_client', $description, 401, [], true);
     }
 
     /**

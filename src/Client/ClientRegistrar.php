@@ -307,7 +307,7 @@ final class ClientRegistrar
     private static function optionalHttpsUrl(array $metadata, string $key): ?string
     {
         $value = self::optionalString($metadata, $key);
-        if ($value !== null && !ClientMetadata::isPublicHttpsUrl($value)) {
+        if ($value !== null && !ClientMetadata::isDisplayableHttpsUrl($value)) {
             throw OAuthException::invalidClientMetadata(sprintf('%s must be an https URL.', $key));
         }
 

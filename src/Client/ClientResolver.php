@@ -11,7 +11,6 @@ use CakeDC\OAuth\Server\Support\Time;
 use CakeDC\OAuth\Server\Support\Uuid;
 use DateTimeImmutable;
 use Psr\Clock\ClockInterface;
-use RuntimeException;
 use Throwable;
 
 /**
@@ -62,13 +61,14 @@ final class ClientResolver
         }
         try {
             $fetched = $this->fetcher->fetch($clientId);
-        } catch (OAuthException | RuntimeException $e) {
+        } catch (OAuthException $e) {
             if (
-                $existing !== null && $existing->metadataExpiresAt !== null
+                $e->temporary && $existing !== null && $existing->metadataExpiresAt !== null
                 && $now < Time::plus($existing->metadataExpiresAt, $this->cacheMax)
             ) {
-                // Stale-if-error: keep serving the stored client for a bounded time.
-                return $existing;
+                // Stale-if-error, for temporary unavailability only: serve the stored client for a bounded
+                // time. Read it back, a revocation may have been committed during the fetch.
+                return $this->clients->findClientByClientId($clientId) ?? $existing;
             }
 
             throw $e;
@@ -133,8 +133,10 @@ final class ClientResolver
                 throw OAuthException::invalidClient('The metadata document has an invalid scope.');
             }
         }
+        // PCRE rather than mbstring (not a declared dependency); it fails on invalid UTF-8, then the host is used.
         $name = isset($document['client_name']) && is_string($document['client_name'])
-            ? mb_substr(trim($document['client_name']), 0, 255)
+            && preg_match('/\A.{0,255}/su', trim($document['client_name']), $matches) === 1
+            ? $matches[0]
             : '';
         if (!ClientMetadata::isUsableName($name)) {
             $host = parse_url($clientId, PHP_URL_HOST);
@@ -167,6 +169,6 @@ final class ClientResolver
      */
     private static function httpsUrl(mixed $value): ?string
     {
-        return is_string($value) && ClientMetadata::isPublicHttpsUrl($value) ? $value : null;
+        return is_string($value) && ClientMetadata::isDisplayableHttpsUrl($value) ? $value : null;
     }
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace CakeDC\OAuth\Server\Test\TestCase\Client;
 
 use CakeDC\OAuth\Server\Client\ApplicationType;
+use CakeDC\OAuth\Server\Client\Cimd\FetchedResponse;
 use CakeDC\OAuth\Server\Client\Cimd\MetadataDocumentFetcher;
 use CakeDC\OAuth\Server\Client\ClientResolver;
 use CakeDC\OAuth\Server\Client\ClientType;
@@ -14,8 +15,10 @@ use CakeDC\OAuth\Server\Test\Support\FakeTransport;
 use CakeDC\OAuth\Server\Test\Support\Fixtures;
 use CakeDC\OAuth\Server\Test\Support\FlakyClientRepository;
 use CakeDC\OAuth\Server\Testing\FrozenClock;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
+use Throwable;
 
 class ClientResolverTest extends TestCase
 {
@@ -160,13 +163,67 @@ class ClientResolverTest extends TestCase
         $this->assertTrue($this->storage->findClientByClientId(self::CLAUDE)?->isRevoked());
     }
 
-    public function testServesTheStoredClientWhenARefetchFailsInsideTheGraceWindow(): void
+    /**
+     * @return array<string, array{\Throwable|\CakeDC\OAuth\Server\Client\Cimd\FetchedResponse}>
+     */
+    public static function temporaryFailures(): array
+    {
+        return [
+            'network error' => [new RuntimeException('down')],
+            'http 503' => [new FetchedResponse(503, [], '')],
+            'http 429' => [new FetchedResponse(429, [], '')],
+        ];
+    }
+
+    #[DataProvider('temporaryFailures')]
+    public function testServesTheStoredClientWhenARefetchFailsTemporarily(Throwable|FetchedResponse $failure): void
     {
         $first = $this->resolver()->resolve(self::CLAUDE);
         $this->clock->advance(601 + 86400 - 10);
-        $this->transport->responses[self::CLAUDE] = new RuntimeException('down');
+        $this->transport->responses[self::CLAUDE] = $failure;
 
         $this->assertSame($first?->id, $this->resolver()->resolve(self::CLAUDE)?->id);
+    }
+
+    public function testARevocationDuringAFailingFetchIsHonoured(): void
+    {
+        $first = $this->resolver()->resolve(self::CLAUDE);
+        $this->assertNotNull($first);
+        $this->clock->advance(601);
+        $this->transport->responses[self::CLAUDE] = new RuntimeException('down');
+        $this->transport->onGet = fn() => $this->storage->saveClient($first->withRevokedAt($this->clock->now()));
+
+        $this->assertTrue($this->resolver()->resolve(self::CLAUDE)?->isRevoked());
+    }
+
+    public function testDefiniteRejectionsTakeEffectAtOnce(): void
+    {
+        $this->resolver()->resolve(self::CLAUDE);
+        $this->clock->advance(601);
+        $good = (array)json_decode((string)$this->transport->responses[self::CLAUDE]->body, true);
+
+        $rejections = [
+            'http 404' => fn() => $this->transport->responses[self::CLAUDE] = new FetchedResponse(404, [], ''),
+            'http 410' => fn() => $this->transport->responses[self::CLAUDE] = new FetchedResponse(410, [], ''),
+            'client_id mismatch' => fn() => $this->transport->serve(self::CLAUDE, ['client_id' => 'https://x.example/y'] + $good),
+        ];
+        foreach ($rejections as $name => $arrange) {
+            $arrange();
+            try {
+                $this->resolver()->resolve(self::CLAUDE);
+                $this->fail('Served a stale client after: ' . $name);
+            } catch (OAuthException $e) {
+                $this->assertSame('invalid_client', $e->error, $name);
+            }
+        }
+
+        $removed = new ClientResolver(
+            $this->storage,
+            $this->clock,
+            new MetadataDocumentFetcher(new FakeDns(), $this->transport, 5, 10240, ['other.example']),
+        );
+        $this->expectException(OAuthException::class);
+        $removed->resolve(self::CLAUDE);
     }
 
     public function testAFailingRefetchPastTheGraceWindowThrows(): void
