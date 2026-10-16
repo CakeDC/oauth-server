@@ -75,7 +75,9 @@ final class IntrospectHandler implements RequestHandlerInterface
             }
             $this->rateLimiter->hit('token', ($this->clientIp)($request));
             if (!FormBody::isForm($request)) {
-                throw OAuthException::invalidRequest('Send the parameters form-encoded (application/x-www-form-urlencoded).');
+                throw OAuthException::invalidRequest(
+                    'Send the parameters form-encoded (application/x-www-form-urlencoded).',
+                );
             }
             [$body] = FormBody::read($request);
             $client = $this->clientAuthenticator->authenticate($request, $body);
@@ -104,8 +106,11 @@ final class IntrospectHandler implements RequestHandlerInterface
             return $inactive;
         }
         if ($stored->type === TokenType::Refresh) {
-            $client = $stored->clientInternalId === null ? null : $this->clients->findClientById($stored->clientInternalId);
-            if (!$stored->isActive($this->clock->now()) || $stored->usedAt !== null || $client === null || $client->isRevoked()) {
+            $client = $stored->clientInternalId === null
+                ? null
+                : $this->clients->findClientById($stored->clientInternalId);
+            $dead = !$stored->isActive($this->clock->now()) || $stored->usedAt !== null;
+            if ($dead || $client === null || $client->isRevoked()) {
                 return $inactive;
             }
 

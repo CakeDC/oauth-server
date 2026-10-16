@@ -55,7 +55,9 @@ final class RevokeHandler implements RequestHandlerInterface
             }
             $this->rateLimiter->hit('token', ($this->clientIp)($request));
             if (!FormBody::isForm($request)) {
-                throw OAuthException::invalidRequest('Send the parameters form-encoded (application/x-www-form-urlencoded).');
+                throw OAuthException::invalidRequest(
+                    'Send the parameters form-encoded (application/x-www-form-urlencoded).',
+                );
             }
             [$body, $repeated] = FormBody::read($request);
             if ($repeated !== []) {
