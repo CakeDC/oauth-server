@@ -73,6 +73,13 @@ class RedirectUriMatcherTest extends TestCase
                 true,
                 'plain host name',
             ],
+            'https localhost' => ['https://localhost:8443/cb', ApplicationType::Web, false, null],
+            'encoded localhost subdomain' => [
+                'https://x%41.localhost/cb',
+                ApplicationType::Web,
+                true,
+                'plain host name',
+            ],
             'decimal host' => ['https://2130706433/cb', ApplicationType::Web, true, 'plain host name'],
             'relative' => ['/cb', ApplicationType::Web, true, 'absolute URI'],
             'spaces' => ['https://app.example.com/a b', ApplicationType::Web, true, 'spaces'],

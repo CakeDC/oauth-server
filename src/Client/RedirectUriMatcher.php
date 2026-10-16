@@ -50,7 +50,11 @@ final class RedirectUriMatcher
                 return 'must name a host';
             }
 
-            return HostName::isValid($host) ? null : 'must use a plain host name or IP address';
+            if (HostName::isValid($host) || ResourceIdentifier::isLoopbackHost($host)) {
+                return null;
+            }
+
+            return 'must use a plain host name or IP address';
         }
         if ($scheme === 'http') {
             return is_string($host) && ResourceIdentifier::isLoopbackHost($host)

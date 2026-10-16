@@ -31,9 +31,13 @@ class CurlTransportTest extends TestCase
 
     public function testNetworkErrorsBecomeExceptions(): void
     {
-        $this->expectException(RuntimeException::class);
-
-        (new CurlTransport())->get('https://localhost:1/client.json', '127.0.0.1', 1, 100);
+        try {
+            (new CurlTransport())->get('https://pin.localhost:1/client.json', '127.0.0.1', 1, 100);
+            $this->fail('The request succeeded');
+        } catch (RuntimeException $e) {
+            $this->assertStringNotContainsString('Only https URLs', $e->getMessage());
+            $this->assertStringNotContainsString('could not be configured', $e->getMessage());
+        }
     }
 
     public function testOptionsPinTheConnectionAndLockDownCurl(): void

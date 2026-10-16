@@ -72,13 +72,19 @@ class MetadataDocumentFetcherTest extends TestCase
         $this->transport->serve(self::URL, $this->document(), 'no-store');
         $this->assertSame(0, $this->fetcher()->fetch(self::URL)['maxAge']);
 
-        $this->transport->responses[self::URL] = new FetchedResponse(200, ['content-type' => 'application/json'], (string)json_encode($this->document()));
+        $this->transport->responses[self::URL] = new FetchedResponse(
+            200,
+            ['content-type' => 'application/json'],
+            (string)json_encode($this->document()),
+        );
         $this->assertNull($this->fetcher()->fetch(self::URL)['maxAge']);
     }
 
     public function testIdentifiesMetadataDocumentIds(): void
     {
-        $this->assertTrue(MetadataDocumentFetcher::isMetadataDocumentId('https://claude.ai/oauth/mcp-oauth-client-metadata'));
+        $this->assertTrue(
+            MetadataDocumentFetcher::isMetadataDocumentId('https://claude.ai/oauth/mcp-oauth-client-metadata'),
+        );
         $this->assertFalse(MetadataDocumentFetcher::isMetadataDocumentId('3f2a9c'));
         $this->assertFalse(MetadataDocumentFetcher::isMetadataDocumentId('https://client.example\\@evil.example/x'));
     }
@@ -198,7 +204,11 @@ class MetadataDocumentFetcherTest extends TestCase
         $this->assertRejected('HTTP 302');
         $this->transport->responses[self::URL] = new FetchedResponse(200, ['content-type' => 'text/html'], '<html>');
         $this->assertRejected('application/json');
-        $this->transport->responses[self::URL] = new FetchedResponse(200, ['content-type' => 'application/json'], '[1,2]');
+        $this->transport->responses[self::URL] = new FetchedResponse(
+            200,
+            ['content-type' => 'application/json'],
+            '[1,2]',
+        );
         $this->assertRejected('JSON object');
         $this->transport->responses[self::URL] = new RuntimeException('The document is larger than 10240 bytes.');
         $this->assertRejected('could not be fetched');

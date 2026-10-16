@@ -175,7 +175,7 @@ final class MetadataDocumentFetcher
         if (str_contains($cacheControl, 'no-store') || str_contains($cacheControl, 'no-cache')) {
             return 0;
         }
-        if (preg_match('/(?:^|[,\s])max-age=(\d{1,10})(?:$|[,\s;])/', $cacheControl, $matches) === 1) {
+        if (preg_match('/(?:\A|[,\s])max-age=(\d{1,10})(?:\z|[,\s;])/', $cacheControl, $matches) === 1) {
             return (int)$matches[1];
         }
 

@@ -37,7 +37,7 @@ class HostNameTest extends TestCase
             'long label' => [str_repeat('a', 64) . '.example', false],
             'long host' => [str_repeat('a.', 130) . 'example', false],
             'newline' => ["client.example\n", false],
-            'non-ascii' => ['cl\u{00ED}ent.example', false],
+            'non-ascii' => ["cl\u{00ED}ent.example", false],
         ];
     }
 
