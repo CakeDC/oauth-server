@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  testsuite:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        php-version: ['8.2', '8.3', '8.4', '8.5']
+        dependencies: ['highest']
+        include:
+          - php-version: '8.2'
+            dependencies: 'lowest'
+    name: PHP ${{ matrix.php-version }} (${{ matrix.dependencies }})
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php-version }}
+          extensions: curl, pdo_sqlite, pdo_mysql, pdo_pgsql
+          coverage: none
+      - uses: ramsey/composer-install@v3
+        with:
+          dependency-versions: ${{ matrix.dependencies }}
+      - run: vendor/bin/phpunit
+
+  coding-standard:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          coverage: none
+      - uses: ramsey/composer-install@v3
+      - run: vendor/bin/phpcs --colors -p
+
+  static-analysis:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          coverage: none
+      - uses: ramsey/composer-install@v3
+      - run: vendor/bin/phpstan analyse --no-progress

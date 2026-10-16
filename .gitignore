@@ -1,0 +1,6 @@
+/vendor/
+/composer.lock
+/.phpunit.cache/
+/tests/Conformance/results/
+/tests/Conformance/tmp/
+/examples/standalone/*.sqlite
