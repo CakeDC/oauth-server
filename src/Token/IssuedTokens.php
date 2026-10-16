@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace CakeDC\OAuth\Server\Token;
 
 use CakeDC\OAuth\Server\Scope\Scopes;
+use SensitiveParameter;
 
 /**
  * Tokens just issued, with their values (only known at this moment).
@@ -18,8 +19,10 @@ final class IssuedTokens
      */
     public function __construct(
         public readonly Token $access,
+        #[SensitiveParameter]
         public readonly string $accessToken,
         public readonly ?Token $refresh = null,
+        #[SensitiveParameter]
         public readonly ?string $refreshToken = null,
     ) {
     }

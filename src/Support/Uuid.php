@@ -5,6 +5,8 @@ namespace CakeDC\OAuth\Server\Support;
 
 /**
  * Random identifiers for rows and token families.
+ *
+ * @internal Not part of the public API: it may change in any 1.x release.
  */
 final class Uuid
 {

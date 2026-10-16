@@ -5,6 +5,8 @@ namespace CakeDC\OAuth\Server\Support;
 
 /**
  * Base64url without padding (RFC 4648, section 5).
+ *
+ * @internal Not part of the public API: it may change in any 1.x release.
  */
 final class Base64Url
 {

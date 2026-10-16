@@ -6,6 +6,8 @@ namespace CakeDC\OAuth\Server\Support;
 /**
  * The one place that decides what a host or a redirect URI points at, so the matcher, the consent
  * page and the consent memory cannot disagree.
+ *
+ * @internal Not part of the public API: it may change in any 1.x release.
  */
 final class HostClass
 {

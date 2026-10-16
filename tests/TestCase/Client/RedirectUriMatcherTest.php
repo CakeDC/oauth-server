@@ -57,8 +57,8 @@ class RedirectUriMatcherTest extends TestCase
             'loopback http for web' => ['http://localhost:3000/cb', ApplicationType::Web, false, null],
             'remote http' => ['http://app.example.com/cb', ApplicationType::Web, true, 'http is only allowed'],
             'fragment' => ['https://app.example.com/cb#x', ApplicationType::Web, true, 'fragment'],
-            'javascript' => ['javascript:alert(1)', ApplicationType::Native, true, 'must not use the "javascript"'],
-            'data' => ['data:text/html,hi', ApplicationType::Native, true, 'must not use the "data"'],
+            'javascript' => ['javascript:alert(1)', ApplicationType::Native, true, "must not use the 'javascript'"],
+            'data' => ['data:text/html,hi', ApplicationType::Native, true, "must not use the 'data'"],
             'private scheme native' => ['com.example.app:/oauth', ApplicationType::Native, true, null],
             'private scheme with authority' => ['com.example.app://oauth/cb', ApplicationType::Native, true, null],
             'private scheme disabled' => [
@@ -74,7 +74,7 @@ class RedirectUriMatcherTest extends TestCase
                 'blob:https://app.example.com/x',
                 ApplicationType::Native,
                 true,
-                'must not use the "blob"',
+                "must not use the 'blob'",
             ],
             'private scheme web' => ['com.example.app:/oauth', ApplicationType::Web, true, 'web clients'],
             'percent-encoded host' => [

@@ -26,7 +26,9 @@ final class Scopes
         $tokens = preg_split('/ +/', trim($scope)) ?: [];
         foreach ($tokens as $token) {
             if (!self::isValid($token)) {
-                throw OAuthException::invalidScope(sprintf('"%s" is not a valid scope.', $token));
+                throw OAuthException::invalidScope(
+                    sprintf("'%s' is not a valid scope.", OAuthException::printable($token)),
+                );
             }
         }
 

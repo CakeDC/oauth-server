@@ -5,6 +5,7 @@ namespace CakeDC\OAuth\Server\Security;
 
 use InvalidArgumentException;
 use Psr\Clock\ClockInterface;
+use SensitiveParameter;
 
 /**
  * Signed, expiring tokens that bind a form to what was shown and to whom. They protect the consent
@@ -18,6 +19,7 @@ final class FormToken
      * @param int $ttl Seconds a token stays valid.
      */
     public function __construct(
+        #[SensitiveParameter]
         private readonly string $secret,
         private readonly ClockInterface $clock,
         private readonly int $ttl = 900,
@@ -40,7 +42,7 @@ final class FormToken
     /**
      * Whether $token was issued for $context and $subject and has not expired.
      */
-    public function verify(string $token, string $context, string $subject): bool
+    public function verify(#[SensitiveParameter] string $token, string $context, string $subject): bool
     {
         if (preg_match('/^([1-9]\d{0,11})\.([a-f0-9]{64})\z/', $token, $matches) !== 1) {
             return false;

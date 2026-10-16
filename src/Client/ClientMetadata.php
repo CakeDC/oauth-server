@@ -7,6 +7,8 @@ use CakeDC\OAuth\Server\Support\HostName;
 
 /**
  * Checks of the display fields of client metadata (names and URLs), shared by every way a client is created.
+ *
+ * @internal Not part of the public API: it may change in any 1.x release.
  */
 final class ClientMetadata
 {

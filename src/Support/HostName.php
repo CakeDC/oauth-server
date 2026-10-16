@@ -6,6 +6,8 @@ namespace CakeDC\OAuth\Server\Support;
 /**
  * Strict host validation: an IP literal or a plain DNS host name, nothing a URL parser or HTTP client could
  * normalize into a different host (percent-encoding, decimal or hex IPv4 forms, trailing dots).
+ *
+ * @internal Not part of the public API: it may change in any 1.x release.
  */
 final class HostName
 {

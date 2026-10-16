@@ -28,7 +28,7 @@
     "suggest": {
         "ext-curl": "Fetches Client ID Metadata Documents",
         "ext-pdo": "Stores clients, codes, tokens and consents with PdoStorage",
-        "mcp/sdk": "Bridge\\McpSdk\\TokenValidator plugs the server into the official MCP PHP SDK"
+        "mcp/sdk": "Version 0.9 or newer: Bridge\\McpSdk\\TokenValidator plugs the server into the official MCP PHP SDK"
     },
     "autoload": {
         "psr-4": {"CakeDC\\OAuth\\Server\\": "src/"}

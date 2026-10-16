@@ -59,7 +59,7 @@ final class Lifetimes
         }
         foreach ($values as $name => $value) {
             if (!is_int($value)) {
-                throw new InvalidArgumentException(sprintf('The "%s" lifetime must be an integer.', $name));
+                throw new InvalidArgumentException(sprintf('"lifetimes.%s" must be an integer (seconds).', $name));
             }
         }
 

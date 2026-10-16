@@ -3,8 +3,12 @@ declare(strict_types=1);
 
 namespace CakeDC\OAuth\Server\View\Html;
 
+use SensitiveParameter;
+
 /**
  * Helpers of the built-in HTML pages.
+ *
+ * @internal Not part of the public API: it may change in any 1.x release.
  */
 final class Html
 {
@@ -21,7 +25,7 @@ final class Html
     /**
      * Escapes text for HTML content and attributes.
      */
-    public static function e(string $text): string
+    public static function e(#[SensitiveParameter] string $text): string
     {
         return htmlspecialchars($text, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
     }
@@ -45,7 +49,7 @@ final class Html
     /**
      * A whole page; $body must already be escaped.
      */
-    public static function page(string $title, string $body): string
+    public static function page(string $title, #[SensitiveParameter] string $body): string
     {
         return '<!doctype html><html lang="en"><head><meta charset="utf-8">'
             . '<meta name="viewport" content="width=device-width, initial-scale=1">'

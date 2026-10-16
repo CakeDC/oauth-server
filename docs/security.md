@@ -24,7 +24,7 @@ item are in `tests/Security/`.
 | Item | How the library handles it | Test class |
 | --- | --- | --- |
 | Insufficient redirect URI validation | Exact matching, no normalisation. For loopback `http` redirects only the port may differ. Dangerous schemes and odd characters are refused at registration. A dynamic registration that says it is a `web` client may not register loopback `http`; private-use schemes are off by default. Nothing is ever sent to an unregistered URI | `RedirectUriValidationTest` |
-| Credential leakage through Referer, browser history, and access token leakage | Pages are `no-store` with `Referrer-Policy: no-referrer`. Only the authorization code travels in a redirect. A token in a query string is ignored. Logs never contain secrets | `CredentialLeakageTest` |
+| Credential leakage through Referer, browser history, and access token leakage | Pages are `no-store` with `Referrer-Policy: no-referrer`. Only the authorization code travels in a redirect. A token in a query string is ignored. Log messages never contain secrets, and every parameter that carries a token, code, verifier, secret or form body is a `#[\SensitiveParameter]`, so a logged exception's stack trace shows `Object(SensitiveParameterValue)` there even with `zend.exception_ignore_args` off (see [secrets in logs and traces](#secrets-in-logs-and-traces)) | `CredentialLeakageTest`, `SecretsInTracesTest` |
 | Mix-up attacks | Every authorization answer, errors included, carries `iss` (RFC 9207). The issuer always comes from your configuration, never from the request's `Host` | `MixUpTest` |
 | Authorization code injection, PKCE downgrade | PKCE with S256 is mandatory for all clients, confidential ones too. A code is bound to its client, its redirect URI and its challenge. Codes live 60 seconds and work once. The verifier is checked before the server reacts to a used code | `AuthorizationCodeInjectionTest` |
 | Access token privilege restriction | A token is bound to one resource (RFC 8707) and works nowhere else. Scopes are recomputed on every request. Access tokens live one hour by default | `AccessTokenPrivilegeTest` |
@@ -55,6 +55,7 @@ person), all in `tests/Security/`.
 | `registration.allowPrivateSchemes` | `false` | `true`: custom schemes can be claimed by any app on a device, and MCP requires localhost or https redirect URIs. Dangerous schemes stay refused | Kept `false` |
 | `cimd.allowedHosts` | any host | | A list of hosts you expect |
 | `rateLimit.cimd` | `[10, 60]` | | Lower it if you only expect a few clients |
+| `rateLimit.introspect` | `[600, 60]` | Raised | Lowered, if your resource servers introspect rarely |
 | `rateLimit.*` | 30, 60 and 10 per window | Raised or no cache: no limiting at all | Lowered |
 | `introspection` | `true` | | `false` if you do not need it |
 | `clientCredentials` | `true` | | `false` if you do not need it |
@@ -162,8 +163,9 @@ that, set it to `0`. Then a lost response costs one re-authorization.
 - Nothing checks `canAuthorize()` after `/authorize`. When your policy changes, revoke the person's
   tokens with `TokenRevoker::revokeAllForSubject()`.
 - Revoking a person (`revokeAllForSubject()`), a connection (the connections page) or a client
-  (`revokeAllForClient()`) also deletes the codes issued to them that were not exchanged yet, so a code
-  issued a moment before the revocation cannot open a new connection afterwards. The codes are deleted
+  (`revokeAllForClient()`) also deletes the codes issued to them that were not exchanged yet (for a
+  connection: the person's codes for that client, on every resource), so a code issued a moment before
+  the revocation cannot open a new connection afterwards. The codes are deleted
   before the tokens are revoked: a code being exchanged at that moment is either deleted before it is
   consumed (the exchange fails and revokes what it issued) or consumed with its tokens already stored,
   which the revocation then reaches. Exchanged codes are kept, so a replayed code still revokes what it
@@ -174,11 +176,44 @@ that, set it to `0`. Then a lost response costs one re-authorization.
 - Tokens, codes and client secrets are random (256 bits), prefixed, and stored as SHA-256 only. A
   database leak does not give working credentials.
 - Client secrets are compared with `hash_equals`.
-- Client authentication failures all say `Client authentication failed.`
+- Client authentication failures say `Client authentication failed.` whatever the cause (unknown client,
+  wrong secret, wrong method, revoked). The one other text is `Client authentication is required.`,
+  when the request names no client at all (no `client_id`, no Basic header): it reveals nothing about
+  any client.
 - The `secret` setting signs forms only. It is not used for tokens. If it leaks, an attacker could
-  forge consent forms for signed-in people, so keep it private and long (at least 32 characters, for example 32 random bytes, hex or base64
-  encoded).
+  forge consent forms for signed-in people, so keep it private and long (at least 32 characters, for
+  example 32 random bytes, hex or base64 encoded).
 - `FormToken` expires after 15 minutes.
+
+## Secrets in logs and traces
+
+The library logs messages without secrets, and passes the exception of an unexpected failure (the
+database went away during a refresh) to your logger as `exception`. Most loggers print its stack trace.
+With `zend.exception_ignore_args` off (the engine default when there is no php.ini, as in the official
+Docker images) a trace shows the arguments of every frame, and with a large
+`zend.exception_string_param_max_len` whole strings. So every parameter of the library that carries a
+token, an authorization code, a PKCE verifier, a client secret, the `secret` or `initialAccessToken`
+setting, a form body, a token response or the page that shows a new personal token is marked
+`#[\SensitiveParameter]` (PHP 8.2): the trace shows `Object(SensitiveParameterValue)` instead, and so
+do the raw arguments that error trackers read from `getTrace()`. A frame of third-party code (your
+PSR-17 stream factory failing on a page, for example) is outside the library's reach. `SecretsInTracesTest` fails a refresh, a code exchange, a
+client lookup, an introspection, a revocation, a bearer check and a configuration error and checks that
+the rendered trace holds none of the secrets involved.
+
+Your own code is not covered: mark the parameters of your `UserContextInterface`, storage or renderer
+that receive secrets, and keep `zend.exception_ignore_args = On` in production (the php.ini-production
+value) as a second line.
+
+## Error descriptions
+
+`error_description` is limited by RFC 6749 (sections 4.1.2.1 and 5.2) and RFC 6750 (section 3) to
+printable ASCII without `"` and `\` (%x20-21 / %x23-5B / %x5D-7E). Every description the library
+sends follows it, in JSON bodies, in the redirect to the client and in `WWW-Authenticate` challenges:
+parameter names are quoted with `'`, and a value taken from the request (a grant type, a scope, a
+repeated parameter's name) has every other character replaced by `?` and is cut to 64 characters.
+`OAuthException` and `ValidationFailure` refuse any other description with an
+`InvalidArgumentException`, so a custom message cannot break the rule either
+(`OAuthException::isValidDescription()` tells whether a text fits).
 
 ## SSRF protections for metadata documents
 
@@ -198,8 +233,10 @@ point it at your internal network. The fetcher defends in layers:
 4. The connection goes to the address that was checked (`CURLOPT_CONNECT_TO`) and the address curl
    really used is verified afterwards (`CURLINFO_PRIMARY_IP`). A DNS answer that changes between the
    check and the connection does not help an attacker.
-5. No proxy, no redirects, https only, the response media type must be `application/json` (parameters such as a charset are ignored), and there is a
-   size limit (`cimd.maxBytes`) and a time limit (`cimd.timeout`).
+5. No proxy, no redirects, https only, the response media type must be `application/json` (parameters
+   such as a charset are ignored), and there is a size limit (`cimd.maxBytes`) and a time limit
+   (`cimd.timeout`) on the download. The DNS lookup before it is not covered by `cimd.timeout`; see
+   [the DNS limitation](#known-limitation-dns-lookups).
 6. A failed download gives clients only a generic message, so the error cannot be used to probe your
    network. Other problems name the rule that was broken.
 
@@ -208,7 +245,8 @@ point it at your internal network. The fetcher defends in layers:
    happens just before a download, never for a cached client. A definite rejection (a host or address
    that is not allowed, HTTP 4xx other than 429, an invalid document) is remembered per `client_id` for
    60 seconds in the PSR-16 cache, so repeating the same bad URL fails at once without a new download.
-   A temporary failure (network error, timeout, HTTP 5xx or 429) is never remembered as a rejection,
+   A temporary failure (network error, timeout, a DNS lookup that got no answer, HTTP 5xx or 429) is
+   never remembered as a rejection,
    because the CIMD draft forbids caching error responses: the next request tries again, so a new
    client works as soon as its host is back. It is remembered only while a stored copy of the client
    stands in for it (below), so that the copy keeps serving for that minute instead of every request
@@ -218,15 +256,31 @@ point it at your internal network. The fetcher defends in layers:
    `/introspect` answer 429 with `Retry-After`.
 
 Fetched documents are cached as rows. Stored clients keep working for a limited time when their host
-is temporarily unreachable (network error, timeout, 5xx or 429): until `expiry + cacheMax`. Definite
-rejections (404, 410, a changed `client_id`, a host no longer allowed) apply at once. A revoked client
-stays revoked: `saveClient()` never clears `revokedAt`.
+is temporarily unreachable (network error, timeout, a failed DNS lookup, 5xx or 429): until
+`expiry + cacheMax`. Definite rejections (404, 410, a changed `client_id`, a host no longer allowed, a
+name without addresses) apply at once. A revoked client stays revoked: `saveClient()` never clears
+`revokedAt`.
+
+### Known limitation: DNS lookups
+
+`SystemDnsResolver` resolves the `client_id` host with `dns_get_record()`, which uses the system
+resolver's own timeouts and retries (`resolv.conf`), not `cimd.timeout`. A slow authoritative DNS server
+can therefore hold a worker for longer than `cimd.timeout` on each `/authorize` or `/token` that needs a
+download. Random subdomains of a hostile domain are separate `client_id` values, so the failure memory
+does not help; only the `rateLimit.cimd` budget per client address slows such a caller. Mitigations
+until a fix: set `cimd.allowedHosts` if you know your clients, keep the resolver's timeout short
+(`options timeout:1 attempts:2` in `resolv.conf`), or pass a `DnsResolverInterface` of your own with a
+bounded timeout. A lookup that gets no answer (timeout, SERVFAIL) is a temporary failure, as above; a
+name without A or AAAA records is a definite rejection (`The client_id host does not resolve.`).
 
 ## Abuse controls
 
-- Rate limits per client address on `/authorize`, `/token` (shared with `/revoke` and `/introspect`) and
-  `/register`. They need a PSR-16 cache. Counting is not atomic across processes, so a few extra requests
-  can pass under load. That is fine for abuse control, not for exact quotas.
+- Rate limits per client address on `/authorize`, `/token` (shared with `/revoke`), `/introspect` (its own
+  counter, 600 a minute by default) and `/register`. IPv6 addresses count per /64, so rotating through
+  the addresses of one subscriber's block does not reset the count. They need a PSR-16 cache. Counting
+  is not atomic across processes, so a few extra requests can pass under load. That is fine for abuse
+  control, not for exact quotas, and for the same reason a failing cache does not fail the request: it
+  goes through unlimited and a warning is logged.
 - Registration can be `closed` or protected by an initial access token (`token` mode). The token is
   compared in constant time, and failed guesses are counted by the rate limit.
 - Request bodies are bounded: registration at 16 KB, metadata documents at `cimd.maxBytes`.

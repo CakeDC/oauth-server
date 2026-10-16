@@ -15,6 +15,7 @@ use CakeDC\OAuth\Server\Storage\TokenRepositoryInterface;
 use DateTimeImmutable;
 use Psr\Clock\ClockInterface;
 use Psr\EventDispatcher\EventDispatcherInterface;
+use SensitiveParameter;
 
 /**
  * Exchanges refresh tokens for new pairs, detecting reuse.
@@ -25,8 +26,8 @@ use Psr\EventDispatcher\EventDispatcherInterface;
  * before it is marked used, and nothing is revoked, so a reactivated person's connection works again
  * without a new consent.
  *
- * @internal Built through the AuthorizationServer factories, not by you: get it from the server.
- * Its constructor may change in any 1.x release.
+ * @internal Used by the AuthorizationServer's endpoints; not part of the public API, it may change in any
+ * 1.x release.
  */
 final class RefreshTokenRotator
 {
@@ -65,6 +66,7 @@ final class RefreshTokenRotator
      */
     public function rotate(
         Client $client,
+        #[SensitiveParameter]
         string $refreshToken,
         ?string $resource,
         array $requestedScopes,

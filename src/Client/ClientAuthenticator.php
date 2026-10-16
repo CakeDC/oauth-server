@@ -7,13 +7,14 @@ use CakeDC\OAuth\Server\Exception\OAuthException;
 use CakeDC\OAuth\Server\Http\BasicCredentials;
 use CakeDC\OAuth\Server\Token\TokenGenerator;
 use Psr\Http\Message\ServerRequestInterface;
+use SensitiveParameter;
 
 /**
  * Authenticates the client of a token, revocation or introspection request with the method it
  * registered.
  *
- * @internal Built through the AuthorizationServer factories, not by you: get it from the server.
- * Its constructor may change in any 1.x release.
+ * @internal Used by the AuthorizationServer's endpoints; not part of the public API, it may change in any
+ * 1.x release.
  */
 final class ClientAuthenticator
 {
@@ -34,8 +35,12 @@ final class ClientAuthenticator
      * @param string|null $requester The client IP, for the metadata document fetch budget.
      * @throws \CakeDC\OAuth\Server\Exception\OAuthException invalid_client or invalid_request.
      */
-    public function authenticate(ServerRequestInterface $request, array $body, ?string $requester = null): Client
-    {
+    public function authenticate(
+        ServerRequestInterface $request,
+        #[SensitiveParameter]
+        array $body,
+        ?string $requester = null,
+    ): Client {
         $basic = BasicCredentials::fromRequest($request);
         $bodySecret = $body['client_secret'] ?? null;
         if (!is_string($bodySecret) && $bodySecret !== null) {

@@ -98,8 +98,9 @@ $count = $server->tokenRevoker()->revokeAllForSubject('42'); // access, refresh 
 
 Their connections stop working at once. The person's authorization codes that were not exchanged yet
 are deleted too, so a code issued a moment before cannot open a new connection afterwards. End the
-person's sessions in your application first, so that no new code is issued while you revoke. If the person should be asked again, also forget their
-consents. Consents are per client and resource:
+person's sessions in your application first, so that no new code is issued while you revoke.
+
+If the person should be asked again, also forget their consents. Consents are per client and resource:
 
 ```php
 $server->consentService()->forget('42', $client->id, 'https://example.com/mcp');
@@ -199,6 +200,7 @@ Wire a PSR-14 dispatcher ([events](events.md)) and watch these:
 | `ClientRegistered` bursts | Someone is filling registration. Consider `token` mode |
 | HTTP `429` from the endpoints | Rate limits hit. Either an abuser or limits that are too low for a shared address range |
 | `server_error` in your log | A bug or a database problem. The responses never show details, the log does |
+| Warning `Rate limiting is off for this request: the cache failed` | Your PSR-16 cache is down. The endpoints keep working, but nothing is rate limited until it is back |
 
 The built-in logger calls use a PSR-3 `LoggerInterface`. Pass yours as `logger` to see them.
 

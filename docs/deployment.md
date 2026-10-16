@@ -61,6 +61,8 @@ $server = new AuthorizationServer(
 
 The closure must return a string. `ClientIp::fromServerParams()` is the default
 (`REMOTE_ADDR`, or `unknown` when it is missing; requests without an address then share one counter).
+Return the address as it is: the rate limiter groups IPv6 addresses by /64 itself (and reads an
+IPv4-mapped address such as `::ffff:203.0.113.7` as the IPv4 address), whatever the closure returns.
 
 A platform such as claude.ai calls from a shared range of addresses (`160.79.104.0/21`) that may serve
 many people. Give the `token` limit enough room for that.
@@ -81,6 +83,11 @@ Rate limiting works only when you pass a PSR-16 cache to `AuthorizationServer` a
 all your PHP processes share: Redis, Memcached or APCu (APCu is shared by the workers of one machine
 only). `CakeDC\OAuth\Server\Testing\ArrayCache` lives in one process and is for tests. Without a cache
 nothing is limited. See [configuration](configuration.md#ratelimit).
+
+If the cache fails (the Redis server is down, a timeout), the endpoints keep working without limits and
+each request logs a warning, `Rate limiting is off for this request: the cache failed (...)`, with the
+exception. Watch for it: while it lasts, nothing slows down an abuser. The memory of rejected metadata
+documents uses the same cache and is skipped the same way.
 
 ## nginx
 

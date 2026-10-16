@@ -8,6 +8,8 @@ use CakeDC\OAuth\Server\Resource\ProtectedResource;
 
 /**
  * Decides which scopes are granted and which are held.
+ *
+ * @internal Not part of the public API: it may change in any 1.x release.
  */
 final class ScopeResolver
 {
@@ -31,9 +33,9 @@ final class ScopeResolver
         foreach ($requested as $scope) {
             if (!$resource->hasScope($scope)) {
                 throw OAuthException::invalidScope(sprintf(
-                    'The scope "%s" does not exist on %s.',
-                    $scope,
-                    $resource->identifier,
+                    "The scope '%s' does not exist on %s.",
+                    OAuthException::printable($scope),
+                    OAuthException::printable($resource->identifier, 2048),
                 ));
             }
         }
@@ -121,7 +123,9 @@ final class ScopeResolver
         $held = $resource->expand($current);
         foreach ($requested as $scope) {
             if (!in_array($scope, $held, true)) {
-                throw OAuthException::invalidScope(sprintf('The scope "%s" was not granted.', $scope));
+                throw OAuthException::invalidScope(
+                    sprintf("The scope '%s' was not granted.", OAuthException::printable($scope)),
+                );
             }
         }
 

@@ -141,6 +141,34 @@ class MetadataDocumentFetcherTest extends TestCase
         $this->assertSame([], $this->transport->requests);
     }
 
+    /**
+     * A resolver that fails (a timeout, SERVFAIL) gave no answer: the failure is temporary, like a network
+     * error, and says nothing about the client. Only an answer without addresses means "does not resolve".
+     */
+    public function testAFailedLookupIsATemporaryFailure(): void
+    {
+        $this->dns->failing = ['client.example'];
+
+        try {
+            $this->fetcher()->fetch(self::URL);
+            $this->fail('A client was accepted without a lookup.');
+        } catch (OAuthException $e) {
+            $this->assertSame('invalid_client', $e->error);
+            $this->assertTrue($e->temporary);
+            $this->assertStringNotContainsString('temporary server error', $e->getMessage());
+        }
+        $this->assertSame([], $this->transport->requests);
+
+        $this->dns->failing = [];
+        $this->dns->answers['client.example'] = [];
+        try {
+            $this->fetcher()->fetch(self::URL);
+            $this->fail('A client that does not resolve was accepted.');
+        } catch (OAuthException $e) {
+            $this->assertFalse($e->temporary);
+        }
+    }
+
     public function testRejectsPrivateAddressLiterals(): void
     {
         $this->assertRejected('non-public address', 'https://[::1]/x');

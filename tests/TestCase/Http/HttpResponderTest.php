@@ -81,11 +81,20 @@ class HttpResponderTest extends TestCase
         );
     }
 
-    public function testInvalidUtf8InAnErrorStillRendersValidJson(): void
+    public function testInvalidUtf8StillRendersValidJson(): void
     {
-        $response = $this->responder->error(OAuthException::invalidScope("Unknown scope \xFF."));
+        $response = $this->responder->json(['error' => 'invalid_scope', 'name' => "Unknown \xFF."]);
 
         $body = json_decode((string)$response->getBody(), true, 512, JSON_THROW_ON_ERROR);
         $this->assertSame('invalid_scope', $body['error']);
+    }
+
+    public function testAnErrorDescriptionIsAlwaysPrintableAscii(): void
+    {
+        $response = $this->responder->error(
+            OAuthException::invalidScope(OAuthException::printable("Unknown scope \xFF\".")),
+        );
+
+        $this->assertSame('Unknown scope ??.', json_decode((string)$response->getBody(), true)['error_description']);
     }
 }

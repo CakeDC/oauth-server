@@ -29,7 +29,8 @@ class DocsTest extends TestCase
             // Configuration keys (ServerConfig::fromArray).
             'issuer', 'secret', 'resources', 'defaultResource', 'routePrefix', 'tokenPrefix', 'lifetimes',
             'refreshTokens', 'registration', 'cimd', 'clientCredentials', 'introspection', 'personalTokens',
-            'connections', 'rateLimit', 'rateLimit.cimd', 'retentionDays', 'refreshReuseGrace', 'personalMax', 'initialAccessToken',
+            'connections', 'rateLimit', 'rateLimit.cimd', 'rateLimit.introspect', 'retentionDays',
+            'refreshReuseGrace', 'personalMax', 'initialAccessToken',
             'allowPrivateSchemes', 'allowedHosts', 'maxBytes', 'cacheMin', 'cacheMax', 'defaultScopes', 'implies',
             // Error codes.
             'invalid_request', 'invalid_client', 'invalid_grant', 'unauthorized_client', 'unsupported_grant_type',
@@ -52,7 +53,8 @@ class DocsTest extends TestCase
             'form_token', 'decision', 'family_id', 'token_id', 'create_token', 'revoke_connection',
             'revoke_token', 'bearerMiddleware', 'forClient', 'scopesFor', 'findBySubject', 'canAuthorize',
             'currentOwner', 'loginResponse', 'family_started_at', 'revokeAllForSubject', 'revokeAllForClient',
-            'deleteCodesBySubject', 'deleteCodesByClient',
+            'deleteCodesBySubject', 'deleteCodesByClient', 'SensitiveParameter', 'isValidDescription',
+            'SecretsInTracesTest', 'PruneLockTest', 'mcp/sdk 0.9',
             'tests/Conformance/run.sh', 'conformance.md',
         ];
         $items = array_merge($items, array_keys(Messages::DEFAULTS));

@@ -11,6 +11,8 @@ use RuntimeException;
  * A failed authorization request: shown to the person when there is no validated redirect URI,
  * otherwise sent back to the client once the person is signed in (directly when the redirect URI is
  * trusted, through a link on the error page when it is not).
+ *
+ * @internal Not part of the public API: it may change in any 1.x release.
  */
 final class AuthorizationError extends RuntimeException
 {

@@ -14,8 +14,8 @@ use Psr\Clock\ClockInterface;
 /**
  * Issues authorization codes.
  *
- * @internal Built through the AuthorizationServer factories, not by you: get it from the server.
- * Its constructor may change in any 1.x release.
+ * @internal Used by the AuthorizationServer's endpoints; not part of the public API, it may change in any
+ * 1.x release.
  */
 final class CodeIssuer
 {

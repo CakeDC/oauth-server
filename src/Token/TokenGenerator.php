@@ -5,6 +5,7 @@ namespace CakeDC\OAuth\Server\Token;
 
 use CakeDC\OAuth\Server\Support\Base64Url;
 use InvalidArgumentException;
+use SensitiveParameter;
 
 /**
  * Random secrets: 256 bits, base64url, with a prefix that names the application and the kind.
@@ -17,9 +18,17 @@ final class TokenGenerator
      */
     public function __construct(private readonly string $prefix = 'oauth')
     {
-        if (preg_match('/^[a-z0-9]{1,16}\z/', $prefix) !== 1) {
+        if (!self::isValidPrefix($prefix)) {
             throw new InvalidArgumentException('The token prefix must be 1 to 16 lowercase letters or digits.');
         }
+    }
+
+    /**
+     * Whether $prefix is 1 to 16 lowercase letters or digits.
+     */
+    public static function isValidPrefix(string $prefix): bool
+    {
+        return preg_match('/^[a-z0-9]{1,16}\z/', $prefix) === 1;
     }
 
     /**
@@ -73,7 +82,7 @@ final class TokenGenerator
     /**
      * The stored form of a secret.
      */
-    public static function hash(string $secret): string
+    public static function hash(#[SensitiveParameter] string $secret): string
     {
         return hash('sha256', $secret);
     }

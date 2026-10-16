@@ -3,8 +3,11 @@ declare(strict_types=1);
 
 namespace CakeDC\OAuth\Server\Client\Cimd;
 
+use RuntimeException;
+
 /**
- * Resolves with the system resolver (A and AAAA records).
+ * Resolves with the system resolver (A and AAAA records). The lookup uses the resolver's own timeouts and
+ * retries (resolv.conf), not `cimd.timeout`.
  */
 final class SystemDnsResolver implements DnsResolverInterface
 {
@@ -19,8 +22,10 @@ final class SystemDnsResolver implements DnsResolverInterface
         } finally {
             restore_error_handler();
         }
-        if (!is_array($records)) {
-            return [];
+        if ($records === false) {
+            // dns_get_record() answers [] for a name without records and false when the query failed
+            // (a timeout, SERVFAIL): no answer is not a "does not exist".
+            throw new RuntimeException('The DNS lookup failed.');
         }
         $addresses = [];
         foreach ($records as $record) {

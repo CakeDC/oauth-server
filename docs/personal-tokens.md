@@ -72,7 +72,7 @@ It throws `OAuthException` with:
 | --- | --- |
 | `invalid_request` | The owner is not a person (`SubjectType::Client`), the name is empty, too long or has control characters, or `days` is outside 1 to the maximum |
 | `invalid_target` | The resource is not declared |
-| `invalid_scope` | No scope given, or a scope the person may not give (`You cannot grant "..."`) |
+| `invalid_scope` | No scope given, or a scope the person may not give (`You cannot grant '...'.`) |
 
 To show a form you can ask what a person may create:
 

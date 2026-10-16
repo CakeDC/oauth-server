@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace CakeDC\OAuth\Server;
 
+use CakeDC\OAuth\Server\Bridge\McpSdk\SdkRequirement;
 use CakeDC\OAuth\Server\Bridge\McpSdk\TokenValidator as McpTokenValidator;
 use CakeDC\OAuth\Server\Client\Cimd\CurlTransport;
 use CakeDC\OAuth\Server\Client\Cimd\DnsResolverInterface;
@@ -195,6 +196,8 @@ final class AuthorizationServer
 
     /**
      * The response builder.
+     *
+     * @internal Returns an internal class; may change in any 1.x release.
      */
     public function responder(): HttpResponder
     {
@@ -211,6 +214,8 @@ final class AuthorizationServer
 
     /**
      * Scope decisions.
+     *
+     * @internal Returns an internal class; may change in any 1.x release.
      */
     public function scopeResolver(): ScopeResolver
     {
@@ -219,6 +224,8 @@ final class AuthorizationServer
 
     /**
      * Client lookup, metadata documents included.
+     *
+     * @internal Returns an internal class; may change in any 1.x release.
      */
     public function clientResolver(): ClientResolver
     {
@@ -236,6 +243,8 @@ final class AuthorizationServer
 
     /**
      * Client authentication at the token, revocation and introspection endpoints.
+     *
+     * @internal Returns an internal class; may change in any 1.x release.
      */
     public function clientAuthenticator(): ClientAuthenticator
     {
@@ -259,6 +268,8 @@ final class AuthorizationServer
 
     /**
      * Authorization request validation.
+     *
+     * @internal Returns an internal class; may change in any 1.x release.
      */
     public function authorizationRequestValidator(): AuthorizationRequestValidator
     {
@@ -278,6 +289,8 @@ final class AuthorizationServer
 
     /**
      * Authorization codes.
+     *
+     * @internal Returns an internal class; may change in any 1.x release.
      */
     public function codeIssuer(): CodeIssuer
     {
@@ -291,6 +304,8 @@ final class AuthorizationServer
 
     /**
      * Token issuing.
+     *
+     * @internal Returns an internal class; may change in any 1.x release.
      */
     public function tokenIssuer(): TokenIssuer
     {
@@ -313,6 +328,8 @@ final class AuthorizationServer
 
     /**
      * Refresh token rotation.
+     *
+     * @internal Returns an internal class; may change in any 1.x release.
      */
     public function refreshTokenRotator(): RefreshTokenRotator
     {
@@ -382,10 +399,17 @@ final class AuthorizationServer
 
     /**
      * Rate limiting.
+     *
+     * @internal Returns an internal class; configure the limits with the `rateLimit` settings.
      */
     public function rateLimiter(): RateLimiter
     {
-        return $this->rateLimiter ??= new RateLimiter($this->cache, $this->clock, $this->config->rateLimits);
+        return $this->rateLimiter ??= new RateLimiter(
+            $this->cache,
+            $this->clock,
+            $this->config->rateLimits,
+            $this->logger,
+        );
     }
 
     /**
@@ -526,17 +550,15 @@ final class AuthorizationServer
     }
 
     /**
-     * The validator for the MCP SDK's AuthorizationMiddleware (requires mcp/sdk).
+     * The validator for the MCP SDK's AuthorizationMiddleware (requires mcp/sdk 0.9 or newer).
      *
      * @param string $resource Resource identifier.
      * @throws \InvalidArgumentException When the resource is not declared.
-     * @throws \LogicException When mcp/sdk is not installed.
+     * @throws \LogicException When mcp/sdk is not installed or older than 0.9.
      */
     public function mcpTokenValidator(string $resource): McpTokenValidator
     {
-        if (!interface_exists('Mcp\\Server\\Transport\\Http\\OAuth\\AuthorizationTokenValidatorInterface')) {
-            throw new LogicException('The MCP SDK bridge requires mcp/sdk.');
-        }
+        SdkRequirement::assertSupported();
         $this->assertResource($resource);
 
         return new McpTokenValidator($this->tokenValidator(), $resource);

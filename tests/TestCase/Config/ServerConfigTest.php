@@ -34,7 +34,13 @@ class ServerConfigTest extends TestCase
         $this->assertTrue($config->cimdEnabled);
         $this->assertSame(5, $config->cimdTimeout);
         $this->assertSame(
-            ['authorize' => [30, 60], 'token' => [60, 60], 'register' => [10, 3600], 'cimd' => [10, 60]],
+            [
+                'authorize' => [30, 60],
+                'token' => [60, 60],
+                'register' => [10, 3600],
+                'cimd' => [10, 60],
+                'introspect' => [600, 60],
+            ],
             $config->rateLimits,
         );
         $this->assertSame(7, $config->retentionDays);
@@ -69,7 +75,7 @@ class ServerConfigTest extends TestCase
             'lifetimes' => ['access' => 900],
             'registration' => ['mode' => 'token', 'initialAccessToken' => 'abc', 'allowPrivateSchemes' => true],
             'cimd' => ['allowedHosts' => ['claude.ai'], 'timeout' => 3],
-            'rateLimit' => ['token' => [5, 10], 'cimd' => [3, 30]],
+            'rateLimit' => ['token' => [5, 10], 'cimd' => [3, 30], 'introspect' => [100, 10]],
             'refreshTokens' => 'offline_access',
         ]);
 
@@ -82,6 +88,7 @@ class ServerConfigTest extends TestCase
         $this->assertSame([5, 10], $config->rateLimits['token']);
         $this->assertSame([30, 60], $config->rateLimits['authorize']);
         $this->assertSame([3, 30], $config->rateLimits['cimd']);
+        $this->assertSame([100, 10], $config->rateLimits['introspect']);
         $this->assertFalse($config->issuesRefreshTokens(false));
         $this->assertTrue($config->issuesRefreshTokens(true));
     }
@@ -101,6 +108,11 @@ class ServerConfigTest extends TestCase
             'token mode without token' => [['registration' => ['mode' => 'token']], 'initialAccessToken'],
             'unknown key' => [['issuerr' => 'x'], 'issuerr'],
             'bad rate limit' => [['rateLimit' => ['token' => [0, 60]]], 'rateLimit'],
+            'upper case token prefix' => [['tokenPrefix' => 'KVerge'], 'tokenPrefix'],
+            'token prefix with a dash' => [['tokenPrefix' => 'k-verge'], 'tokenPrefix'],
+            'empty token prefix' => [['tokenPrefix' => ''], 'tokenPrefix'],
+            'long token prefix' => [['tokenPrefix' => str_repeat('a', 17)], 'tokenPrefix'],
+            'token prefix with a trailing newline' => [['tokenPrefix' => "oauth\n"], 'tokenPrefix'],
         ];
     }
 
@@ -122,5 +134,19 @@ class ServerConfigTest extends TestCase
         $this->expectExceptionMessage('"issuer"');
 
         ServerConfig::fromArray(['secret' => str_repeat('s', 32), 'resources' => []]);
+    }
+
+    /**
+     * An invalid token prefix fails when the settings are built, not at the first /token in production.
+     */
+    public function testTheConstructorRejectsAnInvalidTokenPrefix(): void
+    {
+        $resources = ServerConfig::fromArray($this->minimal())->resources;
+        $this->assertSame('kverge2', (new ServerConfig('https://example.com', $resources, str_repeat('k', 32), tokenPrefix: 'kverge2'))->tokenPrefix);
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('tokenPrefix');
+
+        new ServerConfig('https://example.com', $resources, str_repeat('k', 32), tokenPrefix: 'Not_Valid');
     }
 }

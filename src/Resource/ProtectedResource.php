@@ -74,19 +74,25 @@ final class ProtectedResource
             ));
         }
         $name = $config['name'] ?? (string)parse_url($identifier, PHP_URL_HOST);
-        $scopes = $config['scopes'] ?? [];
-        $implies = $config['implies'] ?? [];
-        $defaults = $config['defaultScopes'] ?? [];
-        if (!is_string($name) || !is_array($scopes) || !is_array($implies) || !is_array($defaults)) {
-            throw new InvalidArgumentException(sprintf('Invalid settings for the resource "%s".', $identifier));
+        if (!is_string($name)) {
+            throw new InvalidArgumentException(sprintf('"name" of the resource "%s" must be a string.', $identifier));
+        }
+        $settings = ['scopes' => $config['scopes'] ?? [], 'implies' => $config['implies'] ?? []];
+        $settings['defaultScopes'] = $config['defaultScopes'] ?? [];
+        foreach ($settings as $key => $value) {
+            if (!is_array($value)) {
+                throw new InvalidArgumentException(
+                    sprintf('"%s" of the resource "%s" must be an array.', $key, $identifier),
+                );
+            }
         }
 
         return new self(
             $identifier,
             $name,
-            self::stringMap($scopes, $identifier),
-            self::listMap($implies, $identifier),
-            self::stringList($defaults, $identifier),
+            self::stringMap($settings['scopes'], $identifier),
+            self::listMap($settings['implies'], $identifier),
+            self::stringList($settings['defaultScopes'], $identifier, 'defaultScopes'),
         );
     }
 
@@ -162,9 +168,10 @@ final class ProtectedResource
         $map = [];
         foreach ($value as $key => $description) {
             if (!is_string($description)) {
-                throw new InvalidArgumentException(
-                    sprintf('Scope descriptions of "%s" must be strings.', $identifier),
-                );
+                throw new InvalidArgumentException(sprintf(
+                    '"scopes" of the resource "%s" must map scope names to descriptions (strings).',
+                    $identifier,
+                ));
             }
             $map[(string)$key] = $description;
         }
@@ -186,10 +193,10 @@ final class ProtectedResource
         foreach ($value as $key => $list) {
             if (!is_array($list)) {
                 throw new InvalidArgumentException(
-                    sprintf('"implies" of "%s" must map scopes to lists.', $identifier),
+                    sprintf('"implies" of the resource "%s" must map scopes to lists of scopes.', $identifier),
                 );
             }
-            $map[(string)$key] = self::stringList($list, $identifier);
+            $map[(string)$key] = self::stringList($list, $identifier, 'implies');
         }
 
         return $map;
@@ -200,16 +207,17 @@ final class ProtectedResource
      *
      * @param array<mixed> $value Value.
      * @param string $identifier Resource, for messages.
+     * @param string $setting The setting, for messages.
      * @return list<string>
      * @throws \InvalidArgumentException
      */
-    private static function stringList(array $value, string $identifier): array
+    private static function stringList(array $value, string $identifier, string $setting): array
     {
         $list = [];
         foreach ($value as $item) {
             if (!is_string($item)) {
                 throw new InvalidArgumentException(
-                    sprintf('Scope lists of "%s" must contain strings.', $identifier),
+                    sprintf('"%s" of the resource "%s" must list scope names (strings).', $setting, $identifier),
                 );
             }
             $list[] = $item;

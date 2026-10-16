@@ -37,7 +37,7 @@ client. If a client sends no `resource`, the default resource is used.
 
 ## The redirect URI is not registered
 
-**Symptom.** An HTML page says `"redirect_uri" is not registered for this client.`, or registration
+**Symptom.** An HTML page says `'redirect_uri' is not registered for this client.`, or registration
 fails with `invalid_redirect_uri`.
 
 **Cause.** Matching is exact. A different path, a trailing slash, `localhost` against `127.0.0.1`,
@@ -132,7 +132,8 @@ these:
 | --- | --- |
 | The URL is not clean: it has a fragment, user information, an empty path, `.` or `..` segments, odd characters, or a host that is not a plain host name or IP address | Use a plain https URL with a path, such as `https://app.example.com/oauth/client.json` |
 | The host is not in `cimd.allowedHosts` ("Clients from ... are not accepted.") | Add it, or remove the list |
-| The host does not resolve | Fix DNS. Check from the machine that runs PHP |
+| The host does not resolve ("The client_id host does not resolve.": the name has no A or AAAA record) | Fix DNS. Check from the machine that runs PHP |
+| The DNS lookup got no answer ("The client_id host could not be looked up right now.": a resolver timeout or SERVFAIL) | Temporary: not remembered, a stored copy of the client keeps working. Check the resolver of the machine that runs PHP. The lookup uses the resolver's own timeouts, not `cimd.timeout` |
 | The host resolves to a private, loopback, link-local or reserved address (also when only one of several addresses is) | The document must be served from a public address. This is the SSRF protection. For tests, serve it publicly or use a fake transport |
 | Timeout or connection error | The default is 5 seconds (`cimd.timeout`). Check egress firewalls and TLS certificates of the client's host |
 | Redirects | The server never follows redirects. Serve the document at the exact `client_id` URL |
@@ -160,12 +161,16 @@ minute per address), which only counts real downloads of unknown or expired docu
 the same (429 with `Retry-After`; on `/authorize` an error page, never a redirect). A client that
 repeats a broken `client_id` URL is not counted again for 60 seconds: a definite rejection (404, an
 invalid document, a host that is not allowed) is remembered, so after fixing the document wait a minute
-before retrying. A temporary failure (the host is down, 5xx, 429) is not remembered: every retry
-downloads again and counts.
+before retrying. A temporary failure (the host is down, its DNS gives no answer, 5xx, 429) is not
+remembered: every retry downloads again and counts.
+
+The `/introspect` endpoint has a counter of its own, `rateLimit.introspect` (600 per minute per address
+by default), so a resource server that introspects on every request does not use up the `token` budget.
+IPv6 clients are counted per /64, so many devices behind one IPv6 prefix share a counter.
 
 **Fix.** Configure a `$clientIp` closure that reads the real address. Raise the limits, for example
-`'rateLimit' => ['token' => [300, 60]]`. `/revoke` and `/introspect` share the `token` counter. Wait for
-`Retry-After` seconds.
+`'rateLimit' => ['token' => [300, 60]]`. `/revoke` shares the `token` counter; `/introspect` has its own
+(`rateLimit.introspect`). Wait for `Retry-After` seconds.
 
 ## `invalid_client` after pruning
 

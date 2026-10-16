@@ -73,6 +73,44 @@ class PendingCodeRevocationTest extends TestCase
         $this->assertSame([], $harness->storage->findActiveTokensBySubject('42', SubjectType::User, $harness->clock->now()));
     }
 
+    /**
+     * The same order for a client: revokeAllForClient() deletes the codes before it revokes the tokens. The
+     * client row stays live here (signing everybody out of an application without revoking it), so only the
+     * order of the two steps stops the exchange that completes between them.
+     */
+    public function testAnExchangeBetweenTheTwoStepsOfAClientRevocationCannotSurvive(): void
+    {
+        $harness = new ServerHarness();
+        $client = $harness->publicClient();
+        $code = $harness->authorizationCode($client);
+        $tokens = new class ($harness->storage) extends ThrowingTouchTokens {
+            public ?Closure $afterRevoke = null;
+
+            public function revokeTokensByClient(string $clientInternalId, DateTimeImmutable $at): int
+            {
+                $count = parent::revokeTokensByClient($clientInternalId, $at);
+                $hook = $this->afterRevoke;
+                $this->afterRevoke = null;
+                if ($hook !== null) {
+                    $hook();
+                }
+
+                return $count;
+            }
+        };
+        $exchange = null;
+        $tokens->afterRevoke = function () use (&$exchange, $harness, $client, $code): void {
+            $exchange = $harness->exchange($client, $code);
+        };
+        $revoker = new TokenRevoker($tokens, $harness->storage, $harness->clock, $harness->events);
+
+        $revoker->revokeAllForClient($client);
+
+        $this->assertNotNull($exchange);
+        $this->assertSame('invalid_grant', $harness->json($exchange)['error'] ?? null);
+        $this->assertSame([], $harness->storage->findActiveTokensBySubject('42', SubjectType::User, $harness->clock->now()));
+    }
+
     public function testRevokingAConnectionDeletesThePendingCodesOfThatPersonAndClient(): void
     {
         $harness = new ServerHarness();

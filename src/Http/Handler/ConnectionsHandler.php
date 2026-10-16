@@ -19,6 +19,7 @@ use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 use Psr\Log\LoggerInterface;
+use SensitiveParameter;
 use Throwable;
 
 /**
@@ -150,6 +151,7 @@ final class ConnectionsHandler implements RequestHandlerInterface
     private function view(
         ResourceOwner $owner,
         ServerRequestInterface $request,
+        #[SensitiveParameter]
         ?string $newToken = null,
         ?string $error = null,
     ): ConnectionsView {

@@ -119,9 +119,11 @@ comes back. An anonymous POST (a consent form posted without a session) does not
 it gets the error page.
 
 `loginResponse()` receives `$returnTo`, a relative URL (a path and a query, like
-`/oauth/authorize?response_type=code&...`). The server has already normalised it with
-`RequestPath::safe()`: one leading slash (so it can never read as `//host`), and a request path with
-control characters or backslashes is refused. The same path is used as the `action` of the built-in forms. Your login page must send the person back to it after sign-in.
+`/oauth/authorize?response_type=code&...`). The server has already normalised it with its internal
+`RequestPath::safe()`: one leading slash (so it can never read as `//host`, also with a PSR-7
+implementation whose `getPath()` keeps the leading slashes), and a request path with control characters
+or backslashes is refused. The same path is used as the `action` of the built-in forms. Your login page
+must send the person back to it after sign-in.
 
 Validate it again before you redirect, so your own login page is not an open redirect. This is the
 check from `examples/standalone/LocalPath.php`:

@@ -12,6 +12,9 @@ use CakeDC\OAuth\Server\Scope\Scopes;
 
 /**
  * Validates authorization requests.
+ *
+ * @internal Used by the authorize endpoint; not part of the public API, it may change in any 1.x
+ * release.
  */
 final class AuthorizationRequestValidator
 {
@@ -39,13 +42,13 @@ final class AuthorizationRequestValidator
         foreach (['client_id', 'redirect_uri'] as $name) {
             if (in_array($name, $repeated, true)) {
                 throw new AuthorizationError(
-                    OAuthException::invalidRequest(sprintf('"%s" was sent more than once.', $name)),
+                    OAuthException::invalidRequest(sprintf("'%s' was sent more than once.", $name)),
                 );
             }
         }
         $clientId = $params['client_id'] ?? '';
         if ($clientId === '') {
-            throw new AuthorizationError(OAuthException::invalidRequest('"client_id" is missing.'));
+            throw new AuthorizationError(OAuthException::invalidRequest("'client_id' is missing."));
         }
         try {
             $client = $this->clients->resolve($clientId, $requester);
@@ -58,12 +61,12 @@ final class AuthorizationRequestValidator
         $redirectUri = $params['redirect_uri'] ?? '';
         if ($redirectUri === '') {
             if (count($client->redirectUris) !== 1) {
-                throw new AuthorizationError(OAuthException::invalidRequest('"redirect_uri" is required.'));
+                throw new AuthorizationError(OAuthException::invalidRequest("'redirect_uri' is required."));
             }
             $redirectUri = $client->redirectUris[0];
         } elseif (!RedirectUriMatcher::matches($redirectUri, $client->redirectUris)) {
             throw new AuthorizationError(
-                OAuthException::invalidRequest('"redirect_uri" is not registered for this client.'),
+                OAuthException::invalidRequest("'redirect_uri' is not registered for this client."),
             );
         }
 
@@ -71,7 +74,7 @@ final class AuthorizationRequestValidator
         if ($state !== null && preg_match('/\A[\x20-\x7E]+\z/', $state) !== 1) {
             // RFC 6749 appendix A.5: state is %x20-7E. It cannot be echoed safely, so the error omits it.
             throw new AuthorizationError(
-                OAuthException::invalidRequest('"state" may only contain printable ASCII characters.'),
+                OAuthException::invalidRequest("'state' may only contain printable ASCII characters."),
                 $redirectUri,
                 null,
                 $client,
@@ -84,27 +87,29 @@ final class AuthorizationRequestValidator
             $client,
         );
         if ($repeated !== []) {
-            throw $fail(OAuthException::invalidRequest(sprintf('"%s" was sent more than once.', $repeated[0])));
+            throw $fail(OAuthException::invalidRequest(
+                sprintf("'%s' was sent more than once.", OAuthException::printable($repeated[0])),
+            ));
         }
         $responseType = $params['response_type'] ?? '';
         if ($responseType === '') {
-            throw $fail(OAuthException::invalidRequest('"response_type" is missing.'));
+            throw $fail(OAuthException::invalidRequest("'response_type' is missing."));
         }
         if ($responseType !== 'code') {
-            throw $fail(OAuthException::unsupportedResponseType('Only "response_type=code" is supported.'));
+            throw $fail(OAuthException::unsupportedResponseType("Only 'response_type=code' is supported."));
         }
         if (!$client->allowsGrant(GrantType::AUTHORIZATION_CODE)) {
             throw $fail(OAuthException::unauthorizedClient('This client may not use the authorization code flow.'));
         }
         $challenge = $params['code_challenge'] ?? '';
         if ($challenge === '') {
-            throw $fail(OAuthException::invalidRequest('"code_challenge" is required (PKCE with S256).'));
+            throw $fail(OAuthException::invalidRequest("'code_challenge' is required (PKCE with S256)."));
         }
         if (($params['code_challenge_method'] ?? '') !== 'S256') {
-            throw $fail(OAuthException::invalidRequest('"code_challenge_method" must be "S256".'));
+            throw $fail(OAuthException::invalidRequest("'code_challenge_method' must be 'S256'."));
         }
         if (!Pkce::isValidChallenge($challenge)) {
-            throw $fail(OAuthException::invalidRequest('"code_challenge" is malformed.'));
+            throw $fail(OAuthException::invalidRequest("'code_challenge' is malformed."));
         }
         $resourceParam = $params['resource'] ?? '';
         $resource = $resourceParam === '' ? $this->resources->defaultResource() : $this->resources->get($resourceParam);
@@ -121,9 +126,9 @@ final class AuthorizationRequestValidator
         foreach ($scopes as $scope) {
             if (!$resource->hasScope($scope)) {
                 throw $fail(OAuthException::invalidScope(sprintf(
-                    'The scope "%s" does not exist on %s.',
-                    $scope,
-                    $resource->identifier,
+                    "The scope '%s' does not exist on %s.",
+                    OAuthException::printable($scope),
+                    OAuthException::printable($resource->identifier, 2048),
                 )));
             }
         }

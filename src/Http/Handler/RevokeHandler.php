@@ -62,11 +62,13 @@ final class RevokeHandler implements RequestHandlerInterface
             }
             [$body, $repeated] = FormBody::read($request);
             if ($repeated !== []) {
-                throw OAuthException::invalidRequest(sprintf('"%s" was sent more than once.', $repeated[0]));
+                throw OAuthException::invalidRequest(
+                    sprintf("'%s' was sent more than once.", OAuthException::printable($repeated[0])),
+                );
             }
             $token = $body['token'] ?? '';
             if ($token === '') {
-                throw OAuthException::invalidRequest('"token" is missing.');
+                throw OAuthException::invalidRequest("'token' is missing.");
             }
             $client = $this->clientAuthenticator->authenticate($request, $body, ($this->clientIp)($request));
             $this->revoker->revokeForClient($client, $token);

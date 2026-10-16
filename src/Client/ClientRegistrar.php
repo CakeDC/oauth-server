@@ -13,6 +13,7 @@ use CakeDC\OAuth\Server\Token\TokenGenerator;
 use InvalidArgumentException;
 use Psr\Clock\ClockInterface;
 use Psr\EventDispatcher\EventDispatcherInterface;
+use SensitiveParameter;
 
 /**
  * Registers clients: dynamically (RFC 7591) or by hand.
@@ -51,7 +52,7 @@ final class ClientRegistrar
     {
         $declared = self::optionalString($metadata, 'application_type');
         if ($declared !== null && ApplicationType::tryFrom($declared) === null) {
-            throw OAuthException::invalidClientMetadata('application_type must be "web" or "native".');
+            throw OAuthException::invalidClientMetadata("application_type must be 'web' or 'native'.");
         }
         $redirectUris = $metadata['redirect_uris'] ?? null;
         if (!is_array($redirectUris) || $redirectUris === [] || !array_is_list($redirectUris)) {
@@ -71,7 +72,7 @@ final class ClientRegistrar
                 : 'must be a string';
             // RFC 9700 section 2.6: a client that says it is a web application registers https.
             if ($error === null && $declared === 'web' && self::scheme((string)$uri) === 'http') {
-                $error = 'must use https for a web client; loopback http needs "application_type": "native"';
+                $error = "must use https for a web client; loopback http needs application_type 'native'";
             }
             if ($error !== null) {
                 throw OAuthException::invalidRedirectUri(sprintf('redirect_uris[%d] %s.', $index, $error));
@@ -82,7 +83,7 @@ final class ClientRegistrar
         );
         if ($method === null) {
             throw OAuthException::invalidClientMetadata(
-                'token_endpoint_auth_method must be "none", "client_secret_basic" or "client_secret_post".',
+                "token_endpoint_auth_method must be 'none', 'client_secret_basic' or 'client_secret_post'.",
             );
         }
         $grantTypes = self::stringList($metadata, 'grant_types') ?? [GrantType::AUTHORIZATION_CODE];
@@ -94,7 +95,7 @@ final class ClientRegistrar
         foreach ($grantTypes as $grantType) {
             if (!in_array($grantType, [GrantType::AUTHORIZATION_CODE, GrantType::REFRESH_TOKEN], true)) {
                 throw OAuthException::invalidClientMetadata(
-                    sprintf('The grant type "%s" is not supported.', $grantType),
+                    sprintf("The grant type '%s' is not supported.", OAuthException::printable($grantType)),
                 );
             }
         }
@@ -103,7 +104,7 @@ final class ClientRegistrar
         }
         $responseTypes = self::stringList($metadata, 'response_types') ?? ['code'];
         if ($responseTypes !== ['code']) {
-            throw OAuthException::invalidClientMetadata('response_types must be ["code"].');
+            throw OAuthException::invalidClientMetadata("response_types must be ['code'].");
         }
         $name = self::optionalString($metadata, 'client_name');
         if (
@@ -127,7 +128,9 @@ final class ClientRegistrar
             $known = $this->resources->allScopeNames();
             foreach ($scopes as $one) {
                 if (!in_array($one, $known, true)) {
-                    throw OAuthException::invalidClientMetadata(sprintf('The scope "%s" does not exist.', $one));
+                    throw OAuthException::invalidClientMetadata(
+                        sprintf("The scope '%s' does not exist.", OAuthException::printable($one)),
+                    );
                 }
             }
         }
@@ -245,7 +248,7 @@ final class ClientRegistrar
      *
      * @return array<string, mixed>
      */
-    public static function registrationResponse(Client $client, ?string $secret): array
+    public static function registrationResponse(Client $client, #[SensitiveParameter] ?string $secret): array
     {
         $body = [
             'client_id' => $client->clientId,

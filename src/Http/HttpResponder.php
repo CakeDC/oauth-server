@@ -7,10 +7,14 @@ use CakeDC\OAuth\Server\Exception\OAuthException;
 use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\StreamFactoryInterface;
+use SensitiveParameter;
 use stdClass;
 
 /**
  * Builds the server's responses.
+ *
+ * @internal Used by the endpoints and pages of the AuthorizationServer; not part of the public API, it
+ * may change in any 1.x release.
  */
 final class HttpResponder
 {
@@ -34,8 +38,13 @@ final class HttpResponder
      * @param array<string, string> $headers Extra headers.
      * @param int $cacheSeconds Public cache time.
      */
-    public function json(array $data, int $status = 200, array $headers = [], int $cacheSeconds = 0): ResponseInterface
-    {
+    public function json(
+        #[SensitiveParameter]
+        array $data,
+        int $status = 200,
+        array $headers = [],
+        int $cacheSeconds = 0,
+    ): ResponseInterface {
         $body = json_encode(
             $data === [] ? new stdClass() : $data,
             JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE,
@@ -73,7 +82,7 @@ final class HttpResponder
     /**
      * A redirect.
      */
-    public function redirect(string $url, int $status = 302): ResponseInterface
+    public function redirect(#[SensitiveParameter] string $url, int $status = 302): ResponseInterface
     {
         return $this->responses->createResponse($status)
             ->withHeader('Location', $url)
@@ -87,7 +96,7 @@ final class HttpResponder
      * @param int $status Status.
      * @param array<string, string> $headers Extra headers.
      */
-    public function page(string $html, int $status = 200, array $headers = []): ResponseInterface
+    public function page(#[SensitiveParameter] string $html, int $status = 200, array $headers = []): ResponseInterface
     {
         $response = $this->responses->createResponse($status)
             ->withHeader('Content-Type', 'text/html; charset=utf-8')

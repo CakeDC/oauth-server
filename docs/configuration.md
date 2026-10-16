@@ -8,9 +8,12 @@ use CakeDC\OAuth\Server\Config\ServerConfig;
 $config = ServerConfig::fromArray([...]);
 ```
 
-Types are strict: a number must be an integer (`3600`, not `"3600"`) and a flag must be `true` or
-`false`. An unknown key anywhere (top level, or inside `lifetimes`, `registration`, `cimd`,
-`rateLimit` or a resource) throws `InvalidArgumentException`, so a typo does not go unnoticed.
+Types are strict: a number must be an integer (`3600`, not `"3600"` or `3600.0`), a flag must be
+`true` or `false`, and a section or a resource must be an array. A value of the wrong type throws an
+`InvalidArgumentException` that names the setting (`"cimd.timeout" must be an integer.`, `The settings
+of the resource "https://example.com/mcp" must be an array ...`), never a `TypeError`. An unknown key
+anywhere (top level, or inside `lifetimes`, `registration`, `cimd`, `rateLimit` or a resource) throws
+`InvalidArgumentException` too, so a typo does not go unnoticed.
 
 The same object can be built directly with `new ServerConfig(...)`, using named arguments
 (`registrationMode`, `cimdEnabled`, `cimdAllowedHosts`, `cimdTimeout`, `cimdMaxBytes`, `cimdCacheMin`,
@@ -26,7 +29,7 @@ documents.
 | `resources` | array | required | The resources tokens are issued for. See below |
 | `defaultResource` | string | first resource | The resource used when a client sends no `resource` parameter |
 | `routePrefix` | string | `/oauth` | Path of the endpoints below the issuer. Starts with `/`, does not end with `/` |
-| `tokenPrefix` | string | `oauth` | Prefix of tokens and secrets: `<prefix>_at_...`. 1 to 16 lowercase letters or digits. Use your product name so leaked tokens can be traced |
+| `tokenPrefix` | string | `oauth` | Prefix of tokens and secrets: `<prefix>_at_...`. 1 to 16 lowercase letters or digits, checked when the config is built. Use your product name so leaked tokens can be traced |
 | `lifetimes` | array | see below | How long codes and tokens live |
 | `refreshTokens` | string | `always` | `always` issues a refresh token with every code exchange. `offline_access` only when the client asked for the `offline_access` scope |
 | `registration` | array | see below | Dynamic client registration |
@@ -68,7 +71,7 @@ negative.
 | --- | --- | --- | --- |
 | `enabled` | bool | `true` | Accept `client_id` values that are https URLs |
 | `allowedHosts` | list of strings | `null` (any host) | Only fetch documents from these hosts, for example `['claude.ai']`. Matching ignores case and is exact (no wildcards). The list also applies to clients already cached: removing a host refuses its clients at the next request, with no fetch |
-| `timeout` | int | `5` | Seconds to wait for the document |
+| `timeout` | int | `5` | Seconds to wait for the document. The DNS lookup of the host comes before and is not covered: it uses the system resolver's own timeouts and retries (see [security](security.md#known-limitation-dns-lookups)) |
 | `maxBytes` | int | `10240` | Largest document accepted |
 | `cacheMin` | int | `300` | Shortest time a fetched document is kept. Between `0` and `cacheMax` |
 | `cacheMax` | int | `86400` | Longest time a document is kept, whatever the host's `Cache-Control` says. Also the extra time a stored client keeps working when its host is temporarily unreachable |
@@ -81,19 +84,24 @@ not loaded, the `AuthorizationServer` constructor throws `LogicException` unless
 ## `rateLimit`
 
 Each entry is `[max requests, window in seconds]`. Counting is per endpoint and per client address, in
-a fixed window.
+a fixed window. IPv6 addresses count per /64 (one subscriber usually gets a whole /64, so rotating
+addresses inside it does not reset the count); IPv4 addresses, also written as IPv4-mapped IPv6
+(`::ffff:203.0.113.7`), count one by one.
 
 | Key | Default | Applies to |
 | --- | --- | --- |
 | `authorize` | `[30, 60]` | `/authorize` |
-| `token` | `[60, 60]` | `/token`, `/revoke` and `/introspect` (they share one counter) |
+| `token` | `[60, 60]` | `/token` and `/revoke` (they share one counter) |
+| `introspect` | `[600, 60]` | `/introspect`, with a counter of its own (`rateLimit.introspect`): a resource server that introspects on every request needs a much larger budget than a client, without loosening `/token` |
 | `register` | `[10, 3600]` | `/register` |
 | `cimd` | `[10, 60]` | Metadata document fetches (`rateLimit.cimd`), counted per client address at `/authorize`, `/token`, `/revoke` and `/introspect`. Only a real download counts: a cached client never does, and neither does a repeat of a definite rejection inside its one-minute memory. A temporary failure (network error, 5xx, 429) is not remembered, so the next request downloads again and counts, unless a stored copy of the client is being served meanwhile |
 
 You only list the keys you want to change. Limits take effect only when you pass a PSR-16 cache to
-`AuthorizationServer` (the `$cache` argument). Without a cache nothing is limited. Both numbers must
-be at least 1. The address is `REMOTE_ADDR` unless you pass a `$clientIp` closure. See
-[deployment](deployment.md#the-client-ip-behind-proxies).
+`AuthorizationServer` (the `$cache` argument). Without a cache nothing is limited. When the cache fails
+(Redis down), the request is let through without limiting and a warning is logged (`Rate limiting is off
+for this request: the cache failed (...)`): the limits are abuse control, not a quota, and must not take
+the endpoints down with the cache. Both numbers must be at least 1. The address is `REMOTE_ADDR` unless
+you pass a `$clientIp` closure. See [deployment](deployment.md#the-client-ip-behind-proxies).
 
 ## Resources
 
@@ -148,7 +156,10 @@ Invalid settings throw `InvalidArgumentException` when the config is built. The 
 | A non-positive CIMD or retention number | `"cimdTimeout" must be positive.` (same for `cimdMaxBytes`, `cimdCacheMax`, `retentionDays`) |
 | Bad cache range | `"cimdCacheMin" must be between 0 and "cimdCacheMax".` |
 | Bad rate limit | `"rateLimit.token" must be [max requests, window seconds].` |
-| Bad token prefix | `The token prefix must be 1 to 16 lowercase letters or digits.` (thrown when the server first creates a token, not when the config is built) |
+| Bad token prefix | `"tokenPrefix" must be 1 to 16 lowercase letters or digits.` |
+| A value of the wrong type | `"cimd.timeout" must be an integer.`, `"registration.allowPrivateSchemes" must be true or false.`, `"lifetimes.access" must be an integer (seconds).`, `"defaultResource" must be a resource URL (a string).` and so on: always the setting's full name |
+| A resource that is not an array (for example `'https://example.com/mcp' => 'Example MCP'`) | `The settings of the resource "https://example.com/mcp" must be an array like ['name' => ..., 'scopes' => [...]]; got string. ...` |
+| A wrongly typed resource setting | `"scopes" of the resource "..." must be an array.` (same for `name`, `implies`, `defaultScopes`, a scope description or an implied list) |
 | Unknown top level key | `Unknown OAuth server setting "..."`. |
 | Missing required key | `The OAuth server setting "issuer" is required.` |
 | Unknown nested key | `Unknown setting "cimd.foo".` |

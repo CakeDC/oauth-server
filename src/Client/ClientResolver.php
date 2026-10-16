@@ -19,8 +19,8 @@ use Throwable;
  * Finds the client of a `client_id`: stored clients, and metadata document clients fetched and
  * cached as rows.
  *
- * @internal Built through the AuthorizationServer factories, not by you: get it from the server.
- * Its constructor may change in any 1.x release.
+ * @internal Used by the AuthorizationServer's endpoints; not part of the public API, it may change in any
+ * 1.x release.
  */
 final class ClientResolver
 {
@@ -79,7 +79,7 @@ final class ClientResolver
         if ($existing !== null && !$this->fetcher->allowsClientId($clientId)) {
             throw OAuthException::invalidClient(sprintf(
                 'Clients from %s are not accepted.',
-                strtolower((string)parse_url($clientId, PHP_URL_HOST)),
+                OAuthException::printable(strtolower((string)parse_url($clientId, PHP_URL_HOST))),
             ));
         }
         $now = $this->clock->now();
@@ -182,7 +182,11 @@ final class ClientResolver
         } catch (Throwable) {
             return null;
         }
-        if (!is_array($stored) || !is_string($stored['message'] ?? null)) {
+        if (
+            !is_array($stored)
+            || !is_string($stored['message'] ?? null)
+            || !OAuthException::isValidDescription($stored['message'])
+        ) {
             return null;
         }
 

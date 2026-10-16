@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace CakeDC\OAuth\Server\Grant;
 
 use CakeDC\OAuth\Server\Support\Base64Url;
+use SensitiveParameter;
 
 /**
  * Proof Key for Code Exchange with the S256 method only (RFC 7636).
@@ -21,7 +22,7 @@ final class Pkce
     /**
      * Whether $verifier has the RFC 7636 alphabet and length (43 to 128).
      */
-    public static function isValidVerifier(string $verifier): bool
+    public static function isValidVerifier(#[SensitiveParameter] string $verifier): bool
     {
         return preg_match('/^[A-Za-z0-9\-._~]{43,128}\z/', $verifier) === 1;
     }
@@ -29,7 +30,7 @@ final class Pkce
     /**
      * The S256 challenge of $verifier.
      */
-    public static function challengeFor(string $verifier): string
+    public static function challengeFor(#[SensitiveParameter] string $verifier): string
     {
         return Base64Url::encode(hash('sha256', $verifier, true));
     }
@@ -37,7 +38,7 @@ final class Pkce
     /**
      * Whether $verifier is valid and matches $challenge.
      */
-    public static function verify(string $verifier, string $challenge): bool
+    public static function verify(#[SensitiveParameter] string $verifier, string $challenge): bool
     {
         return self::isValidVerifier($verifier) && hash_equals($challenge, self::challengeFor($verifier));
     }

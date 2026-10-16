@@ -3,9 +3,13 @@ declare(strict_types=1);
 
 namespace CakeDC\OAuth\Server\Http;
 
+use SensitiveParameter;
+
 /**
  * Strict parsing of query strings and form bodies: OAuth parameters must not be repeated, and PHP's
  * own parsing would silently keep the last value.
+ *
+ * @internal Not part of the public API: it may change in any 1.x release.
  */
 final class Params
 {
@@ -14,7 +18,7 @@ final class Params
      *
      * @return array{0: array<string, string>, 1: list<string>}
      */
-    public static function parse(string $raw): array
+    public static function parse(#[SensitiveParameter] string $raw): array
     {
         $values = [];
         $repeated = [];

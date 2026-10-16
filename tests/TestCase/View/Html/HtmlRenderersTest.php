@@ -71,17 +71,17 @@ class HtmlRenderersTest extends TestCase
 
     public function testErrorPage(): void
     {
-        $html = (new HtmlErrorPageRenderer())->render(OAuthException::invalidRequest('"redirect_uri" is <wrong>.'));
+        $html = (new HtmlErrorPageRenderer())->render(OAuthException::invalidRequest("'redirect_uri' is <wrong>."));
 
         $this->assertStringContainsString('Authorization failed', $html);
-        $this->assertStringContainsString('&quot;redirect_uri&quot; is &lt;wrong&gt;.', $html);
+        $this->assertStringContainsString('&#039;redirect_uri&#039; is &lt;wrong&gt;.', $html);
         $this->assertStringContainsString('invalid_request', $html);
     }
 
     public function testTheRedirectNoticeNamesTheHostAndOnlyLinksToIt(): void
     {
         $view = new RedirectNoticeView(
-            OAuthException::invalidRequest('"code_challenge" is <missing>.'),
+            OAuthException::invalidRequest("'code_challenge' is <missing>."),
             Fixtures::client(),
             'https://Evil.example/cb',
             'https://evil.example/cb?error=invalid_request&state=%22%3E%3Cscript%3E',
@@ -90,7 +90,7 @@ class HtmlRenderersTest extends TestCase
         $html = (new HtmlErrorPageRenderer())->renderRedirectNotice($view);
 
         $this->assertStringContainsString('Authorization failed', $html);
-        $this->assertStringContainsString('&quot;code_challenge&quot; is &lt;missing&gt;.', $html);
+        $this->assertStringContainsString('&#039;code_challenge&#039; is &lt;missing&gt;.', $html);
         $this->assertStringContainsString('send this answer to evil.example', $html);
         $this->assertStringContainsString(
             '<a href="https://evil.example/cb?error=invalid_request&amp;state=%22%3E%3Cscript%3E" rel="noreferrer">'

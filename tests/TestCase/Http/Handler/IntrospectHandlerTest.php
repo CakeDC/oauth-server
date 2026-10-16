@@ -190,4 +190,40 @@ class IntrospectHandlerTest extends TestCase
             ['grant_type' => 'refresh_token', 'refresh_token' => $refreshToken, 'client_id' => $clientId],
         ));
     }
+
+    /**
+     * A resource server that introspects on every request has its own budget (`rateLimit.introspect`,
+     * 600 a minute by default): it neither eats the token endpoint's budget nor is blocked by it.
+     */
+    public function testIntrospectionHasItsOwnRateLimitCounter(): void
+    {
+        $this->harness = new ServerHarness(['rateLimit' => ['token' => [2, 60], 'introspect' => [3, 60]]]);
+        $this->harness->confidentialClient('rs-secret', ['clientId' => 'resource-server', 'allowIntrospection' => true]);
+        $token = fn(): ResponseInterface => $this->harness->server->tokenHandler()->handle(
+            $this->harness->form('https://example.com/oauth/token', ['grant_type' => 'password']),
+        );
+
+        $this->assertSame(400, $token()->getStatusCode());
+        $this->assertSame(400, $token()->getStatusCode());
+        $this->assertSame(429, $token()->getStatusCode());
+        for ($i = 0; $i < 3; $i++) {
+            $this->assertSame(200, $this->introspect('unknown')->getStatusCode(), 'introspection ' . $i);
+        }
+        $this->assertSame(429, $this->introspect('unknown')->getStatusCode());
+        $this->harness->clock->advance(60);
+        for ($i = 0; $i < 3; $i++) {
+            $this->assertSame(200, $this->introspect('unknown')->getStatusCode());
+        }
+        $this->assertSame(400, $token()->getStatusCode());
+    }
+
+    public function testTheDefaultIntrospectionBudgetIsLargerThanTheTokenOne(): void
+    {
+        $this->harness = new ServerHarness(['rateLimit' => ['token' => [1, 60]]]);
+        $this->harness->confidentialClient('rs-secret', ['clientId' => 'resource-server', 'allowIntrospection' => true]);
+
+        for ($i = 0; $i < 20; $i++) {
+            $this->assertSame(200, $this->introspect('unknown')->getStatusCode());
+        }
+    }
 }

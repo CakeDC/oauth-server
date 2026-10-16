@@ -21,7 +21,7 @@ class ScopesTest extends TestCase
     public function testRejectsCharactersOutsideTheScopeTokenGrammar(): void
     {
         $this->expectException(OAuthException::class);
-        $this->expectExceptionMessage('"a"b" is not a valid scope.');
+        $this->expectExceptionMessage("'a?b' is not a valid scope.");
 
         Scopes::parse('ok a"b');
     }

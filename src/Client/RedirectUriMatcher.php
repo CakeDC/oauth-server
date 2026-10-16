@@ -43,7 +43,7 @@ final class RedirectUriMatcher
         }
         $scheme = strtolower($scheme);
         if (in_array($scheme, self::FORBIDDEN_SCHEMES, true)) {
-            return sprintf('must not use the "%s" scheme', $scheme);
+            return sprintf("must not use the '%s' scheme", $scheme);
         }
         $host = parse_url($uri, PHP_URL_HOST);
         if ($scheme === 'https') {

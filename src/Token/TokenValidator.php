@@ -11,6 +11,7 @@ use CakeDC\OAuth\Server\Storage\ClientRepositoryInterface;
 use CakeDC\OAuth\Server\Storage\TokenRepositoryInterface;
 use InvalidArgumentException;
 use Psr\Clock\ClockInterface;
+use SensitiveParameter;
 use Throwable;
 
 /**
@@ -50,6 +51,7 @@ final class TokenValidator
      * @throws \InvalidArgumentException When $resource is not declared (a configuration error).
      */
     public function validate(
+        #[SensitiveParameter]
         string $token,
         string $resource,
         bool $touch = true,

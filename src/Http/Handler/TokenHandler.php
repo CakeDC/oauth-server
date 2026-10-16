@@ -30,6 +30,7 @@ use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 use Psr\Log\LoggerInterface;
+use SensitiveParameter;
 use Throwable;
 
 /**
@@ -95,16 +96,18 @@ final class TokenHandler implements RequestHandlerInterface
             }
             [$body, $repeated] = FormBody::read($request);
             if ($repeated !== []) {
-                throw OAuthException::invalidRequest(sprintf('"%s" was sent more than once.', $repeated[0]));
+                throw OAuthException::invalidRequest(
+                    sprintf("'%s' was sent more than once.", OAuthException::printable($repeated[0])),
+                );
             }
             $grantType = $body['grant_type'] ?? '';
             $issued = match ($grantType) {
                 GrantType::AUTHORIZATION_CODE => $this->authorizationCode($request, $body),
                 GrantType::REFRESH_TOKEN => $this->refreshToken($request, $body),
                 GrantType::CLIENT_CREDENTIALS => $this->clientCredentials($request, $body),
-                '' => throw OAuthException::invalidRequest('"grant_type" is missing.'),
+                '' => throw OAuthException::invalidRequest("'grant_type' is missing."),
                 default => throw OAuthException::unsupportedGrantType(
-                    sprintf('The grant type "%s" is not supported.', $grantType),
+                    sprintf("The grant type '%s' is not supported.", OAuthException::printable($grantType)),
                 ),
             };
 
@@ -118,7 +121,7 @@ final class TokenHandler implements RequestHandlerInterface
      * @param array<string, string> $body Form parameters.
      * @throws \CakeDC\OAuth\Server\Exception\OAuthException
      */
-    private function authorizationCode(ServerRequestInterface $request, array $body): IssuedTokens
+    private function authorizationCode(ServerRequestInterface $request, #[SensitiveParameter] array $body): IssuedTokens
     {
         $client = $this->clientAuthenticator->authenticate($request, $body, ($this->clientIp)($request));
         if (!$client->allowsGrant(GrantType::AUTHORIZATION_CODE)) {
@@ -126,7 +129,7 @@ final class TokenHandler implements RequestHandlerInterface
         }
         $value = $body['code'] ?? '';
         if ($value === '') {
-            throw OAuthException::invalidRequest('"code" is missing.');
+            throw OAuthException::invalidRequest("'code' is missing.");
         }
         $now = $this->clock->now();
         $code = $this->codes->findCodeByHash(TokenGenerator::hash($value));
@@ -137,7 +140,7 @@ final class TokenHandler implements RequestHandlerInterface
         // code and its verifier can make a replay revoke anything.
         $verifier = $body['code_verifier'] ?? '';
         if ($verifier === '') {
-            throw OAuthException::invalidRequest('"code_verifier" is missing.');
+            throw OAuthException::invalidRequest("'code_verifier' is missing.");
         }
         if (!Pkce::verify($verifier, $code->codeChallenge)) {
             throw OAuthException::invalidGrant('The code_verifier does not match.');
@@ -153,7 +156,7 @@ final class TokenHandler implements RequestHandlerInterface
         }
         $redirectUri = $body['redirect_uri'] ?? '';
         if ($redirectUri === '' && count($client->redirectUris) > 1) {
-            throw OAuthException::invalidRequest('"redirect_uri" is missing.');
+            throw OAuthException::invalidRequest("'redirect_uri' is missing.");
         }
         if ($redirectUri !== '' && $redirectUri !== $code->redirectUri) {
             throw OAuthException::invalidGrant('redirect_uri does not match the authorization request.');
@@ -224,7 +227,7 @@ final class TokenHandler implements RequestHandlerInterface
      * @param array<string, string> $body Form parameters.
      * @throws \CakeDC\OAuth\Server\Exception\OAuthException
      */
-    private function refreshToken(ServerRequestInterface $request, array $body): IssuedTokens
+    private function refreshToken(ServerRequestInterface $request, #[SensitiveParameter] array $body): IssuedTokens
     {
         $client = $this->clientAuthenticator->authenticate($request, $body, ($this->clientIp)($request));
         if (!$client->allowsGrant(GrantType::REFRESH_TOKEN)) {
@@ -232,7 +235,7 @@ final class TokenHandler implements RequestHandlerInterface
         }
         $value = $body['refresh_token'] ?? '';
         if ($value === '') {
-            throw OAuthException::invalidRequest('"refresh_token" is missing.');
+            throw OAuthException::invalidRequest("'refresh_token' is missing.");
         }
         $requested = array_values(array_diff(Scopes::parse($body['scope'] ?? null), [Scopes::OFFLINE_ACCESS]));
         $issued = $this->rotator->rotate($client, $value, $body['resource'] ?? null, $requested);
@@ -247,7 +250,7 @@ final class TokenHandler implements RequestHandlerInterface
      * @param array<string, string> $body Form parameters.
      * @throws \CakeDC\OAuth\Server\Exception\OAuthException
      */
-    private function clientCredentials(ServerRequestInterface $request, array $body): IssuedTokens
+    private function clientCredentials(ServerRequestInterface $request, #[SensitiveParameter] array $body): IssuedTokens
     {
         if (!$this->config->clientCredentials) {
             throw OAuthException::unsupportedGrantType('The client credentials grant is disabled.');

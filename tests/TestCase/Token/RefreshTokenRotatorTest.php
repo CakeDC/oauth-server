@@ -205,7 +205,7 @@ class RefreshTokenRotatorTest extends TestCase
         $this->assertSame(['content:read'], $rotated->refresh?->scopes);
     }
 
-    public function testScopesTheClientMayNoLongerHoldAreNotReissued(): void
+    public function testScopesTheClientMayNoLongerHoldAreNotOnTheAccessToken(): void
     {
         $client = Fixtures::client(['scopes' => ['content:read']]);
         $initial = $this->issuer->issue(

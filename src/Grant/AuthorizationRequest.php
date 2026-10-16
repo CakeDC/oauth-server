@@ -8,6 +8,8 @@ use CakeDC\OAuth\Server\Resource\ProtectedResource;
 
 /**
  * A validated authorization request.
+ *
+ * @internal Not part of the public API: it may change in any 1.x release.
  */
 final class AuthorizationRequest
 {

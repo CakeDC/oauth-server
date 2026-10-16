@@ -7,6 +7,8 @@ use Psr\Http\Message\ServerRequestInterface;
 
 /**
  * Reads form-encoded request bodies.
+ *
+ * @internal Not part of the public API: it may change in any 1.x release.
  */
 final class FormBody
 {

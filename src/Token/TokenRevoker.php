@@ -10,6 +10,7 @@ use CakeDC\OAuth\Server\Storage\AuthorizationCodeRepositoryInterface;
 use CakeDC\OAuth\Server\Storage\TokenRepositoryInterface;
 use Psr\Clock\ClockInterface;
 use Psr\EventDispatcher\EventDispatcherInterface;
+use SensitiveParameter;
 
 /**
  * Revokes tokens. Revoking everything of a person or of a client also deletes their codes that were not
@@ -36,7 +37,7 @@ final class TokenRevoker
      * Revokes a token its client presents (RFC 7009). A refresh token takes its whole family with
      * it; an access token only itself. Unknown tokens and tokens of other clients are ignored.
      */
-    public function revokeForClient(Client $client, string $token): void
+    public function revokeForClient(Client $client, #[SensitiveParameter] string $token): void
     {
         $found = $this->tokens->findTokenByHash(TokenGenerator::hash($token));
         if ($found === null || $found->clientInternalId !== $client->id) {

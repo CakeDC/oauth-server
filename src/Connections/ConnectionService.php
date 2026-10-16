@@ -55,6 +55,10 @@ final class ConnectionService
     /**
      * The owner's live client connections, one per family, newest first.
      *
+     * A connection's scopes are its grant: those of its newest refresh token that was not rotated yet (a
+     * refresh keeps the grant there and may narrow only the new access token), or of its newest token when
+     * it has no live refresh token.
+     *
      * @return list<\CakeDC\OAuth\Server\Connections\Connection>
      */
     public function connections(ResourceOwner $owner): array
@@ -83,6 +87,13 @@ final class ConnectionService
                 }
             }
             $newest = $live[count($live) - 1];
+            $grant = $newest;
+            foreach ($live as $token) {
+                // Oldest first: the last unused refresh token wins.
+                if ($token->type === TokenType::Refresh && $token->usedAt === null) {
+                    $grant = $token;
+                }
+            }
             $connectedAt = $newest->familyStartedAt ?? $newest->createdAt;
             foreach ($all as $token) {
                 $started = $token->familyStartedAt ?? $token->createdAt;
@@ -94,7 +105,7 @@ final class ConnectionService
                 (string)$familyId,
                 $client,
                 $newest->resource,
-                $newest->scopes,
+                $grant->scopes,
                 $connectedAt,
                 $lastUsed,
             );
@@ -192,7 +203,9 @@ final class ConnectionService
         $allowed = $this->creatableScopes($owner)[$target->identifier]['scopes'] ?? [];
         foreach ($scopes as $scope) {
             if (!isset($allowed[$scope])) {
-                throw OAuthException::invalidScope(sprintf('You cannot grant "%s".', $scope));
+                throw OAuthException::invalidScope(
+                    sprintf("You cannot grant '%s'.", OAuthException::printable((string)$scope)),
+                );
             }
         }
         $maxDays = $this->maxPersonalDays();

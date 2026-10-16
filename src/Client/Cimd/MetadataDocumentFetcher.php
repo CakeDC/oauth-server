@@ -82,10 +82,17 @@ final class MetadataDocumentFetcher
         }
         $host = strtolower((string)$parts['host']);
         if (!$this->hostAllowed($host)) {
-            throw OAuthException::invalidClient(sprintf('Clients from %s are not accepted.', $host));
+            throw OAuthException::invalidClient(
+                sprintf('Clients from %s are not accepted.', OAuthException::printable($host)),
+            );
         }
         $literal = trim($host, '[]');
-        $addresses = filter_var($literal, FILTER_VALIDATE_IP) !== false ? [$literal] : $this->dns->resolve($host);
+        try {
+            $addresses = filter_var($literal, FILTER_VALIDATE_IP) !== false ? [$literal] : $this->dns->resolve($host);
+        } catch (RuntimeException) {
+            // No answer (a timeout, a server failure) says nothing about the client: temporary.
+            throw OAuthException::clientUnavailable('The client_id host could not be looked up right now.');
+        }
         if ($addresses === []) {
             throw OAuthException::invalidClient('The client_id host does not resolve.');
         }
@@ -180,7 +187,7 @@ final class MetadataDocumentFetcher
         }
         if (($document['token_endpoint_auth_method'] ?? 'none') !== 'none') {
             throw OAuthException::invalidClient(
-                'Only public metadata document clients (token_endpoint_auth_method "none") are supported.',
+                "Only public metadata document clients (token_endpoint_auth_method 'none') are supported.",
             );
         }
     }

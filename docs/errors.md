@@ -20,6 +20,13 @@ The class `OAuthException` carries the code, description and status. Its `toArra
 body. An exception also has an internal `temporary` flag, used to decide whether a stored client may
 stand in for an unreachable metadata host. The flag never appears in a response.
 
+A description is printable ASCII without `"` and `\`, as RFC 6749 and RFC 6750 require: parameter
+names are quoted with `'` (`'code_verifier' is missing.`), and a value copied from the request (a grant
+type, a scope, the name of a repeated parameter) has any other character replaced by `?` and is cut to
+64 characters (`'a?b' is not a valid scope.`). `OAuthException` refuses any other description with an
+`InvalidArgumentException`; check a text of your own with `OAuthException::isValidDescription()`.
+See [security](security.md#error-descriptions).
+
 ## Error codes
 
 | Code | HTTP status | Where | What the client developer should do |
@@ -67,11 +74,14 @@ These are the texts `/token` sends with `invalid_grant`:
 
 All client authentication failures say `Client authentication failed.` whatever the cause (unknown
 client, wrong secret, wrong method, revoked), so an attacker learns nothing about which part was
-wrong.
+wrong. A request that names no client at all (no `client_id`, no Basic header) says `Client
+authentication is required.` instead; it concerns no client.
 
 A failed metadata document download (network error, timeout, TLS problem, a document that is too
-large) is reported only as `The client metadata document could not be fetched.` The text never
-carries the low level error, so it cannot be used to probe your network. Other problems with a
+large) is reported only as `The client metadata document could not be fetched.`, and a DNS lookup that
+got no answer (timeout, SERVFAIL) as `The client_id host could not be looked up right now.` Both are
+temporary: they are not remembered as a rejection. The text never carries the low level error, so it
+cannot be used to probe your network. Other problems with a
 document name the rule that was broken. See [troubleshooting](troubleshooting.md#cimd-fetch-failures).
 
 ## Handling errors in your own code

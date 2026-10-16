@@ -8,6 +8,8 @@ use Psr\Http\Message\ServerRequestInterface;
 
 /**
  * Client credentials in an `Authorization: Basic` header (RFC 6749, section 2.3.1).
+ *
+ * @internal Not part of the public API: it may change in any 1.x release.
  */
 final class BasicCredentials
 {

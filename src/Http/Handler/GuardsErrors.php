@@ -9,6 +9,8 @@ use Throwable;
 
 /**
  * Error handling of the JSON endpoints. Uses `$this->responder` and `$this->logger`.
+ *
+ * @internal Not part of the public API: it may change in any 1.x release.
  */
 // phpcs:ignore CakePHP.NamingConventions.ValidTraitName.InvalidTraitName
 trait GuardsErrors

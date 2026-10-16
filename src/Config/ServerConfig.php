@@ -5,7 +5,9 @@ namespace CakeDC\OAuth\Server\Config;
 
 use CakeDC\OAuth\Server\Resource\ResourceIdentifier;
 use CakeDC\OAuth\Server\Resource\ResourceRegistry;
+use CakeDC\OAuth\Server\Token\TokenGenerator;
 use InvalidArgumentException;
+use SensitiveParameter;
 
 /**
  * Settings of the authorization server.
@@ -23,6 +25,7 @@ final class ServerConfig
         'token' => [60, 60],
         'register' => [10, 3600],
         'cimd' => [10, 60],
+        'introspect' => [600, 60],
     ];
 
     /**
@@ -31,7 +34,7 @@ final class ServerConfig
      * @param string $secret At least 32 characters; signs form tokens.
      * @param string $routePrefix Path of the endpoints below the issuer, starting with "/".
      * @param \CakeDC\OAuth\Server\Config\Lifetimes $lifetimes Lifetimes.
-     * @param string $tokenPrefix Token prefix.
+     * @param string $tokenPrefix Token prefix: 1 to 16 lowercase letters or digits.
      * @param string $refreshTokens `always`, or `offline_access` to issue them only when asked.
      * @param string $registrationMode `open`, `token` or `closed`.
      * @param string|null $initialAccessToken Required to register in `token` mode.
@@ -47,19 +50,22 @@ final class ServerConfig
      * @param bool $introspection Enable the introspection endpoint.
      * @param bool $personalTokens Enable personal access tokens.
      * @param bool $connections Enable the connections page.
-     * @param array<string, array{0: int, 1: int}> $rateLimits Endpoint => [max requests, window seconds].
+     * @param array<string, array{0: int, 1: int}> $rateLimits Endpoint => [max requests, window seconds]:
+     *   `authorize`, `token` (also revocation), `register`, `cimd` and `introspect`.
      * @param int $retentionDays How long revoked and expired tokens are kept.
      * @throws \InvalidArgumentException
      */
     public function __construct(
         public readonly string $issuer,
         public readonly ResourceRegistry $resources,
+        #[SensitiveParameter]
         public readonly string $secret,
         public readonly string $routePrefix = '/oauth',
         public readonly Lifetimes $lifetimes = new Lifetimes(),
         public readonly string $tokenPrefix = 'oauth',
         public readonly string $refreshTokens = self::REFRESH_ALWAYS,
         public readonly string $registrationMode = self::REGISTRATION_OPEN,
+        #[SensitiveParameter]
         public readonly ?string $initialAccessToken = null,
         public readonly bool $allowPrivateSchemes = false,
         public readonly bool $cimdEnabled = true,
@@ -89,6 +95,9 @@ final class ServerConfig
             throw new InvalidArgumentException(
                 '"routePrefix" must start with "/" and not end with "/", like "/oauth".',
             );
+        }
+        if (!TokenGenerator::isValidPrefix($tokenPrefix)) {
+            throw new InvalidArgumentException('"tokenPrefix" must be 1 to 16 lowercase letters or digits.');
         }
         if (!in_array($refreshTokens, [self::REFRESH_ALWAYS, self::REFRESH_OFFLINE_ACCESS], true)) {
             throw new InvalidArgumentException('"refreshTokens" must be "always" or "offline_access".');
@@ -127,12 +136,14 @@ final class ServerConfig
     }
 
     /**
-     * Builds the settings from an array (see the class docs for the keys).
+     * Builds the settings from an array (see the class docs for the keys). A value of the wrong type is
+     * refused with an InvalidArgumentException that names the setting (`"cimd.timeout" must be an
+     * integer.`).
      *
      * @param array<string, mixed> $config Settings.
      * @throws \InvalidArgumentException
      */
-    public static function fromArray(array $config): self
+    public static function fromArray(#[SensitiveParameter] array $config): self
     {
         $known = [
             'issuer', 'secret', 'resources', 'defaultResource', 'routePrefix', 'tokenPrefix', 'lifetimes',
@@ -156,7 +167,7 @@ final class ServerConfig
             'cimd',
             ['enabled', 'allowedHosts', 'timeout', 'maxBytes', 'cacheMin', 'cacheMax'],
         );
-        $rateLimit = self::section($config, 'rateLimit', ['authorize', 'token', 'register', 'cimd']);
+        $rateLimit = self::section($config, 'rateLimit', array_keys(self::DEFAULT_RATE_LIMITS));
         $rateLimits = self::DEFAULT_RATE_LIMITS;
         foreach ($rateLimit as $endpoint => $limit) {
             if (
@@ -173,20 +184,18 @@ final class ServerConfig
             $rateLimits[$endpoint] = [$limit[0], $limit[1]];
         }
         $resources = $config['resources'];
-        $default = $config['defaultResource'] ?? null;
-        if (!is_array($resources) || ($default !== null && !is_string($default))) {
+        if (!is_array($resources)) {
             throw new InvalidArgumentException('"resources" must map resource URLs to settings.');
         }
-        $allowedHosts = $cimd['allowedHosts'] ?? null;
-        if ($allowedHosts !== null && (!is_array($allowedHosts) || !array_is_list($allowedHosts))) {
-            throw new InvalidArgumentException('"cimd.allowedHosts" must be a list of host names.');
+        $default = $config['defaultResource'] ?? null;
+        if ($default !== null && !is_string($default)) {
+            throw new InvalidArgumentException('"defaultResource" must be a resource URL (a string).');
         }
         $lifetimes = $config['lifetimes'] ?? [];
         if (!is_array($lifetimes)) {
             throw new InvalidArgumentException('"lifetimes" must be an array.');
         }
 
-        /** @var array<string, array<string, mixed>> $resources */
         /** @var array<string, mixed> $lifetimes */
         return new self(
             issuer: ResourceIdentifier::canonicalize(self::string($config, 'issuer')),
@@ -196,17 +205,17 @@ final class ServerConfig
             lifetimes: Lifetimes::fromArray($lifetimes),
             tokenPrefix: self::string($config, 'tokenPrefix', 'oauth'),
             refreshTokens: self::string($config, 'refreshTokens', self::REFRESH_ALWAYS),
-            registrationMode: self::string($registration, 'mode', self::REGISTRATION_OPEN),
+            registrationMode: self::string($registration, 'mode', self::REGISTRATION_OPEN, 'registration.'),
             initialAccessToken: isset($registration['initialAccessToken'])
-                ? self::string($registration, 'initialAccessToken')
+                ? self::string($registration, 'initialAccessToken', null, 'registration.')
                 : null,
-            allowPrivateSchemes: self::bool($registration, 'allowPrivateSchemes', false),
-            cimdEnabled: self::bool($cimd, 'enabled', true),
-            cimdAllowedHosts: $allowedHosts === null ? null : array_map('strval', $allowedHosts),
-            cimdTimeout: self::int($cimd, 'timeout', 5),
-            cimdMaxBytes: self::int($cimd, 'maxBytes', 10240),
-            cimdCacheMin: self::int($cimd, 'cacheMin', 300),
-            cimdCacheMax: self::int($cimd, 'cacheMax', 86400),
+            allowPrivateSchemes: self::bool($registration, 'allowPrivateSchemes', false, 'registration.'),
+            cimdEnabled: self::bool($cimd, 'enabled', true, 'cimd.'),
+            cimdAllowedHosts: self::stringList($cimd, 'allowedHosts', 'cimd.'),
+            cimdTimeout: self::int($cimd, 'timeout', 5, 'cimd.'),
+            cimdMaxBytes: self::int($cimd, 'maxBytes', 10240, 'cimd.'),
+            cimdCacheMin: self::int($cimd, 'cacheMin', 300, 'cimd.'),
+            cimdCacheMax: self::int($cimd, 'cacheMax', 86400, 'cimd.'),
             clientCredentials: self::bool($config, 'clientCredentials', true),
             introspection: self::bool($config, 'introspection', true),
             personalTokens: self::bool($config, 'personalTokens', true),
@@ -267,7 +276,7 @@ final class ServerConfig
      * @return array<string, mixed>
      * @throws \InvalidArgumentException
      */
-    private static function section(array $config, string $name, array $known): array
+    private static function section(#[SensitiveParameter] array $config, string $name, array $known): array
     {
         $section = $config[$name] ?? [];
         if (!is_array($section)) {
@@ -288,13 +297,19 @@ final class ServerConfig
      * A string setting.
      *
      * @param array<string, mixed> $config Settings.
+     * @param string $section The section the key belongs to, with a trailing dot, for messages.
      * @throws \InvalidArgumentException
      */
-    private static function string(array $config, string $key, ?string $default = null): string
-    {
+    private static function string(
+        #[SensitiveParameter]
+        array $config,
+        string $key,
+        ?string $default = null,
+        string $section = '',
+    ): string {
         $value = $config[$key] ?? $default;
         if (!is_string($value)) {
-            throw new InvalidArgumentException(sprintf('"%s" must be a string.', $key));
+            throw new InvalidArgumentException(sprintf('"%s%s" must be a string.', $section, $key));
         }
 
         return $value;
@@ -304,13 +319,19 @@ final class ServerConfig
      * A boolean setting.
      *
      * @param array<string, mixed> $config Settings.
+     * @param string $section The section the key belongs to, with a trailing dot, for messages.
      * @throws \InvalidArgumentException
      */
-    private static function bool(array $config, string $key, bool $default): bool
-    {
+    private static function bool(
+        #[SensitiveParameter]
+        array $config,
+        string $key,
+        bool $default,
+        string $section = '',
+    ): bool {
         $value = $config[$key] ?? $default;
         if (!is_bool($value)) {
-            throw new InvalidArgumentException(sprintf('"%s" must be true or false.', $key));
+            throw new InvalidArgumentException(sprintf('"%s%s" must be true or false.', $section, $key));
         }
 
         return $value;
@@ -320,15 +341,48 @@ final class ServerConfig
      * An integer setting.
      *
      * @param array<string, mixed> $config Settings.
+     * @param string $section The section the key belongs to, with a trailing dot, for messages.
      * @throws \InvalidArgumentException
      */
-    private static function int(array $config, string $key, int $default): int
-    {
+    private static function int(
+        #[SensitiveParameter]
+        array $config,
+        string $key,
+        int $default,
+        string $section = '',
+    ): int {
         $value = $config[$key] ?? $default;
         if (!is_int($value)) {
-            throw new InvalidArgumentException(sprintf('"%s" must be an integer.', $key));
+            throw new InvalidArgumentException(sprintf('"%s%s" must be an integer.', $section, $key));
         }
 
+        return $value;
+    }
+
+    /**
+     * An optional list of strings; null when the setting is absent.
+     *
+     * @param array<string, mixed> $config Settings.
+     * @param string $section The section the key belongs to, with a trailing dot, for messages.
+     * @return list<string>|null
+     * @throws \InvalidArgumentException
+     */
+    private static function stringList(array $config, string $key, string $section = ''): ?array
+    {
+        $value = $config[$key] ?? null;
+        if ($value === null) {
+            return null;
+        }
+        if (!is_array($value) || !array_is_list($value)) {
+            throw new InvalidArgumentException(sprintf('"%s%s" must be a list of host names.', $section, $key));
+        }
+        foreach ($value as $item) {
+            if (!is_string($item)) {
+                throw new InvalidArgumentException(sprintf('"%s%s" must be a list of host names.', $section, $key));
+            }
+        }
+
+        /** @var list<string> $value */
         return $value;
     }
 }

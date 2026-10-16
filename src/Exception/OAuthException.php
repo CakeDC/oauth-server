@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace CakeDC\OAuth\Server\Exception;
 
+use InvalidArgumentException;
 use RuntimeException;
 
 /**
@@ -11,12 +12,25 @@ use RuntimeException;
 final class OAuthException extends RuntimeException
 {
     /**
+     * The characters RFC 6749 (sections 4.1.2.1 and 5.2) and RFC 6750 (section 3) allow in
+     * `error_description`: %x20-21 / %x23-5B / %x5D-7E, so printable ASCII without `"` and `\`.
+     */
+    private const DESCRIPTION = '/\A[\x20\x21\x23-\x5B\x5D-\x7E]*\z/';
+
+    /**
+     * The longest part of a request value that printable() keeps.
+     */
+    private const PRINTABLE_LENGTH = 64;
+
+    /**
      * @param string $error The OAuth error code.
-     * @param string $description For the client developer; sent as `error_description`.
+     * @param string $description For the client developer; sent as `error_description`. Printable ASCII
+     *   without `"` and `\` (see isValidDescription()); put a value from the request through printable().
      * @param int $status HTTP status of a JSON error response.
      * @param array<string, string> $headers Extra response headers.
      * @param bool $temporary Whether the failure is a temporary unavailability of something the server
      *   depends on (for example a client metadata host), so a cached answer may stand in.
+     * @throws \InvalidArgumentException When $description has a character the RFCs do not allow.
      */
     public function __construct(
         public readonly string $error,
@@ -25,7 +39,34 @@ final class OAuthException extends RuntimeException
         public readonly array $headers = [],
         public readonly bool $temporary = false,
     ) {
+        if (!self::isValidDescription($description)) {
+            throw new InvalidArgumentException(
+                'An error_description may only contain printable ASCII characters other than " and \\.',
+            );
+        }
         parent::__construct($description);
+    }
+
+    /**
+     * Whether $description fits `error_description`: %x20-21 / %x23-5B / %x5D-7E (RFC 6749 sections 4.1.2.1
+     * and 5.2, RFC 6750 section 3), that is printable ASCII without a double quote or a backslash.
+     */
+    public static function isValidDescription(string $description): bool
+    {
+        return preg_match(self::DESCRIPTION, $description) === 1;
+    }
+
+    /**
+     * A value taken from the request (a parameter name, a grant type, a scope) made fit for a description:
+     * every byte outside the allowed set becomes `?`, and it is cut to $max characters (64 by default).
+     *
+     * @internal Used by the library to build its own descriptions.
+     */
+    public static function printable(string $value, int $max = self::PRINTABLE_LENGTH): string
+    {
+        $printable = (string)preg_replace('/[^\x20\x21\x23-\x5B\x5D-\x7E]/', '?', $value);
+
+        return strlen($printable) > $max ? substr($printable, 0, max(0, $max)) . '...' : $printable;
     }
 
     /**

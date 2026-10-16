@@ -121,10 +121,28 @@ statement in your database:
 - for `prune()`, a check that is repeated in the statement that deletes or claims the client, not only
   in the query that selected it.
 
-`PdoStorage` does all of this, and its own tests replay the races (another request committing between a
-read and a write) on SQLite, MySQL, MariaDB and PostgreSQL. With an ORM, use its query builder for these
-statements (`updateAll()`, `deleteAll()` or the equivalent) and check the returned count, rather than
-loading and saving entities.
+`PdoStorage` does all of this. Its own tests replay the races in two ways:
+
+- In one process, a hooked connection commits the other request's write just before a statement is
+  prepared or a transaction begins (a first consent saved concurrently, a client used or given a live
+  token after `prune()` selected it). These run on SQLite, MySQL, MariaDB and PostgreSQL. They cannot
+  hold a lock open, so they do not prove that a statement waits for a write still in flight.
+- `PruneLockTest` runs `prune()` in a second process while the test holds a token insert for the
+  candidate client in an open transaction, and checks that the client and the new token survive. It
+  runs on PostgreSQL and on MySQL or MariaDB when their DSN variables are set (as in CI). On PostgreSQL
+  it pins the `SELECT ... FOR UPDATE` that `prune()` takes on the client row: the claiming `UPDATE`
+  alone does not wait for the insert there (it changes no key column, and the insert holds only a
+  key-share lock), so without the row lock the client is deleted and the new token cascaded away. On
+  MySQL and MariaDB the claiming `UPDATE` already waits for the insert's lock, so the test passes either
+  way and the row lock is a second line there.
+
+The other rules (`consumeCode()`, `markTokenUsed()`, the revocations, the code deletes, the unique
+`client_id`) rest on the single conditional statements and unique keys above. The contract checks their
+results one call at a time, and the endpoint tests replay the races on top of `InMemoryStorage`; no
+committed test runs them in two processes against a database.
+
+With an ORM, use its query builder for these statements (`updateAll()`, `deleteAll()` or the
+equivalent) and check the returned count, rather than loading and saving entities.
 
 Other rules the contract pins:
 

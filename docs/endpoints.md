@@ -144,7 +144,8 @@ repeated `token`).
 
 A client must use the method it registered with. Sending two methods at once is refused. Every
 authentication failure answers the same text, `Client authentication failed.`, and a failed Basic
-attempt adds `WWW-Authenticate: Basic realm="oauth"`. The one exception is a metadata document client
+attempt adds `WWW-Authenticate: Basic realm="oauth"`. A request that names no client at all (no
+`client_id`, no Basic header) answers `Client authentication is required.`. The one exception is a metadata document client
 whose document cannot be used: that `invalid_client` keeps its own message (for example `Clients from
 example.org are not accepted.` or `The metadata document needs a client_name.`), so its developer can
 fix it. See [troubleshooting](troubleshooting.md).
@@ -340,7 +341,8 @@ An active access token:
 An active refresh token answers the same, without `username`, and with `token_type` `refresh_token`.
 Anything else (unknown, revoked, expired, used, owner gone, client revoked) answers
 `{"active": false}`. Introspecting a token does not count as using it: `last_used_at` does not change.
-This endpoint uses the `token` rate limit.
+This endpoint has its own rate limit, `introspect` (600 a minute per address by default), so a resource
+server that introspects on every request neither runs out of the `token` budget nor has to loosen it.
 
 Errors: `invalid_request`, `invalid_client`, `access_denied` (disabled).
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace CakeDC\OAuth\Server\View;
 
 use CakeDC\OAuth\Server\Owner\ResourceOwner;
+use SensitiveParameter;
 
 /**
  * What the connections page shows.
@@ -35,6 +36,7 @@ final class ConnectionsView
         public readonly string $formToken,
         public readonly int $maxDays,
         public readonly bool $personalTokensEnabled,
+        #[SensitiveParameter]
         public readonly ?string $newToken = null,
         public readonly ?string $error = null,
     ) {

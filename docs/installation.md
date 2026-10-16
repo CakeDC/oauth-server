@@ -8,7 +8,8 @@
 - `ext-pdo` with a driver (SQLite, MySQL/MariaDB or PostgreSQL) if you use `PdoStorage`.
 - `ext-curl` if you accept Client ID Metadata Documents (the default). Without it, either pass your
   own `HttpTransportInterface` to `AuthorizationServer` or set `cimd.enabled` to `false`.
-- Optional: `mcp/sdk`, only for `mcpTokenValidator()`. See [MCP](mcp.md).
+- Optional: `mcp/sdk` 0.9 or newer, only for `mcpTokenValidator()`. An older SDK is refused with a
+  `LogicException` when the validator is built. See [MCP](mcp.md#install).
 
 The library has no mbstring dependency.
 

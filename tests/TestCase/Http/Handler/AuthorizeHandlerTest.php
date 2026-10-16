@@ -10,6 +10,7 @@ use CakeDC\OAuth\Server\Grant\Pkce;
 use CakeDC\OAuth\Server\Owner\ResourceOwner;
 use CakeDC\OAuth\Server\Owner\SubjectType;
 use CakeDC\OAuth\Server\Test\Support\Fixtures;
+use CakeDC\OAuth\Server\Test\Support\RawPathUri;
 use CakeDC\OAuth\Server\Test\Support\ServerHarness;
 use CakeDC\OAuth\Server\Token\TokenGenerator;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -431,6 +432,28 @@ class AuthorizeHandlerTest extends TestCase
         $this->assertStringContainsString('<h1>evil.example wants to access Example MCP</h1>', $html);
         $this->assertStringContainsString('<title>Authorize evil.example</title>', $html);
         $this->assertStringNotContainsString('<h1>Claude', $html);
+    }
+
+    /**
+     * With a PSR-7 implementation that returns `//evil.example/...` from getPath() (Guzzle, Laminas), the
+     * login return URL and the form action still start with a single slash.
+     */
+    public function testARawDoubleSlashPathNeverBecomesAProtocolRelativeReturnUrl(): void
+    {
+        $client = $this->harness->publicClient();
+        $url = $this->harness->authorizeUrl($client);
+        $request = $this->harness->request('GET', $url)
+            ->withUri(new RawPathUri($url, '//evil.example/authorize'), true);
+
+        $this->harness->server->authorizeHandler()->handle($request);
+
+        $returnTo = (string)$this->harness->userContext->returnTo;
+        $this->assertStringStartsWith('/evil.example/authorize?', $returnTo);
+        $this->assertStringStartsNotWith('//', $returnTo);
+
+        $this->harness->signIn();
+        $html = (string)$this->harness->server->authorizeHandler()->handle($request)->getBody();
+        $this->assertStringContainsString('action="/evil.example/authorize"', $html);
     }
 
     public function testDoubleSlashPathsAreNormalised(): void

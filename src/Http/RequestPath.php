@@ -8,6 +8,8 @@ use Psr\Http\Message\ServerRequestInterface;
 
 /**
  * The request path in a form that is safe to echo into a form action or a login return URL.
+ *
+ * @internal Not part of the public API: it may change in any 1.x release.
  */
 final class RequestPath
 {

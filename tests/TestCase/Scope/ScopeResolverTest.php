@@ -52,7 +52,7 @@ class ScopeResolverTest extends TestCase
     public function testUnknownScopesAreRejected(): void
     {
         $this->expectException(OAuthException::class);
-        $this->expectExceptionMessage('"admin"');
+        $this->expectExceptionMessage("'admin'");
 
         $this->resolver->resolve($this->resource, ['read', 'admin'], null, null);
     }

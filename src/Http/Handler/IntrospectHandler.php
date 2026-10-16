@@ -27,6 +27,7 @@ use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 use Psr\Log\LoggerInterface;
+use SensitiveParameter;
 
 /**
  * Token introspection (RFC 7662), for other services that need to check this server's tokens.
@@ -80,7 +81,7 @@ final class IntrospectHandler implements RequestHandlerInterface
             if ($request->getMethod() !== 'POST') {
                 return $this->responder->methodNotAllowed('POST, OPTIONS');
             }
-            $this->rateLimiter->hit('token', ($this->clientIp)($request));
+            $this->rateLimiter->hit('introspect', ($this->clientIp)($request));
             if (!FormBody::isForm($request)) {
                 throw OAuthException::invalidRequest(
                     'Send the parameters form-encoded (application/x-www-form-urlencoded).',
@@ -88,7 +89,7 @@ final class IntrospectHandler implements RequestHandlerInterface
             }
             [$body, $repeated] = FormBody::read($request);
             if (in_array('token', $repeated, true)) {
-                throw OAuthException::invalidRequest('"token" was sent more than once.');
+                throw OAuthException::invalidRequest("'token' was sent more than once.");
             }
             $client = $this->clientAuthenticator->authenticate($request, $body, ($this->clientIp)($request));
             if ($client->isPublic() || !$client->allowIntrospection) {
@@ -96,7 +97,7 @@ final class IntrospectHandler implements RequestHandlerInterface
             }
             $token = $body['token'] ?? '';
             if ($token === '') {
-                throw OAuthException::invalidRequest('"token" is missing.');
+                throw OAuthException::invalidRequest("'token' is missing.");
             }
 
             return $this->responder->json($this->introspect($token));
@@ -108,7 +109,7 @@ final class IntrospectHandler implements RequestHandlerInterface
      *
      * @return array<string, mixed>
      */
-    private function introspect(string $value): array
+    private function introspect(#[SensitiveParameter] string $value): array
     {
         $inactive = ['active' => false];
         $stored = $this->tokens->findTokenByHash(TokenGenerator::hash($value));

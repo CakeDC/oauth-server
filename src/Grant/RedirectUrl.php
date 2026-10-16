@@ -3,8 +3,12 @@ declare(strict_types=1);
 
 namespace CakeDC\OAuth\Server\Grant;
 
+use SensitiveParameter;
+
 /**
  * Builds the redirect back to a client.
+ *
+ * @internal Not part of the public API: it may change in any 1.x release.
  */
 final class RedirectUrl
 {
@@ -13,7 +17,7 @@ final class RedirectUrl
      *
      * @param array<string, string|null> $params Parameters.
      */
-    public static function build(string $uri, array $params): string
+    public static function build(string $uri, #[SensitiveParameter] array $params): string
     {
         $query = http_build_query(
             array_filter($params, fn(?string $value): bool => $value !== null),

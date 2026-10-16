@@ -25,6 +25,8 @@ use Psr\Http\Server\RequestHandlerInterface;
 final class BearerTokenMiddleware implements MiddlewareInterface
 {
     /**
+     * @internal Build it with AuthorizationServer::bearerMiddleware(); its constructor may change in any 1.x
+     *   release.
      * @param \CakeDC\OAuth\Server\Token\TokenValidator $validator Validation.
      * @param \CakeDC\OAuth\Server\Http\HttpResponder $responder Responses.
      * @param string $resource The resource this route belongs to.

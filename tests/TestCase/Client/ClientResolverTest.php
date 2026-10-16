@@ -323,6 +323,84 @@ class ClientResolverTest extends TestCase
     }
 
     /**
+     * A DNS failure (resolver timeout, SERVFAIL) is temporary too: it is not remembered as a rejection,
+     * and the next request looks the host up again.
+     */
+    public function testAFailedDnsLookupIsNotRememberedAsARejection(): void
+    {
+        $dns = new FakeDns();
+        $dns->failing = ['claude.ai'];
+        $resolver = new ClientResolver(
+            $this->storage,
+            $this->clock,
+            new MetadataDocumentFetcher($dns, $this->transport),
+            300,
+            86400,
+            false,
+            null,
+            new ArrayCache($this->clock),
+        );
+
+        for ($i = 0; $i < 2; $i++) {
+            try {
+                $resolver->resolve(self::CLAUDE, '203.0.113.1');
+                $this->fail('Resolved a client whose host could not be looked up.');
+            } catch (OAuthException $e) {
+                $this->assertTrue($e->temporary);
+            }
+        }
+        $this->assertSame(['claude.ai', 'claude.ai'], $dns->lookups);
+
+        $dns->failing = [];
+        $this->assertNotNull($resolver->resolve(self::CLAUDE, '203.0.113.1'));
+    }
+
+    /**
+     * A failure remembered by an older version, whose description had double quotes, is ignored instead
+     * of turning into an InvalidArgumentException: the document is fetched again.
+     */
+    public function testARememberedFailureWithAnOldDescriptionIsIgnored(): void
+    {
+        $cache = new ArrayCache($this->clock);
+        $cache->set(
+            'oauth_cf_' . substr(hash('sha256', self::CLAUDE), 0, 40),
+            ['message' => 'Only public clients (token_endpoint_auth_method "none") are supported.', 'temporary' => false],
+            60,
+        );
+        $resolver = new ClientResolver(
+            $this->storage,
+            $this->clock,
+            new MetadataDocumentFetcher(new FakeDns(), $this->transport),
+            300,
+            86400,
+            false,
+            null,
+            $cache,
+        );
+
+        $this->assertNotNull($resolver->resolve(self::CLAUDE));
+        $this->assertCount(1, $this->transport->requests);
+    }
+
+    /**
+     * A client_id is at most 2048 characters (the storage indexes a hash of it, and nothing longer is
+     * looked up or fetched).
+     */
+    public function testAClientIdLongerThan2048CharactersIsUnknown(): void
+    {
+        $long = Fixtures::client(['clientId' => str_repeat('a', 2049)]);
+        $limit = Fixtures::client(['clientId' => str_repeat('b', 2048)]);
+        $this->storage->saveClient($long);
+        $this->storage->saveClient($limit);
+
+        $this->assertNull($this->resolver()->resolve($long->clientId));
+        $this->assertSame($limit->id, $this->resolver()->resolve($limit->clientId)?->id);
+        $document = 'https://claude.ai/' . str_repeat('x', 2049 - strlen('https://claude.ai/'));
+        $this->assertNull($this->resolver()->resolve($document));
+        $this->assertSame([], $this->transport->requests);
+    }
+
+    /**
      * @return array<string, array{\CakeDC\OAuth\Server\Client\Cimd\FetchedResponse}>
      */
     public static function definiteRejections(): array

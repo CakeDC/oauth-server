@@ -64,8 +64,16 @@ Shown at `/oauth/connections` to signed-in people. Anonymous visitors are sent t
 - The personal access tokens section: list, revoke, and a form to create one. See
   [personal tokens](personal-tokens.md).
 
-Revoking a connection revokes its whole token family and forgets the consent, so the next
-authorization asks again.
+The permissions of a connection are its grant: the scopes of its live refresh token that was not
+rotated yet. A refresh keeps the grant on the new refresh token and may narrow only the new access
+token (a client that asks for less, a person with fewer rights today), so the access token can show
+less than the connection holds; the next refresh can ask for the rest again. A connection without a
+refresh token (`refreshTokens` set to `offline_access` and not asked for) shows its access token's
+scopes. `Connection::$scopes` follows the same rule.
+
+Revoking a connection revokes its whole token family, deletes the person's authorization codes for that
+client that were not exchanged yet (for every resource, not only the connection's), and forgets the
+consent, so the next authorization asks again.
 
 ## Replacing the pages
 
@@ -165,7 +173,7 @@ interface ConnectionsRendererInterface
 | Member | Meaning |
 | --- | --- |
 | `owner` | The signed-in `ResourceOwner` |
-| `connections` | `list<Connection>`: `familyId`, `client`, `resource`, `scopes`, `connectedAt`, `lastUsedAt` |
+| `connections` | `list<Connection>`: `familyId`, `client`, `resource`, `scopes` (the grant, see [the connections page](#the-connections-page)), `connectedAt`, `lastUsedAt` |
 | `personalTokens` | `list<Token>`: `id`, `name`, `resource`, `scopes`, `expiresAt` |
 | `creatable` | `resource => ['name' => ..., 'scopes' => [scope => description]]` the person may put in a new token |
 | `resourceNames` | `identifier => name`, and `resourceName($identifier)` |

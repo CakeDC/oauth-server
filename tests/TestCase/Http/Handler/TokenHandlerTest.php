@@ -209,6 +209,25 @@ class TokenHandlerTest extends TestCase
         $this->assertError($this->post(['grant_type' => 'password', 'client_id' => $client->clientId]), 'unsupported_grant_type');
         $this->assertError($this->post(['grant_type' => 'authorization_code', 'client_id' => 'nobody', 'code' => 'x']), 'invalid_client', 401);
 
+        // A complete, valid exchange that is not declared form-encoded is refused, not parsed anyway.
+        $code = $this->harness->authorizationCode($client);
+        $fields = http_build_query([
+            'grant_type' => 'authorization_code',
+            'code' => $code,
+            'redirect_uri' => $client->redirectUris[0],
+            'code_verifier' => ServerHarness::VERIFIER,
+            'client_id' => $client->clientId,
+        ], '', '&', PHP_QUERY_RFC3986);
+        foreach (['text/plain', 'application/json', ''] as $type) {
+            $headers = $type === '' ? [] : ['Content-Type' => $type];
+            $response = $this->harness->server->tokenHandler()->handle(
+                $this->harness->request('POST', 'https://example.com/oauth/token', $headers, $fields),
+            );
+            $this->assertError($response, 'invalid_request');
+            $this->assertStringContainsString('form-encoded', $this->harness->json($response)['error_description']);
+        }
+        $this->assertArrayHasKey('access_token', $this->harness->json($this->harness->exchange($client, $code)));
+
         $json = $this->harness->server->tokenHandler()->handle(
             $this->harness->request('POST', 'https://example.com/oauth/token', ['Content-Type' => 'application/json'], '{}'),
         );
