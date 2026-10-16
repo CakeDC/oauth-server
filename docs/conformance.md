@@ -26,7 +26,7 @@ The library is checked against the official MCP conformance suite for authorizat
 
 The suite is pinned to `0.2.0-alpha.11`. The authorization server scenarios are new and still
 change between alpha releases, and a moving version would make CI fail for reasons unrelated to
-this library. It is also the version cakephp-mcp pins. Bump it on purpose and read the changelog
+this library. Bump it on purpose and read the changelog
 when you do.
 
 ## Running it locally
@@ -50,7 +50,7 @@ standalone example (`examples/standalone`) with `OAUTH_EXAMPLE_AUTO_LOGIN=1`, wh
 demo user alice, and `setup.php` registers a public native client for `http://127.0.0.1/callback`
 (loopback, any port, RFC 8252) with consent already granted. The script reads the authorization
 URL from the runner's output and requests it with curl; the server redirects straight to the
-runner's callback. A failed scenario or a `FAILURE` check in the results fails the script, and the
+runner's callback. The script then requires a `checks.json` for both scenarios, each with at least one check and every check `SUCCESS`; an empty or missing results directory fails, and the
 trap stops the PHP server and the runner when the script exits.
 
 ## Logs and results

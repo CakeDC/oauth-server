@@ -64,16 +64,25 @@ $response = match (true) {
 
         return new Response(302, ['Location' => LocalPath::orHome($return)]);
     })(),
-    $path === '/login' => new Response(200, ['Content-Type' => 'text/html'], '<form method="post">'
+    $path === '/login' => new Response(
+        200,
+        ['Content-Type' => 'text/html', 'Cache-Control' => 'no-store'],
+        '<form method="post">'
         . '<select name="user"><option value="alice">Alice</option><option value="bob">Bob</option></select>'
-        . '<button>Sign in</button></form>'),
-    default => new Response(404, [], 'Not found'),
+        . '<button>Sign in</button></form>',
+    ),
+    default => new Response(404, ['Cache-Control' => 'no-store'], 'Not found'),
 };
 
 http_response_code($response->getStatusCode());
+// Only these three are replaced (the session cache limiter is off, this is belt and braces); everything
+// else is appended, so a handler's Set-Cookie never clobbers the session cookie.
+foreach (['Cache-Control', 'Pragma', 'Expires'] as $cacheHeader) {
+    header_remove($cacheHeader);
+}
 foreach ($response->getHeaders() as $name => $values) {
-    foreach (array_values($values) as $i => $value) {
-        header($name . ': ' . $value, $i === 0);
+    foreach ($values as $value) {
+        header($name . ': ' . $value, false);
     }
 }
 echo $response->getBody();
