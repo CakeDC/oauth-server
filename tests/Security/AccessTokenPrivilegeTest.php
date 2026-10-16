@@ -79,8 +79,7 @@ class AccessTokenPrivilegeTest extends TestCase
 
         $this->assertSame(401, $this->call($harness, Fixtures::MCP, $tokens['access_token']));
         $response = $harness->server->tokenHandler()->handle($harness->form('https://example.com/oauth/token', [
-            'grant_type' => 'refresh_token',
-            'refresh_token' => $tokens['refresh_token'],
+            'grant_type' => 'client_credentials',
         ], $basic));
         $this->assertSame(401, $response->getStatusCode());
         $this->assertSame('invalid_client', $harness->json($response)['error']);

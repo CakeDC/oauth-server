@@ -43,6 +43,8 @@ class SsrfTest extends TestCase
 
         $this->assertSame(400, $response->getStatusCode());
         $this->assertCount(1, $harness->transport->requests);
+        // The fetch is pinned to the address that was vetted, not resolved again by the transport.
+        $this->assertSame('93.184.216.34', $harness->transport->requests[0][1]);
     }
 
     public function testPlainHttpClientIdUrlsAreNeverFetched(): void

@@ -53,7 +53,13 @@ class RedirectUriValidationTest extends TestCase
     {
         $harness = new ServerHarness();
         $uris = [
-            'javascript:alert(1)', 'https://app.example.com/cb#frag', 'http://app.example.com/cb', 'data:text/html,x', 'file:///etc/passwd', 'vbscript:msgbox(1)'];
+            'javascript:alert(1)',
+            'https://app.example.com/cb#frag',
+            'http://app.example.com/cb',
+            'data:text/html,x',
+            'file:///etc/passwd',
+            'vbscript:msgbox(1)',
+        ];
         foreach ($uris as $uri) {
             $body = (string)json_encode([
                 'application_type' => 'native',

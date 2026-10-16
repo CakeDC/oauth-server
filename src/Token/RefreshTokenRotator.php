@@ -19,9 +19,11 @@ use Psr\EventDispatcher\EventDispatcherInterface;
 /**
  * Exchanges refresh tokens for new pairs, detecting reuse.
  *
- * A refresh token whose owner no longer exists (a removed person, or a client without an identity) is
- * refused with invalid_grant before it is marked used and nothing is revoked, so a reactivated person's
- * connection works again without a new consent.
+ * Replays are judged first: a replay outside the grace window revokes the family whether or not the owner
+ * is still active, because a replay is theft evidence either way. Otherwise, a refresh token whose owner
+ * no longer exists (a removed person, or a client without an identity) is refused with invalid_grant
+ * before it is marked used, and nothing is revoked, so a reactivated person's connection works again
+ * without a new consent.
  */
 final class RefreshTokenRotator
 {
