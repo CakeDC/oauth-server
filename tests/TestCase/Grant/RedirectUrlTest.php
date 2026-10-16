@@ -20,7 +20,7 @@ class RedirectUrlTest extends TestCase
         );
     }
 
-    public function testExistingQueryWithOnlyNullValuesAddsNothingUseful(): void
+    public function testNullValuesAreDroppedAndTheExistingQueryKept(): void
     {
         $this->assertSame(
             'https://app.example.com/cb?x=1&code=c',

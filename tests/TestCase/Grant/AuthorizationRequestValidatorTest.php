@@ -8,6 +8,7 @@ use CakeDC\OAuth\Server\Client\Cimd\MetadataDocumentFetcher;
 use CakeDC\OAuth\Server\Client\Client;
 use CakeDC\OAuth\Server\Client\ClientResolver;
 use CakeDC\OAuth\Server\Grant\AuthorizationError;
+use CakeDC\OAuth\Server\Grant\AuthorizationRequest;
 use CakeDC\OAuth\Server\Grant\AuthorizationRequestValidator;
 use CakeDC\OAuth\Server\Grant\Pkce;
 use CakeDC\OAuth\Server\Storage\InMemory\InMemoryStorage;
@@ -212,7 +213,6 @@ class AuthorizationRequestValidatorTest extends TestCase
             'client' => ['client_id', 'other'],
             'redirect uri' => ['redirect_uri', 'http://127.0.0.1/cb'],
             'state' => ['state', 'abc'],
-            'resource' => ['resource', Fixtures::API],
             'scopes' => ['scope', 'content:read offline_access'],
             'offline access' => ['scope', 'content:write'],
             'code challenge' => ['code_challenge', 'A' . str_repeat('b', 42)],
@@ -227,13 +227,27 @@ class AuthorizationRequestValidatorTest extends TestCase
             'redirectUris' => ['https://app.example.com/cb', 'http://127.0.0.1/cb'],
         ]));
         $changes = [$field => $value];
-        if ($field === 'resource') {
-            $changes['scope'] = null;
-        }
         $original = $this->validator->validate($this->params());
         $changed = $this->validator->validate($this->params($changes));
 
         $this->assertNotSame($original->fingerprint(), $changed->fingerprint());
+    }
+
+    public function testFingerprintChangesWithTheResourceAlone(): void
+    {
+        $original = $this->validator->validate($this->params());
+        $other = new AuthorizationRequest(
+            $original->client,
+            $original->redirectUri,
+            $original->state,
+            Fixtures::resources()->get(Fixtures::API) ?? $this->fail('Missing resource'),
+            $original->scopes,
+            $original->offlineAccess,
+            $original->codeChallenge,
+            $original->params,
+        );
+
+        $this->assertNotSame($original->fingerprint(), $other->fingerprint());
     }
 
     public function testFormFieldsRoundTripKeepTheFingerprint(): void
