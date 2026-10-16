@@ -320,7 +320,12 @@ final class InMemoryStorage implements StorageInterface
                     $tokens++;
                 }
             }
-            $this->codes = array_filter($this->codes, fn(AuthorizationCode $c): bool => $c->clientInternalId !== $id);
+            foreach ($this->codes as $codeId => $code) {
+                if ($code->clientInternalId === $id) {
+                    unset($this->codes[$codeId]);
+                    $codes++;
+                }
+            }
             $this->consents = array_filter($this->consents, fn(Consent $c): bool => $c->clientInternalId !== $id);
             unset($this->clients[$id]);
             $clients++;

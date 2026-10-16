@@ -168,8 +168,8 @@ abstract class StorageContractTestCase extends TestCase
     {
         $storage = $this->createStorage();
         $storage->saveClient($this->makeClient(ClientType::Registered));
-        $storage->saveClient($this->makeClient(ClientType::Dynamic, null, 5));
         $storage->saveClient($this->makeClient(ClientType::Dynamic, null, 10));
+        $storage->saveClient($this->makeClient(ClientType::Dynamic, null, 5));
 
         $this->assertCount(3, $storage->findClients());
         $dynamic = $storage->findClients(ClientType::Dynamic);
@@ -295,13 +295,15 @@ abstract class StorageContractTestCase extends TestCase
         $storage->saveClient($first);
         $storage->saveClient($second);
         $storage->saveToken($this->makeToken($first));
-        $storage->saveToken($this->makeToken($second));
+        $secondUser = $this->makeToken($second);
+        $storage->saveToken($secondUser);
         $storage->saveToken($this->makeToken($second, subject: '43'));
         $storage->saveToken($this->makeToken($second, subject: '42', subjectType: SubjectType::Client));
 
         $this->assertSame(2, $storage->revokeTokensBySubject('42', SubjectType::User, $this->at(1)));
         $this->assertSame(2, $storage->revokeTokensByClient($second->id, $this->at(2)));
         $this->assertSame(0, $storage->revokeTokensByClient($second->id, $this->at(3)));
+        $this->assertEquals($this->at(1), $storage->findTokenById($secondUser->id)?->revokedAt);
     }
 
     /**
@@ -429,10 +431,12 @@ abstract class StorageContractTestCase extends TestCase
         $recentExpired = $this->makeToken($client, expiresIn: 3600, createdAt: 3 * 86400);
         $oldRevoked = $this->makeToken($client, expiresIn: null);
         $live = $this->makeToken($client, expiresIn: null);
-        foreach ([$oldExpired, $recentExpired, $oldRevoked, $live] as $token) {
+        $recentRevoked = $this->makeToken($client, expiresIn: null);
+        foreach ([$oldExpired, $recentExpired, $oldRevoked, $recentRevoked, $live] as $token) {
             $storage->saveToken($token);
         }
         $storage->revokeToken($oldRevoked->id, $this->at(60));
+        $storage->revokeToken($recentRevoked->id, $this->at(3 * 86400));
 
         $result = $storage->prune($this->at(4 * 86400), 2 * 86400, 86400);
 
@@ -444,6 +448,7 @@ abstract class StorageContractTestCase extends TestCase
         $this->assertNull($storage->findTokenById($oldExpired->id));
         $this->assertNull($storage->findTokenById($oldRevoked->id));
         $this->assertNotNull($storage->findTokenById($recentExpired->id));
+        $this->assertNotNull($storage->findTokenById($recentRevoked->id));
         $this->assertNotNull($storage->findTokenById($live->id));
     }
 
@@ -452,29 +457,52 @@ abstract class StorageContractTestCase extends TestCase
      */
     public function testPruneRemovesUnusedDynamicClientsOnly(): void
     {
+        $day = 86400;
         $storage = $this->createStorage();
         $registered = $this->makeClient(ClientType::Registered);
         $abandoned = $this->makeClient(ClientType::Dynamic);
+        $touchedRecently = $this->makeClient(ClientType::Dynamic);
+        $touchedLongAgo = $this->makeClient(ClientType::Dynamic);
+        $oldMetadata = $this->makeClient(ClientType::MetadataDocument, 'https://old.example/client.json');
         $inUse = $this->makeClient(ClientType::Dynamic);
-        $recent = $this->makeClient(ClientType::MetadataDocument, 'https://new.example/client.json', 2 * 86400);
-        foreach ([$registered, $abandoned, $inUse, $recent] as $client) {
-            $storage->saveClient($client);
+        $recent = $this->makeClient(ClientType::MetadataDocument, 'https://new.example/client.json', 9 * $day + 43200);
+        foreach ([$registered, $abandoned, $touchedRecently, $touchedLongAgo, $oldMetadata, $inUse, $recent] as $c) {
+            $storage->saveClient($c);
         }
+        $storage->touchClient($touchedRecently->id, $this->at(9 * $day));
+        $storage->touchClient($touchedLongAgo->id, $this->at($day));
         $storage->saveConsent(
             new Consent(Uuid::v4(), '42', $abandoned->id, 'https://example.com/mcp', ['a'], $this->at(), $this->at()),
         );
-        $deadToken = $this->makeToken($abandoned, expiresIn: 60, createdAt: 2 * 86400);
-        $storage->saveToken($deadToken);
-        $storage->saveToken($this->makeToken($inUse, TokenType::Refresh, expiresIn: 30 * 86400));
+        $expiredCode = $this->makeCode($abandoned, 60);
+        $liveCode = $this->makeCode($abandoned, 20 * $day);
+        $storage->saveCode($expiredCode);
+        $storage->saveCode($liveCode);
+        $revokedRecently = $this->makeToken($abandoned, expiresIn: null);
+        $expiredRecently = $this->makeToken($abandoned, expiresIn: 3600, createdAt: 9 * $day);
+        $storage->saveToken($revokedRecently);
+        $storage->saveToken($expiredRecently);
+        $storage->revokeToken($revokedRecently->id, $this->at(9 * $day + 43200));
+        $liveToken = $this->makeToken($inUse, TokenType::Refresh, expiresIn: 30 * $day);
+        $storage->saveToken($liveToken);
 
-        $result = $storage->prune($this->at(2 * 86400 + 3600), 7 * 86400, 86400);
+        $result = $storage->prune($this->at(10 * $day), 2 * $day, $day);
 
-        $this->assertSame(1, $result->clients);
+        $this->assertSame(2, $result->codes);
+        $this->assertSame(2, $result->tokens);
+        $this->assertSame(3, $result->clients);
         $this->assertNull($storage->findClientById($abandoned->id));
-        $this->assertNull($storage->findTokenById($deadToken->id));
+        $this->assertNull($storage->findClientById($touchedLongAgo->id));
+        $this->assertNull($storage->findClientById($oldMetadata->id));
+        $this->assertNull($storage->findCodeByHash($liveCode->codeHash));
+        $this->assertNull($storage->findCodeByHash($expiredCode->codeHash));
+        $this->assertNull($storage->findTokenById($revokedRecently->id));
+        $this->assertNull($storage->findTokenById($expiredRecently->id));
         $this->assertNull($storage->findConsent('42', $abandoned->id, 'https://example.com/mcp'));
         $this->assertNotNull($storage->findClientById($registered->id));
+        $this->assertNotNull($storage->findClientById($touchedRecently->id));
         $this->assertNotNull($storage->findClientById($inUse->id));
         $this->assertNotNull($storage->findClientById($recent->id));
+        $this->assertNotNull($storage->findTokenById($liveToken->id));
     }
 }
