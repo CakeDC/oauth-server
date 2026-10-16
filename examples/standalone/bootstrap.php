@@ -3,11 +3,13 @@ declare(strict_types=1);
 
 use CakeDC\OAuth\Server\AuthorizationServer;
 use CakeDC\OAuth\Server\Config\ServerConfig;
+use CakeDC\OAuth\Server\Example\AutoApprove;
 use CakeDC\OAuth\Server\Example\DemoUsers;
 use CakeDC\OAuth\Server\Storage\Pdo\PdoStorage;
 use Nyholm\Psr7\Factory\Psr17Factory;
 
 require dirname(__DIR__, 2) . '/vendor/autoload.php';
+require __DIR__ . '/AutoApprove.php';
 require __DIR__ . '/DemoUsers.php';
 require __DIR__ . '/LocalPath.php';
 
@@ -20,6 +22,8 @@ $pdo = new PDO('sqlite:' . (getenv('OAUTH_EXAMPLE_DB') ?: __DIR__ . '/oauth.sqli
 PdoStorage::createTables($pdo);
 $users = new DemoUsers();
 $factory = new Psr17Factory();
+// UNSAFE, conformance run only: OAUTH_EXAMPLE_AUTO_APPROVE=1 clicks "Allow" on every consent page.
+$autoApprove = getenv('OAUTH_EXAMPLE_AUTO_APPROVE') === '1' ? new AutoApprove($factory) : null;
 
 $server = new AuthorizationServer(
     ServerConfig::fromArray([
@@ -40,6 +44,13 @@ $server = new AuthorizationServer(
     $users,
     $factory,
     $factory,
+    consentRenderer: $autoApprove,
 );
 
-return ['server' => $server, 'users' => $users, 'factory' => $factory, 'issuer' => $issuer];
+return [
+    'server' => $server,
+    'users' => $users,
+    'factory' => $factory,
+    'issuer' => $issuer,
+    'autoApprove' => $autoApprove,
+];

@@ -86,12 +86,24 @@ What happens:
 1. The request is validated. Unknown client, bad or unregistered `redirect_uri`, or a repeated
    `client_id` or `redirect_uri`: an HTML error page (the server cannot know where to send the
    person, so it never redirects).
-2. Any other error after the client and `redirect_uri` are checked is sent to the client as a redirect
-   with `error`, `error_description`, `state` and `iss`.
-3. If nobody is signed in, `UserContextInterface::loginResponse()` is called.
+2. If nobody is signed in, `UserContextInterface::loginResponse()` is called, also when the request has
+   any other error: the server never redirects to a client before the person is authenticated (RFC 9700
+   section 4.11.2). After the login the browser comes back to the same URL and the request is
+   validated again.
+3. Any other error is then sent back to the client (`error`, `error_description`, `state` and `iss`), but
+   automatically (a `302`) only when the redirect URI is trusted: the client was registered by an
+   administrator (`ClientRegistrar::create()`), or the signed-in person already approved this client
+   (for any resource). For a dynamically registered or metadata document client the person never
+   approved, the error page names the destination host and offers a "Continue to ..." link with the
+   same error, which the person may follow or not. A client secret does not make a dynamic client
+   trusted: anyone can register one, with any https redirect URI.
 4. `UserProviderInterface::canAuthorize()` and the scope rules decide whether the request may go on.
-5. If the person already consented to these scopes the code is issued at once (a `302` to the
-   client). Otherwise the consent page is shown.
+5. If the person already consented to these scopes and the client's identity is assured, the code is
+   issued at once (a `302` to the client). The identity is assured for a confidential client, or when the
+   redirect URI is `https` on a host that is not this computer. A public client with a loopback or
+   private-use redirect URI always gets the consent page, which then says the client was approved
+   before: any program on the person's computer can open the authorization URL with its own port and
+   PKCE challenge (RFC 8252 section 8.6). Otherwise the consent page is shown.
 
 Success is a redirect to the client: `redirect_uri?code=...&state=...&iss=https://auth.example.com`.
 
@@ -105,8 +117,11 @@ The consent form posts the same authorization parameters (as hidden fields) plus
 | `consent_token` | Signed token bound to this exact request, the shown scopes and the person. Expires after 15 minutes |
 
 The answer is a `303` redirect to the client with the code (approve) or `error=access_denied`
-(deny). `303` makes the browser use `GET`, so the form data is not posted to the client. A form whose
-token is missing, expired or changed answers `invalid_request` on an error page.
+(deny), for every client: the person saw the client and the host of its redirect URI on the consent
+page. `303` makes the browser use `GET`, so the form data is not posted to the client. A form whose
+token is missing, expired or changed answers `invalid_request` on an error page. A POST from someone
+who is no longer signed in gets the error page, never a redirect. Other errors of the POST follow the
+same trust rule as the GET.
 
 Errors: `invalid_request`, `invalid_client`, `unsupported_response_type`, `unauthorized_client`,
 `invalid_scope`, `invalid_target`, `access_denied`, `server_error`, `temporarily_unavailable` (rate

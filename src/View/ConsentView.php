@@ -23,6 +23,8 @@ final class ConsentView
      * @param string $redirectUri Where the answer goes.
      * @param string $formAction Path the form posts to.
      * @param array<string, string> $fields Hidden fields to post back.
+     * @param bool $approvedBefore A remembered consent covers the request, but the client's identity cannot
+     *   be assured (a public loopback or private-scheme redirect), so the person is asked again.
      */
     public function __construct(
         public readonly Client $client,
@@ -33,6 +35,7 @@ final class ConsentView
         public readonly string $redirectUri,
         public readonly string $formAction,
         public readonly array $fields,
+        public readonly bool $approvedBefore = false,
     ) {
     }
 

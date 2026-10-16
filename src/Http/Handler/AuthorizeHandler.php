@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 namespace CakeDC\OAuth\Server\Http\Handler;
 
+use CakeDC\OAuth\Server\Client\Client;
+use CakeDC\OAuth\Server\Client\ClientType;
 use CakeDC\OAuth\Server\Client\GrantType;
 use CakeDC\OAuth\Server\Config\ServerConfig;
 use CakeDC\OAuth\Server\Event\AuthorizationDenied;
@@ -28,6 +30,8 @@ use CakeDC\OAuth\Server\Security\FormToken;
 use CakeDC\OAuth\Server\View\ConsentRendererInterface;
 use CakeDC\OAuth\Server\View\ConsentView;
 use CakeDC\OAuth\Server\View\ErrorPageRendererInterface;
+use CakeDC\OAuth\Server\View\RedirectNoticeRendererInterface;
+use CakeDC\OAuth\Server\View\RedirectNoticeView;
 use Closure;
 use Psr\EventDispatcher\EventDispatcherInterface;
 use Psr\Http\Message\ResponseInterface;
@@ -38,6 +42,10 @@ use Throwable;
 
 /**
  * The authorization endpoint: login hand-off, consent page and the decision.
+ *
+ * RFC 9700 section 4.11.2: an error is never redirected before the person is authenticated, and it is
+ * redirected automatically only to a trusted redirect URI (a client an administrator registered, or one
+ * the person approved before); otherwise the error page names the destination and links to it.
  */
 final class AuthorizeHandler implements RequestHandlerInterface
 {
@@ -83,22 +91,13 @@ final class AuthorizeHandler implements RequestHandlerInterface
      */
     public function handle(ServerRequestInterface $request): ResponseInterface
     {
-        $status = $request->getMethod() === 'POST' ? 303 : 302;
         try {
             $this->rateLimiter->hit('authorize', ($this->clientIp)($request));
-
-            return $this->authorize($request);
-        } catch (AuthorizationError $e) {
-            if (!$e->isRedirectable()) {
-                return $this->errorPage($e->error);
+            try {
+                return $this->authorize($request);
+            } catch (AuthorizationError $e) {
+                return $this->failed($request, $e);
             }
-
-            return $this->responder->redirect(RedirectUrl::build((string)$e->redirectUri, [
-                'error' => $e->error->error,
-                'error_description' => $e->error->getMessage(),
-                'state' => $e->state,
-                'iss' => $this->config->issuer,
-            ]), $status);
         } catch (OAuthException $e) {
             return $this->errorPage($e);
         } catch (Throwable $e) {
@@ -147,6 +146,7 @@ final class AuthorizeHandler implements RequestHandlerInterface
             $error,
             $authorization->redirectUri,
             $authorization->state,
+            $client,
         );
         // Decide first, act later: a forged POST must not cause events or redirects.
         $allowed = $this->users->canAuthorize($owner, $client, $resource);
@@ -184,7 +184,9 @@ final class AuthorizeHandler implements RequestHandlerInterface
             throw $fail(OAuthException::invalidScope('None of the requested permissions can be granted.'));
         }
         if ($method === 'GET') {
-            if ($this->consents->isGranted($owner, $client, $resource, $effective)) {
+            // RFC 8252 section 8.6: no code without interaction unless the client's identity is assured.
+            $remembered = $this->consents->isGranted($owner, $client, $resource, $effective);
+            if ($remembered && $this->consents->identityIsAssured($client, $authorization->redirectUri)) {
                 return $this->approve($authorization, $owner, $granted, 302);
             }
             $descriptions = [];
@@ -202,11 +204,20 @@ final class AuthorizeHandler implements RequestHandlerInterface
                 $authorization->redirectUri,
                 $path,
                 $authorization->formFields() + ['consent_token' => $this->formTokens->issue($context, $owner->subject)],
+                $remembered,
             )));
         }
         if (($params['decision'] ?? '') !== 'approve') {
             $this->events->dispatch(new AuthorizationDenied($client, $owner, 'user_denied'));
-            throw $fail(OAuthException::accessDenied('You denied the request.'));
+
+            // The person saw the client and the host of its redirect URI on the consent page: their own
+            // answer goes back without a second page.
+            return $this->redirectError(
+                $authorization->redirectUri,
+                OAuthException::accessDenied('You denied the request.'),
+                $authorization->state,
+                303,
+            );
         }
         $this->consents->grant($owner, $client, $resource, $effective);
 
@@ -234,6 +245,78 @@ final class AuthorizeHandler implements RequestHandlerInterface
     }
 
     /**
+     * The answer to a failed request.
+     *
+     * @throws \CakeDC\OAuth\Server\Exception\OAuthException
+     */
+    private function failed(ServerRequestInterface $request, AuthorizationError $e): ResponseInterface
+    {
+        if (!$e->isRedirectable()) {
+            return $this->errorPage($e->error);
+        }
+        // Authenticate first: an anonymous visitor is never bounced to the client.
+        $owner = $this->userContext->currentOwner($request);
+        if ($owner === null && $request->getMethod() === 'GET') {
+            // The request comes back after the login and is validated again.
+            return $this->userContext->loginResponse($request, $this->returnTo($request, RequestPath::safe($request)));
+        }
+        if ($owner === null || $owner->type !== SubjectType::User) {
+            return $this->errorPage($e->error);
+        }
+        $status = $request->getMethod() === 'POST' ? 303 : 302;
+        $redirectUri = (string)$e->redirectUri;
+        if ($e->client !== null && $this->trustsRedirectsOf($owner, $e->client)) {
+            return $this->redirectError($redirectUri, $e->error, $e->state, $status);
+        }
+        $view = new RedirectNoticeView(
+            $e->error,
+            $e->client,
+            $redirectUri,
+            $this->errorUrl($redirectUri, $e->error, $e->state),
+        );
+        $html = $this->errorRenderer instanceof RedirectNoticeRendererInterface
+            ? $this->errorRenderer->renderRedirectNotice($view)
+            : $this->errorRenderer->render($e->error);
+
+        return $this->responder->page($html, $this->pageStatus($e->error), $e->error->headers);
+    }
+
+    /**
+     * Whether an error may be sent to $client's redirect URI without asking $owner: an administrator chose
+     * the redirect URIs of a registered client; any other client is vouched for only by an earlier consent
+     * of this person (a client secret proves nothing about who chose the redirect URI).
+     */
+    private function trustsRedirectsOf(ResourceOwner $owner, Client $client): bool
+    {
+        return $client->type === ClientType::Registered || $this->consents->hasConsented($owner, $client);
+    }
+
+    /**
+     * Sends $error back to the client.
+     */
+    private function redirectError(
+        string $redirectUri,
+        OAuthException $error,
+        ?string $state,
+        int $status,
+    ): ResponseInterface {
+        return $this->responder->redirect($this->errorUrl($redirectUri, $error, $state), $status);
+    }
+
+    /**
+     * $redirectUri with the error parameters.
+     */
+    private function errorUrl(string $redirectUri, OAuthException $error, ?string $state): string
+    {
+        return RedirectUrl::build($redirectUri, [
+            'error' => $error->error,
+            'error_description' => $error->getMessage(),
+            'state' => $state,
+            'iss' => $this->config->issuer,
+        ]);
+    }
+
+    /**
      * The relative URL to come back to after the login.
      */
     private function returnTo(ServerRequestInterface $request, string $path): string
@@ -248,8 +331,14 @@ final class AuthorizeHandler implements RequestHandlerInterface
      */
     private function errorPage(OAuthException $error): ResponseInterface
     {
-        $status = $error->status === 401 ? 400 : $error->status;
+        return $this->responder->page($this->errorRenderer->render($error), $this->pageStatus($error), $error->headers);
+    }
 
-        return $this->responder->page($this->errorRenderer->render($error), $status, $error->headers);
+    /**
+     * The status of a page showing $error: a browser page never asks for HTTP authentication.
+     */
+    private function pageStatus(OAuthException $error): int
+    {
+        return $error->status === 401 ? 400 : $error->status;
     }
 }

@@ -149,7 +149,7 @@ class AuthorizeHandlerTest extends TestCase
 
     public function testOwnersTheApplicationRefusesAreDenied(): void
     {
-        $client = $this->harness->publicClient();
+        $client = $this->harness->registeredClient();
         $this->harness->users->blocked = ['42'];
         $this->harness->signIn();
 
@@ -161,7 +161,7 @@ class AuthorizeHandlerTest extends TestCase
 
     public function testScopesBeyondTheOwnerAreDropped(): void
     {
-        $client = $this->harness->publicClient();
+        $client = $this->harness->registeredClient();
         $this->harness->users->scopes['42'] = ['content:read'];
         $this->harness->signIn();
 
@@ -192,7 +192,8 @@ class AuthorizeHandlerTest extends TestCase
 
     public function testRedirectableErrorsCarryStateAndIssuer(): void
     {
-        $client = $this->harness->publicClient();
+        $client = $this->harness->registeredClient();
+        $this->harness->signIn();
 
         $response = $this->harness->server->authorizeHandler()->handle(
             $this->harness->request('GET', $this->harness->authorizeUrl($client, ['code_challenge_method' => 'plain'])),
@@ -206,7 +207,8 @@ class AuthorizeHandlerTest extends TestCase
 
     public function testRepeatedParametersAreRejected(): void
     {
-        $client = $this->harness->publicClient();
+        $client = $this->harness->registeredClient();
+        $this->harness->signIn();
         $url = $this->harness->authorizeUrl($client) . '&scope=content:publish';
 
         $response = $this->harness->server->authorizeHandler()->handle($this->harness->request('GET', $url));
@@ -241,7 +243,7 @@ class AuthorizeHandlerTest extends TestCase
 
     public function testEveryRedirectCarriesTheIssuer(): void
     {
-        $client = $this->harness->publicClient();
+        $client = $this->harness->registeredClient();
         $this->harness->signIn();
         $cases = [
             ['response_type' => 'token'],
@@ -315,7 +317,7 @@ class AuthorizeHandlerTest extends TestCase
 
     public function testRedirectErrorsOfThePostAreIssuedWith303(): void
     {
-        $client = $this->harness->publicClient();
+        $client = $this->harness->registeredClient();
         $this->harness->signIn();
         $fields = ['state' => 'st4te', 'response_type' => 'token'] + [
             'client_id' => $client->clientId,
@@ -492,7 +494,7 @@ class AuthorizeHandlerTest extends TestCase
     #[DataProvider('badStates')]
     public function testAStateOutsideVschardIsARedirectableErrorWithoutEchoingIt(string $state): void
     {
-        $client = $this->harness->publicClient();
+        $client = $this->harness->registeredClient();
         $this->harness->signIn();
 
         $response = $this->harness->server->authorizeHandler()->handle(
@@ -619,7 +621,7 @@ class AuthorizeHandlerTest extends TestCase
 
     public function testAnOwnerBlockedBetweenGetAndPostIsDenied(): void
     {
-        $client = $this->harness->publicClient();
+        $client = $this->harness->registeredClient();
         $this->harness->signIn();
         $fields = $this->consentFields($client);
         $this->harness->users->blocked = ['42'];

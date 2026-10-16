@@ -28,7 +28,7 @@ final class ClientRegistrar
      * @param \Psr\Clock\ClockInterface $clock Clock.
      * @param \CakeDC\OAuth\Server\Resource\ResourceRegistry $resources Known scopes.
      * @param \Psr\EventDispatcher\EventDispatcherInterface $events Events.
-     * @param bool $allowPrivateSchemes Native clients may use private-use URI schemes.
+     * @param bool $allowPrivateSchemes Native clients may use private-use URI schemes (reverse domain names).
      */
     public function __construct(
         private readonly ClientRepositoryInterface $clients,
@@ -36,7 +36,7 @@ final class ClientRegistrar
         private readonly ClockInterface $clock,
         private readonly ResourceRegistry $resources,
         private readonly EventDispatcherInterface $events,
-        private readonly bool $allowPrivateSchemes = true,
+        private readonly bool $allowPrivateSchemes = false,
     ) {
     }
 
@@ -64,7 +64,7 @@ final class ClientRegistrar
         }
         foreach ($redirectUris as $index => $uri) {
             $error = is_string($uri)
-                ? RedirectUriMatcher::registrationError($uri, $applicationType, $this->allowPrivateSchemes)
+                ? RedirectUriMatcher::dynamicRegistrationError($uri, $applicationType, $this->allowPrivateSchemes)
                 : 'must be a string';
             if ($error !== null) {
                 throw OAuthException::invalidRedirectUri(sprintf('redirect_uris[%d] %s.', $index, $error));

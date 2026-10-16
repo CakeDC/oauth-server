@@ -76,6 +76,48 @@ class RedirectUriValidationTest extends TestCase
         }
     }
 
+    public function testPrivateSchemesAreRefusedUnlessTheHostEnablesThem(): void
+    {
+        // MCP authorization: "All redirect URIs MUST be either localhost or use HTTPS".
+        $this->assertSame('invalid_redirect_uri', $this->register(new ServerHarness(), 'native', 'com.example.app:/cb'));
+
+        $enabled = new ServerHarness(['registration' => ['allowPrivateSchemes' => true]]);
+        // RFC 8252 section 7.1: a reverse domain name, so it contains a dot.
+        $this->assertSame('invalid_redirect_uri', $this->register($enabled, 'native', 'myapp:/cb'));
+        $this->assertNull($this->register($enabled, 'native', 'com.example.app:/cb'));
+    }
+
+    public function testOnlyNativeClientsRegisterLoopbackHttp(): void
+    {
+        $harness = new ServerHarness();
+
+        $this->assertSame('invalid_redirect_uri', $this->register($harness, 'web', 'http://127.0.0.1:1234/cb'));
+        $this->assertSame('invalid_redirect_uri', $this->register($harness, null, 'http://127.0.0.1:1234/cb'));
+        $this->assertNull($this->register($harness, 'native', 'http://127.0.0.1:1234/cb'));
+    }
+
+    /**
+     * Registers one redirect URI and returns the error code, or null when it was registered.
+     */
+    private function register(ServerHarness $harness, ?string $applicationType, string $uri): ?string
+    {
+        $metadata = ['redirect_uris' => [$uri], 'token_endpoint_auth_method' => 'none'];
+        if ($applicationType !== null) {
+            $metadata['application_type'] = $applicationType;
+        }
+        $body = $harness->json($harness->server->registerHandler()->handle($harness->request(
+            'POST',
+            'https://example.com/oauth/register',
+            ['Content-Type' => 'application/json'],
+            (string)json_encode($metadata),
+        )));
+        if (isset($body['client_id'])) {
+            return null;
+        }
+
+        return is_string($body['error'] ?? null) ? $body['error'] : 'no error code';
+    }
+
     public function testLoopbackStillNeedsTheSamePathAndQuery(): void
     {
         $harness = new ServerHarness();

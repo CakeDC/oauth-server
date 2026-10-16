@@ -16,7 +16,8 @@ final class RedirectUriMatcher
     private const FORBIDDEN_SCHEMES = ['javascript', 'data', 'file', 'vbscript', 'about', 'blob'];
 
     /**
-     * Why $uri cannot be registered for a client of $type, or null when it can.
+     * Why $uri cannot be registered for a client of $type, or null when it can. Private-use schemes
+     * need $allowPrivateSchemes, a native client and a reverse domain name (a dot in the scheme).
      */
     public static function registrationError(string $uri, ApplicationType $type, bool $allowPrivateSchemes): ?string
     {
@@ -64,8 +65,36 @@ final class RedirectUriMatcher
         if ($type !== ApplicationType::Native) {
             return 'web clients must use https';
         }
+        if (!$allowPrivateSchemes) {
+            return 'private-use URI schemes are not allowed';
+        }
+        // RFC 8252 section 7.1: a scheme based on a domain name the app controls, in reverse order.
+        if (!str_contains($scheme, '.')) {
+            return 'must use a reverse domain name as its private-use scheme, such as "com.example.app"';
+        }
 
-        return $allowPrivateSchemes ? null : 'private-use URI schemes are not allowed';
+        return null;
+    }
+
+    /**
+     * Why $uri cannot be registered by a dynamically registered client of $type, or null when it can.
+     * On top of the registrationError() rules, loopback http is for native clients only (RFC 9700
+     * section 2.6): a web client registers https.
+     */
+    public static function dynamicRegistrationError(
+        string $uri,
+        ApplicationType $type,
+        bool $allowPrivateSchemes,
+    ): ?string {
+        $error = self::registrationError($uri, $type, $allowPrivateSchemes);
+        if ($error !== null || $type === ApplicationType::Native) {
+            return $error;
+        }
+        if (strtolower((string)parse_url($uri, PHP_URL_SCHEME)) === 'http') {
+            return 'must use https for a web client; loopback http needs "application_type": "native"';
+        }
+
+        return null;
     }
 
     /**

@@ -74,9 +74,15 @@ final class AuthorizationRequestValidator
                 OAuthException::invalidRequest('"state" may only contain printable ASCII characters.'),
                 $redirectUri,
                 null,
+                $client,
             );
         }
-        $fail = fn(OAuthException $error): AuthorizationError => new AuthorizationError($error, $redirectUri, $state);
+        $fail = fn(OAuthException $error): AuthorizationError => new AuthorizationError(
+            $error,
+            $redirectUri,
+            $state,
+            $client,
+        );
         if ($repeated !== []) {
             throw $fail(OAuthException::invalidRequest(sprintf('"%s" was sent more than once.', $repeated[0])));
         }

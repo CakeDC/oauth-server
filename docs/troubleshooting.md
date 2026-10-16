@@ -44,12 +44,39 @@ fails with `invalid_redirect_uri`.
 `http` against `https`, or an uppercase letter in the path all fail. The only flexibility is the port of
 a loopback `http` URI. At registration, the URI may break the [redirect URI
 rules](clients.md#redirect-uri-rules): no fragment, no non-ASCII characters (use punycode), plain
-host name, https or loopback http, private schemes only for native clients.
+host name, https, or loopback http (only for native clients at dynamic registration), and private
+schemes only for native clients, only when enabled, and only as reverse domain names.
 
 **Fix.** Register the exact URI the client sends. For local tools register a loopback URI without a
-port, such as `http://127.0.0.1/callback`. For a private scheme, send `"application_type": "native"` at
-dynamic registration and keep `registration.allowPrivateSchemes` `true`. A client with several
-registered redirect URIs must send `redirect_uri` at `/authorize` and at `/token`.
+port, such as `http://127.0.0.1/callback`, and send `"application_type": "native"` at dynamic
+registration. For a private scheme, set `registration.allowPrivateSchemes` to `true`, send
+`"application_type": "native"` and use a reverse domain scheme such as `com.example.app:/cb`. A client
+with several registered redirect URIs must send `redirect_uri` at `/authorize` and at `/token`.
+
+## The person sees an error page with a "Continue to" link
+
+**Symptom.** Instead of going back to the application, `/oauth/authorize` shows "Authorization failed"
+with a link "Continue to {host}".
+
+**Cause.** The request had an error (for example a missing `code_challenge` or an unknown scope) and the
+client's redirect URI is not trusted: the client registered itself (dynamic registration) or is a
+metadata document client, and this person never approved it. The server does not send people to an
+address it cannot vouch for (RFC 9700 section 4.11.2).
+
+**Fix.** Fix the request in the client. The person can follow the link to give the error to the
+client. A client registered with `ClientRegistrar::create()`, or one the person approved before, gets
+the error as a redirect.
+
+## Claude Code asks for consent every time
+
+**Symptom.** Each new connection of Claude Code (or another local tool) shows the consent page,
+although the person approved it before; the page says so.
+
+**Cause.** By design. A public client with a loopback or private-use redirect URI cannot prove who it
+is: any program on the computer can open the same URL with its own port and PKCE challenge, so a
+remembered consent never approves it silently (RFC 8252 section 8.6).
+
+**Fix.** None needed. Refresh tokens keep an existing connection alive without the page.
 
 ## The consent form expired
 

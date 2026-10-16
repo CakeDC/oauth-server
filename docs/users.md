@@ -107,6 +107,10 @@ you return here. See [clients](clients.md#client-credentials).
 | `currentOwner(ServerRequestInterface $request): ?ResourceOwner` | The signed-in person of this browser request, or `null` |
 | `loginResponse(ServerRequestInterface $request, string $returnTo): ResponseInterface` | The response that sends a visitor to your login |
 
+`loginResponse()` is called for every authorization request from an anonymous visitor once the client
+and the redirect URI are valid, also when the request has another error: the server never redirects
+to a client before the person is signed in, and checks the request again when the browser comes back.
+
 `loginResponse()` receives `$returnTo`, a relative URL (a path and a query, like
 `/oauth/authorize?response_type=code&...`). The server has already normalised it with
 `RequestPath::safe()`: one leading slash (so it can never read as `//host`), and a request path with

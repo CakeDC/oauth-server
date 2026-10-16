@@ -46,7 +46,7 @@ final class ClientResolver
         private readonly ?MetadataDocumentFetcher $fetcher = null,
         private readonly int $cacheMin = 300,
         private readonly int $cacheMax = 86400,
-        private readonly bool $allowPrivateSchemes = true,
+        private readonly bool $allowPrivateSchemes = false,
         private readonly ?RateLimiter $limiter = null,
         private readonly ?CacheInterface $cache = null,
     ) {

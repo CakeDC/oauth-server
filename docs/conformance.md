@@ -48,9 +48,11 @@ Two variables change the ports (both servers bind to 127.0.0.1 only):
 The `authorization-code-grant` scenario waits for a person to open a URL. The script runs the
 standalone example (`examples/standalone`) with `OAUTH_EXAMPLE_AUTO_LOGIN=1`, which signs in the
 demo user alice, and `setup.php` registers a public native client for `http://127.0.0.1/callback`
-(loopback, any port, RFC 8252) with consent already granted. The script reads the authorization
-URL from the runner's output and requests it with curl; the server redirects straight to the
-runner's callback. The script then requires a `checks.json` for both scenarios, each with at least one check and every check `SUCCESS`; an empty or missing results directory fails, and the
+(loopback, any port, RFC 8252). A public loopback client always gets the consent page (RFC 8252
+section 8.6), so the script also sets `OAUTH_EXAMPLE_AUTO_APPROVE=1`: the example then answers every
+consent page with "Allow" itself. That switch is unsafe (any page that opens an authorization URL gets
+a code) and exists only for this run. The script reads the authorization URL from the runner's output
+and requests it with curl; the server redirects to the runner's callback. The script then requires a `checks.json` for both scenarios, each with at least one check and every check `SUCCESS`; an empty or missing results directory fails, and the
 trap stops the PHP server and the runner when the script exits.
 
 ## Logs and results

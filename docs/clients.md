@@ -34,11 +34,16 @@ document needs at least one usable URI, or the client is refused with `invalid_c
   are never allowed.
 - `https`: the host must be a plain host name (letters, digits and hyphens, at least two labels, the last
   one starting with a letter, no `%`, no trailing dot), an IP address, or a loopback name.
-- `http`: only for loopback hosts (`127.0.0.1`, `[::1]` and `localhost`).
-- Any other scheme (a private-use scheme such as `cursor://` or `com.example.app:/cb`): only for
-  clients whose `application_type` is `native`, and only if `registration.allowPrivateSchemes` is not
-  `false`. That setting applies to dynamic registration and metadata documents, not to
-  `create()`.
+- `http`: only for loopback hosts (`127.0.0.1`, `[::1]` and `localhost`). At dynamic registration
+  only for clients whose `application_type` is `native` (RFC 9700 section 2.6: a web client uses
+  https). Metadata documents and `create()` keep accepting loopback `http` for web clients.
+- Any other scheme (a private-use scheme such as `com.example.app:/cb`): only for clients whose
+  `application_type` is `native`, only if `registration.allowPrivateSchemes` is `true` (it is `false`
+  by default, because the MCP authorization spec requires localhost or https redirect URIs), and only
+  when the scheme is a reverse domain name, so it contains a dot (RFC 8252 section 7.1):
+  `com.example.app:/cb` is accepted, `myapp:/cb` and `cursor://...` are not. The setting applies to
+  dynamic registration and metadata documents; `create()` always allows private-use schemes, but the
+  reverse domain rule applies there too.
 
 How a requested `redirect_uri` is matched against the registered ones:
 
@@ -51,8 +56,8 @@ How a requested `redirect_uri` is matched against the registered ones:
   more than one it must send it, at `/authorize` and again at `/token`.
 
 A native client that does not say `application_type` at dynamic registration is registered as `web`.
-The server does not guess. A client that only uses loopback URIs works either way, but one that wants a
-private-use scheme must send `"application_type": "native"`. A metadata document that omits
+The server does not guess, so a client that registers loopback `http` or a private-use scheme must send
+`"application_type": "native"`. A metadata document that omits
 `application_type` is treated as `native` when all its redirect URIs are `http` (loopback), and as
 `web` otherwise.
 
@@ -204,6 +209,9 @@ Metadata Documents (its default) and dynamic registration, and this server accep
   URIs `http://localhost/callback` and `http://127.0.0.1/callback`. Nothing needs registering.
 - Claude Code listens for the redirect on your own computer, on a free port that changes every time.
   That is a loopback redirect, and the server ignores the port.
+- Because any program on your computer could open the same URL with its own port, a public loopback
+  client is shown the consent page on every new connection, even after you approved it once (the page
+  says so). Refresh tokens keep an existing connection alive without it.
 
 One caveat: the loopback match compares the host exactly, and different Claude Code versions have sent
 `localhost` or `127.0.0.1`. A client you register by hand, or that registers dynamically, should
@@ -221,9 +229,10 @@ redirect, the loopback rule applies.
 
 ## Other clients
 
-- **Editors and desktop tools with a private-use scheme redirect** (for example `myeditor://callback`):
-  the server accepts it when the client registers with `application_type` `native` and
-  `registration.allowPrivateSchemes` is `true` (the default).
+- **Editors and desktop tools with a private-use scheme redirect** (for example
+  `com.example.editor:/callback`): the server accepts it when you set `registration.allowPrivateSchemes`
+  to `true`, the client registers with `application_type` `native`, and the scheme is a reverse domain
+  name. A scheme without a dot (such as `cursor://`) is refused even then.
 - **Tools with a loopback or https redirect**: both are accepted under the
   [redirect URI rules](#redirect-uri-rules).
 - **Your own CLI or desktop tool**: register it as a native public client, use a loopback redirect

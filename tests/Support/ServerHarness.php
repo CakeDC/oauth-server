@@ -5,6 +5,7 @@ namespace CakeDC\OAuth\Server\Test\Support;
 
 use CakeDC\OAuth\Server\AuthorizationServer;
 use CakeDC\OAuth\Server\Client\Client;
+use CakeDC\OAuth\Server\Client\ClientType;
 use CakeDC\OAuth\Server\Grant\Pkce;
 use CakeDC\OAuth\Server\Storage\InMemory\InMemoryStorage;
 use CakeDC\OAuth\Server\Testing\ArrayCache;
@@ -119,6 +120,16 @@ final class ServerHarness
         $this->storage->saveClient($client);
 
         return $client;
+    }
+
+    /**
+     * A public client an administrator registered: its redirect URI is trusted with errors.
+     *
+     * @param array<string, mixed> $overrides
+     */
+    public function registeredClient(array $overrides = []): Client
+    {
+        return $this->publicClient($overrides + ['type' => ClientType::Registered]);
     }
 
     /**

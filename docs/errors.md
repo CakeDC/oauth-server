@@ -8,9 +8,11 @@ Where an error goes depends on the endpoint:
 
 - JSON endpoints (`/token`, `/register`, `/revoke`, `/introspect`) answer JSON:
   `{"error": "...", "error_description": "..."}` with the HTTP status below.
-- `/authorize` redirects the error to the client's `redirect_uri` (with `error`, `error_description`,
-  `state` and `iss`) once the client and the redirect URI are known to be valid. Before that it shows
-  an HTML error page, because there is nowhere safe to send the person.
+- `/authorize` shows an HTML error page while the client or the redirect URI is not valid, because there
+  is nowhere safe to send the person. Once both are valid, an anonymous visitor is sent to the login
+  first, and the error goes back to the client's `redirect_uri` (with `error`, `error_description`,
+  `state` and `iss`) automatically only when that redirect URI is trusted; otherwise the error page
+  offers a link to it. See [endpoints](endpoints.md#get-start).
 - Protected resources answer through `BearerTokenMiddleware` with a `WWW-Authenticate` challenge. See
   [protecting resources](protecting-resources.md).
 

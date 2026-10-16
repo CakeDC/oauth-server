@@ -39,6 +39,9 @@ class ServerConfigTest extends TestCase
         );
         $this->assertSame(7, $config->retentionDays);
         $this->assertSame('https://example.com/mcp', $config->resources->defaultResource()->identifier);
+        // The MCP authorization spec: redirect URIs are localhost or https unless the host opts in.
+        $this->assertFalse($config->allowPrivateSchemes);
+        $this->assertFalse((new ServerConfig('https://example.com', $config->resources, str_repeat('k', 32)))->allowPrivateSchemes);
     }
 
     public function testEndpointsHangFromTheIssuer(): void
@@ -64,7 +67,7 @@ class ServerConfigTest extends TestCase
     {
         $config = ServerConfig::fromArray($this->minimal() + [
             'lifetimes' => ['access' => 900],
-            'registration' => ['mode' => 'token', 'initialAccessToken' => 'abc', 'allowPrivateSchemes' => false],
+            'registration' => ['mode' => 'token', 'initialAccessToken' => 'abc', 'allowPrivateSchemes' => true],
             'cimd' => ['allowedHosts' => ['claude.ai'], 'timeout' => 3],
             'rateLimit' => ['token' => [5, 10], 'cimd' => [3, 30]],
             'refreshTokens' => 'offline_access',
@@ -73,7 +76,7 @@ class ServerConfigTest extends TestCase
         $this->assertSame(900, $config->lifetimes->access);
         $this->assertSame('token', $config->registrationMode);
         $this->assertSame('abc', $config->initialAccessToken);
-        $this->assertFalse($config->allowPrivateSchemes);
+        $this->assertTrue($config->allowPrivateSchemes);
         $this->assertSame(['claude.ai'], $config->cimdAllowedHosts);
         $this->assertSame(3, $config->cimdTimeout);
         $this->assertSame([5, 10], $config->rateLimits['token']);

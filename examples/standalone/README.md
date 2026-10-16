@@ -17,9 +17,10 @@ php -S 127.0.0.1:8090 examples/standalone/server.php
 Open http://127.0.0.1:8090/oauth/connections, sign in as Alice or Bob and manage the connections
 and personal access tokens.
 
-`setup.php [name]` registers a NEW public client on every run (each run prints a different client id) with the redirect URI `http://127.0.0.1/callback`
-(any port) and records Alice's consent for the default scopes of the demo API, so she is not asked
-again.
+`setup.php [name]` registers a NEW public native client on every run (each run prints a different
+client id) with the redirect URI `http://127.0.0.1/callback` (any port). It records no consent: a
+public loopback client is asked on every authorization, because any program on the computer could open
+the same URL with its own port (RFC 8252 section 8.6).
 
 ## Environment
 
@@ -29,6 +30,7 @@ again.
 | `OAUTH_EXAMPLE_ISSUER` | `http://127.0.0.1:8090` | Issuer URL; change it with the port |
 | `OAUTH_EXAMPLE_SECRET` | demo value | Signs the consent and connections forms (32 bytes minimum) |
 | `OAUTH_EXAMPLE_AUTO_LOGIN` | unset | DEMO ONLY: `1` makes every visitor Alice, without the login form. Never run it on a host anyone else can reach |
+| `OAUTH_EXAMPLE_AUTO_APPROVE` | unset | UNSAFE, for `tests/Conformance/run.sh` only: `1` answers every consent page with "Allow" by itself (`AutoApprove.php`), so any page or program that opens an authorization URL gets a code without the person seeing anything. Never set it anywhere else and never copy it into an application |
 
 ## Routes
 
@@ -55,8 +57,8 @@ Bob can only receive the `read` scope; Alice can receive every scope of the demo
    http://127.0.0.1:8090/oauth/authorize?response_type=code&client_id=CLIENT&redirect_uri=http://127.0.0.1/callback&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256&resource=http://127.0.0.1:8090/api
    ```
 
-   Alice already consented, so the browser goes straight to `http://127.0.0.1/callback?code=...`
-   (the page fails to load; copy the `code` from the address bar). Bob is asked to consent first.
+   The consent page appears (every time, for this loopback client). Click Allow: the browser goes to
+   `http://127.0.0.1/callback?code=...` (the page fails to load; copy the `code` from the address bar).
 3. Exchange the code within 60 seconds:
 
    ```bash

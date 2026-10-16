@@ -18,7 +18,12 @@ session_set_cookie_params(['httponly' => true, 'samesite' => 'Lax', 'path' => '/
 // The server sets its own Cache-Control; the session cache limiter would add a second, conflicting one.
 session_cache_limiter('');
 session_start();
-['server' => $server, 'factory' => $factory, 'issuer' => $issuer] = require __DIR__ . '/bootstrap.php';
+[
+    'server' => $server,
+    'factory' => $factory,
+    'issuer' => $issuer,
+    'autoApprove' => $autoApprove,
+] = require __DIR__ . '/bootstrap.php';
 
 $request = $factory->createServerRequest($_SERVER['REQUEST_METHOD'], $issuer . $_SERVER['REQUEST_URI'], $_SERVER);
 foreach (getallheaders() as $name => $value) {
@@ -48,7 +53,9 @@ $me = new class implements RequestHandlerInterface {
 
 $response = match (true) {
     $path === $config->metadataPath() => $server->metadataHandler()->handle($request),
-    $path === $config->endpointPath('authorize') => $server->authorizeHandler()->handle($request),
+    $path === $config->endpointPath('authorize') => $autoApprove !== null
+        ? $autoApprove->handle($server->authorizeHandler(), $request)
+        : $server->authorizeHandler()->handle($request),
     $path === $config->endpointPath('token') => $server->tokenHandler()->handle($request),
     $path === $config->endpointPath('register') => $server->registerHandler()->handle($request),
     $path === $config->endpointPath('revoke') => $server->revokeHandler()->handle($request),

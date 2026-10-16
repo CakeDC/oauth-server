@@ -15,6 +15,9 @@ mkdir -p "$WORK"
 export OAUTH_EXAMPLE_DB="$PWD/$WORK/oauth.sqlite"
 export OAUTH_EXAMPLE_ISSUER="http://127.0.0.1:$PORT"
 export OAUTH_EXAMPLE_AUTO_LOGIN=1
+# UNSAFE outside this run: the example clicks "Allow" on every consent page. The runner's client is a
+# public loopback client, which is asked every time (RFC 8252 section 8.6), and nobody is there to click.
+export OAUTH_EXAMPLE_AUTO_APPROVE=1
 
 SERVER=""
 RUNNER=""
@@ -52,7 +55,7 @@ npx --yes "$SUITE" authorization --url "http://127.0.0.1:$PORT" --client-id "$CL
 RUNNER=$!
 
 # The authorization-code scenario prints the URL a person would open; follow it with curl.
-# The example signs alice in and she already consented, so the server redirects straight to the
+# The example signs alice in and answers the consent page with "Allow", so the server redirects to the
 # runner's callback.
 URL=""
 for _ in $(seq 1 150); do

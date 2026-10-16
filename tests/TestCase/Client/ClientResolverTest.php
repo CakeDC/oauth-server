@@ -473,27 +473,30 @@ class ClientResolverTest extends TestCase
         $this->assertSame($winner->id, $resolver->resolve(self::CLAUDE)?->id);
     }
 
-    public function testPrivateSchemesCanBeRefusedForDocuments(): void
+    public function testPrivateSchemesAreRefusedForDocumentsUnlessEnabled(): void
     {
         $url = 'https://claude.ai/oauth/native';
         $this->transport->serve($url, [
             'client_id' => $url,
             'client_name' => 'Native',
             'application_type' => 'native',
-            'redirect_uris' => ['cursor://anysphere.cursor/oauth'],
+            'redirect_uris' => ['com.example.app:/oauth', 'cursor://anysphere.cursor/oauth'],
         ]);
-        $this->assertSame(ApplicationType::Native, $this->resolver()->resolve($url)?->applicationType);
-
-        $strict = new ClientResolver(
+        $enabled = new ClientResolver(
             new InMemoryStorage(),
             $this->clock,
             new MetadataDocumentFetcher(new FakeDns(), $this->transport),
             300,
             86400,
-            false,
+            true,
         );
+        $client = $enabled->resolve($url);
+        $this->assertSame(ApplicationType::Native, $client?->applicationType);
+        // The scheme without a dot is not a reverse domain name (RFC 8252 section 7.1).
+        $this->assertSame(['com.example.app:/oauth'], $client?->redirectUris);
+
         $this->expectExceptionMessage('no usable redirect_uris');
-        $strict->resolve($url);
+        $this->resolver()->resolve($url);
     }
 
     public function testTheCacheTimeHasAnUpperClamp(): void

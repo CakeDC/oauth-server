@@ -64,7 +64,9 @@ secrets** (`<prefix>_cs_`).
 
 Before a client gets anything the person sees a consent page: "Claude wants to access Example MCP.
 It will be able to: Read your posts." The answer is remembered per person, client and resource, so
-they are not asked again for the same scopes.
+they are not asked again for the same scopes, as long as the client can prove who it is (a confidential
+client, or an https redirect URI). A local tool with a loopback redirect, such as Claude Code, is asked
+on every new connection, because any program on the computer could pose as it.
 
 ## Families and connections
 

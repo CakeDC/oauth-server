@@ -2,13 +2,16 @@
 declare(strict_types=1);
 
 /**
- * Registers a public client for http://127.0.0.1/callback (any port), gives alice consent for the
- * default scopes, and prints the client id. Usage: php examples/standalone/setup.php [name]
+ * Registers a public native client for http://127.0.0.1/callback (any port) and prints the client id.
+ * Usage: php examples/standalone/setup.php [name]
+ *
+ * A public loopback client is asked for consent on every authorization (RFC 8252 section 8.6), so no
+ * consent is recorded here.
  */
 
 use CakeDC\OAuth\Server\Client\ApplicationType;
 
-['server' => $server, 'users' => $users] = require __DIR__ . '/bootstrap.php';
+['server' => $server] = require __DIR__ . '/bootstrap.php';
 
 $created = $server->clientRegistrar()->create(
     $argv[1] ?? 'Demo client',
@@ -16,9 +19,4 @@ $created = $server->clientRegistrar()->create(
     false,
     applicationType: ApplicationType::Native,
 );
-$resource = $server->config()->resources->defaultResource();
-$alice = $users->findBySubject('alice');
-if ($alice !== null) {
-    $server->consentService()->grant($alice, $created['client'], $resource, $resource->defaultScopes);
-}
 echo $created['client']->clientId;

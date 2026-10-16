@@ -11,6 +11,7 @@ use CakeDC\OAuth\Server\View\ConsentView;
 use CakeDC\OAuth\Server\View\Html\HtmlConsentRenderer;
 use CakeDC\OAuth\Server\View\Html\HtmlErrorPageRenderer;
 use CakeDC\OAuth\Server\View\Messages;
+use CakeDC\OAuth\Server\View\RedirectNoticeView;
 use PHPUnit\Framework\TestCase;
 
 class HtmlRenderersTest extends TestCase
@@ -69,6 +70,59 @@ class HtmlRenderersTest extends TestCase
         $this->assertStringContainsString('Authorization failed', $html);
         $this->assertStringContainsString('&quot;redirect_uri&quot; is &lt;wrong&gt;.', $html);
         $this->assertStringContainsString('invalid_request', $html);
+    }
+
+    public function testTheRedirectNoticeNamesTheHostAndOnlyLinksToIt(): void
+    {
+        $view = new RedirectNoticeView(
+            OAuthException::invalidRequest('"code_challenge" is <missing>.'),
+            Fixtures::client(),
+            'https://Evil.example/cb',
+            'https://evil.example/cb?error=invalid_request&state=%22%3E%3Cscript%3E',
+        );
+
+        $html = (new HtmlErrorPageRenderer())->renderRedirectNotice($view);
+
+        $this->assertStringContainsString('Authorization failed', $html);
+        $this->assertStringContainsString('&quot;code_challenge&quot; is &lt;missing&gt;.', $html);
+        $this->assertStringContainsString('send this answer to evil.example', $html);
+        $this->assertStringContainsString(
+            '<a href="https://evil.example/cb?error=invalid_request&amp;state=%22%3E%3Cscript%3E" rel="noreferrer">'
+                . 'Continue to evil.example</a>',
+            $html,
+        );
+        $this->assertStringNotContainsString('<script', $html);
+        $this->assertStringNotContainsString('http-equiv', $html);
+    }
+
+    public function testTheRedirectNoticeOfAPrivateSchemeNamesTheScheme(): void
+    {
+        $renderer = new HtmlErrorPageRenderer(new Messages(['error.continue' => 'Seguir a {host}']));
+        foreach (['com.example.app:/cb', 'com.example.app://oauth/cb'] as $uri) {
+            $view = new RedirectNoticeView(OAuthException::accessDenied('No.'), null, $uri, $uri . '?error=access_denied');
+
+            $this->assertSame('com.example.app', $view->redirectHost(), $uri);
+            $this->assertStringContainsString('Seguir a com.example.app</a>', $renderer->renderRedirectNotice($view), $uri);
+        }
+    }
+
+    public function testTheApprovedBeforeLine(): void
+    {
+        $view = $this->view(ClientType::MetadataDocument, ['http://127.0.0.1/cb']);
+        $again = new ConsentView(
+            $view->client,
+            $view->owner,
+            $view->resource,
+            $view->scopes,
+            $view->offlineAccess,
+            $view->redirectUri,
+            $view->formAction,
+            $view->fields,
+            true,
+        );
+
+        $this->assertStringNotContainsString('approved this application before', (new HtmlConsentRenderer())->render($view));
+        $this->assertStringContainsString('approved this application before', (new HtmlConsentRenderer())->render($again));
     }
 
     public function testAnEmptyClientHostFallsBackToTheRedirectTarget(): void

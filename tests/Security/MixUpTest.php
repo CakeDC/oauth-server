@@ -14,7 +14,7 @@ class MixUpTest extends TestCase
     public function testSuccessAndErrorResponsesCarryTheIssuer(): void
     {
         $harness = new ServerHarness();
-        $client = $harness->publicClient();
+        $client = $harness->registeredClient();
         $harness->signIn();
         $handler = $harness->server->authorizeHandler();
 
@@ -63,7 +63,7 @@ class MixUpTest extends TestCase
     public function testDenyAndErrorRedirectsCarryStateAndIssuer(): void
     {
         $harness = new ServerHarness();
-        $client = $harness->publicClient();
+        $client = $harness->registeredClient();
         $harness->signIn();
         $handler = $harness->server->authorizeHandler();
 

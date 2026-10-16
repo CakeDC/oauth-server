@@ -29,7 +29,7 @@ class AuthorizationCodeInjectionTest extends TestCase
     public function testPkceCannotBeDowngradedOrSkipped(): void
     {
         $harness = new ServerHarness();
-        $client = $harness->publicClient();
+        $client = $harness->registeredClient();
         $harness->signIn();
 
         $variants = [['code_challenge_method' => 'plain'], ['code_challenge_method' => null], ['code_challenge' => null]];

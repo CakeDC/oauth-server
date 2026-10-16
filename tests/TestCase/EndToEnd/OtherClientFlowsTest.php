@@ -15,21 +15,22 @@ class OtherClientFlowsTest extends TestCase
 {
     public function testDynamicRegistrationThenIntrospectionByAnotherService(): void
     {
-        $harness = new ServerHarness();
+        // A desktop app with a private-use scheme, on a host that enabled them.
+        $harness = new ServerHarness(['registration' => ['allowPrivateSchemes' => true]]);
         $harness->confidentialClient('rs', ['clientId' => 'api-gateway', 'allowIntrospection' => true]);
         $registered = $harness->json($harness->server->registerHandler()->handle($harness->request(
             'POST',
             'https://example.com/oauth/register',
             ['Content-Type' => 'application/json'],
             (string)json_encode([
-                'client_name' => 'Cursor',
+                'client_name' => 'Desktop',
                 'application_type' => 'native',
-                'redirect_uris' => ['cursor://anysphere.cursor/oauth'],
+                'redirect_uris' => ['com.example.desktop:/oauth'],
                 'token_endpoint_auth_method' => 'none',
             ]),
         )));
         $this->assertNotEmpty($registered['client_id']);
-        $this->assertSame(['cursor://anysphere.cursor/oauth'], $registered['redirect_uris']);
+        $this->assertSame(['com.example.desktop:/oauth'], $registered['redirect_uris']);
         $this->assertSame('none', $registered['token_endpoint_auth_method']);
         $client = $harness->storage->findClientByClientId($registered['client_id']);
         $this->assertNotNull($client);

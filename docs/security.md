@@ -9,6 +9,8 @@ item are in `tests/Security/`.
 | Attacker | Wants | Main defences |
 | --- | --- | --- |
 | A malicious or sloppy client | Tokens for people who never agreed, or more access than agreed | Consent page naming the real host, exact redirect URI matching, scopes checked at use, tokens bound to one resource |
+| Someone who registers a client to phish | To use your domain as a trampoline to their site (open redirect) | No redirect before the person signs in; errors go back automatically only to trusted redirect URIs |
+| A program on the person's computer | A code for a local client the person approved before (any loopback port, its own PKCE challenge) | A public loopback or private-scheme client always gets the consent page (RFC 8252 section 8.6) |
 | Someone who sees a code or a token (browser history, logs, a proxy, a malicious app on the same phone) | To use it | PKCE S256 on every code, single-use short-lived codes, short access tokens, tokens never in URLs or logs, `no-store` and `no-referrer` pages |
 | A website that tricks a signed-in person | To approve a client for them (CSRF, clickjacking) | Signed form tokens bound to the request and the person, no page can be framed |
 | A rogue authorization server in the client's list | To make a client send it the code meant for another server | `iss` on every authorization answer |
@@ -21,12 +23,12 @@ item are in `tests/Security/`.
 
 | Item | How the library handles it | Test class |
 | --- | --- | --- |
-| Insufficient redirect URI validation | Exact matching, no normalisation. For loopback `http` redirects only the port may differ. Dangerous schemes and odd characters are refused at registration. Nothing is ever sent to an unregistered URI | `RedirectUriValidationTest` |
+| Insufficient redirect URI validation | Exact matching, no normalisation. For loopback `http` redirects only the port may differ. Dangerous schemes and odd characters are refused at registration. Loopback `http` is for native clients at dynamic registration; private-use schemes are off by default and, when enabled, must be reverse domain names (RFC 8252 section 7.1). Nothing is ever sent to an unregistered URI | `RedirectUriValidationTest` |
 | Credential leakage through Referer, browser history, and access token leakage | Pages are `no-store` with `Referrer-Policy: no-referrer`. Only the authorization code travels in a redirect. A token in a query string is ignored. Logs never contain secrets | `CredentialLeakageTest` |
 | Mix-up attacks | Every authorization answer, errors included, carries `iss` (RFC 9207). The issuer always comes from your configuration, never from the request's `Host` | `MixUpTest` |
 | Authorization code injection, PKCE downgrade | PKCE with S256 is mandatory for all clients, confidential ones too. A code is bound to its client, its redirect URI and its challenge. Codes live 60 seconds and work once. The verifier is checked before the server reacts to a used code | `AuthorizationCodeInjectionTest` |
 | Access token privilege restriction | A token is bound to one resource (RFC 8707) and works nowhere else. Scopes are recomputed on every request. Access tokens live one hour by default | `AccessTokenPrivilegeTest` |
-| Open redirection | The server redirects only to registered redirect URIs, and the login return URL is a single-slash relative path. Backslashes and control characters are refused | `OpenRedirectTest` |
+| Open redirection | The server redirects only to registered redirect URIs, and the login return URL is a single-slash relative path. Backslashes and control characters are refused. Section 4.11.2: nobody is redirected before signing in (an anonymous visitor gets the login, and the request is validated again afterwards), and an error is redirected automatically only to a trusted redirect URI: a client an administrator registered, or one the person approved before. For any other client (dynamic or metadata document, whatever its authentication method) the error page names the destination host and offers a link. "Deny" on the consent page always goes back, because the page showed the client and its host | `OpenRedirectTest` |
 | 307 redirect | After the consent POST the browser is sent back with `303`, so it never repeats the form post (with the person's data) at the client | `RedirectStatusTest` |
 | TLS terminating reverse proxies | The issuer and every resource must be https, except on loopback hosts. They are configured, never guessed from forwarded headers | `TransportSecurityTest` |
 | Refresh token protection | Rotation on every use, reuse detection that revokes the family, binding to the client, a hard cap on the family's life | `RefreshTokenProtectionTest` |
@@ -50,7 +52,7 @@ person), all in `tests/Security/`.
 | `lifetimes.personalMax` | 90 days | Raised. Long-lived tokens in scripts | Lowered |
 | `refreshTokens` | `always` | | `offline_access`: refresh tokens only for clients that ask, and the person sees "Stay connected" |
 | `registration.mode` | `open` | | `token` or `closed` |
-| `registration.allowPrivateSchemes` | `true` | Custom schemes can be claimed by any app on a device | `false` |
+| `registration.allowPrivateSchemes` | `false` | `true`: custom schemes can be claimed by any app on a device, and MCP requires localhost or https redirect URIs. Even then only reverse domain names (`com.example.app:/cb`) are accepted | Kept `false` |
 | `cimd.allowedHosts` | any host | | A list of hosts you expect |
 | `rateLimit.cimd` | `[10, 60]` | | Lower it if you only expect a few clients |
 | `rateLimit.*` | 30, 60 and 10 per window | Raised or no cache: no limiting at all | Lowered |
@@ -107,6 +109,13 @@ that, set it to `0`. Then a lost response costs one re-authorization.
 - The consent form token (`consent_token`) is bound to the request fingerprint, the exact scopes shown
   (including `offline_access`) and the person. A remembered consent covers `offline_access` only if it
   was granted. "Stay connected" follows `refreshTokens`.
+- A remembered consent skips the page only when the client's identity is assured (RFC 8252 section
+  8.6): a confidential client, which must present its secret to redeem the code, or an `https` redirect
+  URI on a host that is not this computer. For a public client with a loopback (`localhost`,
+  `*.localhost`, `127.0.0.0/8`, `[::1]`, http or https) or private-use redirect URI, whoever opens the
+  authorization URL chooses the port and the PKCE challenge, so the consent page is always shown, with a
+  line saying the client was approved before. This is why Claude Code shows the page on every new
+  connection; its refresh tokens keep an existing connection alive without it.
 - Nothing checks `canAuthorize()` after `/authorize`. When your policy changes, revoke the person's
   tokens with `TokenRevoker::revokeAllForSubject()`.
 

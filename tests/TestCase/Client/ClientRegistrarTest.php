@@ -84,9 +84,9 @@ class ClientRegistrarTest extends TestCase
 
     public function testNativeClientsMayUseLoopbackAndPrivateSchemes(): void
     {
-        $result = $this->registrar->register([
+        $result = $this->registrar(true)->register([
             'application_type' => 'native',
-            'redirect_uris' => ['http://127.0.0.1/callback', 'cursor://anysphere.cursor/oauth'],
+            'redirect_uris' => ['http://127.0.0.1/callback', 'com.example.app:/oauth'],
             'token_endpoint_auth_method' => 'none',
             'scope' => 'content:read api',
         ]);
@@ -106,6 +106,22 @@ class ClientRegistrarTest extends TestCase
             'no redirect' => [[], 'invalid_redirect_uri', 'redirect_uris'],
             'web private scheme' => [['redirect_uris' => ['cursor://x/cb']], 'invalid_redirect_uri', 'redirect_uris[0]'],
             'remote http' => [['redirect_uris' => ['http://app.example.com/cb']], 'invalid_redirect_uri', 'http'],
+            // RFC 9700 section 2.6 and the spec: loopback http is for native clients.
+            'web loopback http' => [
+                ['redirect_uris' => ['https://app.example.com/cb', 'http://127.0.0.1:1234/cb']],
+                'invalid_redirect_uri',
+                'redirect_uris[1]',
+            ],
+            'explicit web loopback http' => [
+                ['application_type' => 'web', 'redirect_uris' => ['http://localhost/cb']],
+                'invalid_redirect_uri',
+                'native',
+            ],
+            'native private scheme by default' => [
+                ['application_type' => 'native', 'redirect_uris' => ['com.example.app:/cb']],
+                'invalid_redirect_uri',
+                'not allowed',
+            ],
             'too many' => [['redirect_uris' => array_fill(0, 11, 'https://a.example/cb')], 'invalid_redirect_uri', '10'],
             'bad app type' => [$ok + ['application_type' => 'tv'], 'invalid_client_metadata', 'application_type'],
             'client credentials' => [$ok + ['grant_types' => ['client_credentials']], 'invalid_client_metadata', 'client_credentials'],
@@ -227,31 +243,79 @@ class ClientRegistrarTest extends TestCase
     {
         $result = $this->registrar->create(
             'Desktop',
-            ['cursor://anysphere.cursor/oauth'],
+            ['com.example.app:/oauth'],
             false,
             applicationType: ApplicationType::Native,
         );
 
-        $this->assertSame(['cursor://anysphere.cursor/oauth'], $result['client']->redirectUris);
+        $this->assertSame(['com.example.app:/oauth'], $result['client']->redirectUris);
     }
 
-    public function testPrivateSchemesCanBeRefusedForNativeRegistrations(): void
+    public function testCreateRefusesAPrivateSchemeThatIsNotAReverseDomain(): void
     {
-        $registrar = new ClientRegistrar(
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('reverse domain');
+
+        $this->registrar->create('Desktop', ['myapp:/oauth'], false, applicationType: ApplicationType::Native);
+    }
+
+    public function testCreateStillAcceptsLoopbackHttpForWebClients(): void
+    {
+        // The web-only rule is about self-registration; an administrator chooses on purpose.
+        $result = $this->registrar->create('Local tool', ['http://127.0.0.1/callback'], false);
+
+        $this->assertSame(['http://127.0.0.1/callback'], $result['client']->redirectUris);
+    }
+
+    public function testPrivateSchemesAreRefusedForNativeRegistrationsByDefault(): void
+    {
+        try {
+            $this->registrar->register(['application_type' => 'native', 'redirect_uris' => ['com.example.app:/oauth']]);
+            $this->fail('Registered');
+        } catch (OAuthException $e) {
+            $this->assertSame('invalid_redirect_uri', $e->error);
+            $this->assertStringContainsString('not allowed', $e->getMessage());
+        }
+        $this->assertSame([], $this->storage->findClients());
+    }
+
+    public function testEnabledPrivateSchemesMustBeAReverseDomain(): void
+    {
+        $registrar = $this->registrar(true);
+
+        try {
+            $registrar->register(['application_type' => 'native', 'redirect_uris' => ['myapp:/cb']]);
+            $this->fail('Registered');
+        } catch (OAuthException $e) {
+            $this->assertSame('invalid_redirect_uri', $e->error);
+            $this->assertStringContainsString('reverse domain', $e->getMessage());
+        }
+        $this->assertSame([], $this->storage->findClients());
+
+        $result = $registrar->register(['application_type' => 'native', 'redirect_uris' => ['com.example.app:/cb']]);
+        $this->assertSame(['com.example.app:/cb'], $result['client']->redirectUris);
+    }
+
+    public function testNativeClientsMayRegisterLoopbackHttp(): void
+    {
+        $result = $this->registrar->register([
+            'application_type' => 'native',
+            'redirect_uris' => ['http://127.0.0.1:1234/cb'],
+            'token_endpoint_auth_method' => 'none',
+        ]);
+
+        $this->assertSame(['http://127.0.0.1:1234/cb'], $result['client']->redirectUris);
+    }
+
+    private function registrar(bool $allowPrivateSchemes): ClientRegistrar
+    {
+        return new ClientRegistrar(
             $this->storage,
             new TokenGenerator('test'),
             new FrozenClock(),
             Fixtures::resources(),
             $this->events,
-            false,
+            $allowPrivateSchemes,
         );
-
-        try {
-            $registrar->register(['application_type' => 'native', 'redirect_uris' => ['cursor://anysphere.cursor/oauth']]);
-            $this->fail('Registered');
-        } catch (OAuthException $e) {
-            $this->assertSame('invalid_redirect_uri', $e->error);
-        }
-        $this->assertSame([], $this->storage->findClients());
     }
 }

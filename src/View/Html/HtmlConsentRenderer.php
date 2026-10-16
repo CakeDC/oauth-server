@@ -40,6 +40,9 @@ final class HtmlConsentRenderer implements ConsentRendererInterface
         if ($view->isLoopbackOnly()) {
             $notes .= '<p class="warning">' . Html::e($m->get('consent.loopback')) . '</p>';
         }
+        if ($view->approvedBefore) {
+            $notes .= '<p class="warning">' . Html::e($m->get('consent.approvedBefore')) . '</p>';
+        }
         $fields = '';
         foreach ($view->fields as $name => $value) {
             $fields .= sprintf('<input type="hidden" name="%s" value="%s">', Html::e($name), Html::e($value));

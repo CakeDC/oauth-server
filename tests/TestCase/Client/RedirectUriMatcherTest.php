@@ -59,14 +59,23 @@ class RedirectUriMatcherTest extends TestCase
             'fragment' => ['https://app.example.com/cb#x', ApplicationType::Web, true, 'fragment'],
             'javascript' => ['javascript:alert(1)', ApplicationType::Native, true, 'must not use the "javascript"'],
             'data' => ['data:text/html,hi', ApplicationType::Native, true, 'must not use the "data"'],
-            'private scheme native' => ['cursor://anysphere.cursor/oauth', ApplicationType::Native, true, null],
+            'private scheme native' => ['com.example.app:/oauth', ApplicationType::Native, true, null],
+            'private scheme with authority' => ['com.example.app://oauth/cb', ApplicationType::Native, true, null],
             'private scheme disabled' => [
-                'cursor://anysphere.cursor/oauth',
+                'com.example.app:/oauth',
                 ApplicationType::Native,
                 false,
                 'not allowed',
             ],
-            'private scheme web' => ['cursor://anysphere.cursor/oauth', ApplicationType::Web, true, 'web clients'],
+            // RFC 8252 section 7.1: a reverse domain name the app controls.
+            'private scheme without a dot' => ['myapp:/cb', ApplicationType::Native, true, 'reverse domain'],
+            'private scheme without a dot, with authority' => [
+                'cursor://anysphere.cursor/oauth',
+                ApplicationType::Native,
+                true,
+                'reverse domain',
+            ],
+            'private scheme web' => ['com.example.app:/oauth', ApplicationType::Web, true, 'web clients'],
             'percent-encoded host' => [
                 'https://claude.ai%2eevil.example/cb',
                 ApplicationType::Web,
