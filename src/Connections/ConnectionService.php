@@ -54,6 +54,9 @@ final class ConnectionService
      */
     public function connections(ResourceOwner $owner): array
     {
+        if ($owner->type !== SubjectType::User) {
+            return [];
+        }
         $families = [];
         $active = $this->tokens->findActiveTokensBySubject($owner->subject, $owner->type, $this->clock->now());
         foreach ($active as $token) {
@@ -103,6 +106,10 @@ final class ConnectionService
      */
     public function personalTokens(ResourceOwner $owner): array
     {
+        if ($owner->type !== SubjectType::User) {
+            return [];
+        }
+
         return array_values(array_filter(
             $this->tokens->findActiveTokensBySubject($owner->subject, $owner->type, $this->clock->now()),
             fn(Token $token): bool => $token->type === TokenType::Personal,
@@ -158,8 +165,11 @@ final class ConnectionService
         array $scopes,
         int $days,
     ): array {
+        if ($owner->type !== SubjectType::User) {
+            throw OAuthException::invalidRequest('Only people can create personal tokens.');
+        }
         $name = trim($name);
-        if ($name === '' || strlen($name) > 100) {
+        if (preg_match('/\A[^\x00-\x1F\x7F]{1,100}\z/u', $name) !== 1) {
             throw OAuthException::invalidRequest('Give the token a name of up to 100 characters.');
         }
         $target = $this->resources->get($resource);
@@ -194,6 +204,9 @@ final class ConnectionService
      */
     public function revokeConnection(ResourceOwner $owner, string $familyId): bool
     {
+        if ($owner->type !== SubjectType::User) {
+            return false;
+        }
         $family = $this->tokens->findTokensByFamily($familyId);
         $first = $family[0] ?? null;
         if ($first === null || $first->type === TokenType::Personal || $first->clientInternalId === null) {
@@ -204,7 +217,9 @@ final class ConnectionService
                 return false;
             }
         }
-        $this->revoker->revokeFamily($familyId, 'connection', $first);
+        if ($this->revoker->revokeFamily($familyId, 'connection', $first) === 0) {
+            return false;
+        }
         $this->consents->deleteConsent($owner->subject, $first->clientInternalId, $first->resource);
 
         return true;
@@ -225,8 +240,7 @@ final class ConnectionService
         ) {
             return false;
         }
-        $this->revoker->revokeTokens([$token], 'personal', $token);
 
-        return true;
+        return $this->revoker->revokeTokens([$token], 'personal', $token) > 0;
     }
 }

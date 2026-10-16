@@ -119,10 +119,13 @@ class ConnectionServiceTest extends TestCase
         return [
             'no name' => [' ', Fixtures::MCP, ['content:read'], 7, 'invalid_request'],
             'long name' => [str_repeat('n', 101), Fixtures::MCP, ['content:read'], 7, 'invalid_request'],
+            'long multibyte name' => [str_repeat("\u{e9}", 101), Fixtures::MCP, ['content:read'], 7, 'invalid_request'],
+            'newline in name' => ["a\nb", Fixtures::MCP, ['content:read'], 7, 'invalid_request'],
+            'tab in name' => ["a\tb", Fixtures::MCP, ['content:read'], 7, 'invalid_request'],
+            'invalid utf8 name' => ["a\xff", Fixtures::MCP, ['content:read'], 7, 'invalid_request'],
             'unknown resource' => ['CI', 'https://other.example', ['content:read'], 7, 'invalid_target'],
             'no scope' => ['CI', Fixtures::MCP, [], 7, 'invalid_scope'],
             'scope above the owner' => ['CI', Fixtures::MCP, ['content:publish'], 7, 'invalid_scope'],
-            'too long' => ['CI', Fixtures::MCP, ['content:read'], 31, 'invalid_request'],
             'zero days' => ['CI', Fixtures::MCP, ['content:read'], 0, 'invalid_request'],
             'negative days' => ['CI', Fixtures::MCP, ['content:read'], -3, 'invalid_request'],
             'one day over the maximum' => ['CI', Fixtures::MCP, ['content:read'], 31, 'invalid_request'],
@@ -176,14 +179,74 @@ class ConnectionServiceTest extends TestCase
 
     public function testSubjectComparisonIsCaseSensitive(): void
     {
-        $this->connect('first');
-        $other = new ResourceOwner('42' . 'A', 'X', []);
-        $upper = new ResourceOwner('ABC', 'Upper', []);
         $this->connect('mixed', 'abc');
+        $upper = new ResourceOwner('ABC', 'Upper', []);
 
         $this->assertFalse($this->service->revokeConnection($upper, 'mixed'));
-        $this->assertFalse($this->service->revokeConnection($other, 'first'));
         $this->assertSame([], $this->service->connections($upper));
+    }
+
+    public function testClientTypedOwnersGetNothingAndCanDoNothing(): void
+    {
+        $this->connect('first');
+        $personal = $this->service->createPersonalToken($this->ada, 'CI', Fixtures::MCP, ['content:read'], 7);
+        $impostor = new ResourceOwner('42', 'Impostor', [], SubjectType::Client);
+
+        $this->assertSame([], $this->service->connections($impostor));
+        $this->assertSame([], $this->service->personalTokens($impostor));
+        $this->assertFalse($this->service->revokeConnection($impostor, 'first'));
+        $this->assertFalse($this->service->revokePersonalToken($impostor, $personal['token']->id));
+        $this->assertCount(1, $this->service->connections($this->ada));
+        $this->assertCount(1, $this->service->personalTokens($this->ada));
+        try {
+            $this->service->createPersonalToken($impostor, 'CI', Fixtures::MCP, ['content:read'], 7);
+            $this->fail('Created');
+        } catch (OAuthException $e) {
+            $this->assertSame('invalid_request', $e->error);
+        }
+        $this->assertCount(1, $this->service->personalTokens($this->ada));
+    }
+
+    public function testRevokingADeadFamilyKeepsTheNewerConsent(): void
+    {
+        $client = $this->connect('old');
+        $this->assertTrue($this->service->revokeConnection($this->ada, 'old'));
+        $this->issuer->issue($client, '42', SubjectType::User, Fixtures::resources()->defaultResource(), ['content:read'], 'new', true);
+        $this->storage->saveConsent(new Consent('c-new', '42', $client->id, Fixtures::MCP, ['content:read'], $this->clock->now(), $this->clock->now()));
+
+        $this->assertFalse($this->service->revokeConnection($this->ada, 'old'));
+        $this->assertNotNull($this->storage->findConsent('42', $client->id, Fixtures::MCP));
+        $this->assertCount(1, $this->service->connections($this->ada));
+    }
+
+    public function testRevokingAPersonalTokenTwiceReturnsFalse(): void
+    {
+        $result = $this->service->createPersonalToken($this->ada, 'CI', Fixtures::MCP, ['content:read'], 7);
+
+        $this->assertTrue($this->service->revokePersonalToken($this->ada, $result['token']->id));
+        $this->assertFalse($this->service->revokePersonalToken($this->ada, $result['token']->id));
+    }
+
+    public function testAcceptsAHundredMultibyteCharacters(): void
+    {
+        $result = $this->service->createPersonalToken($this->ada, str_repeat("\u{e9}", 100), Fixtures::MCP, ['content:read'], 7);
+
+        $this->assertSame(100, mb_strlen((string)$result['token']->name));
+    }
+
+    public function testConnectionsSkipRevokedClientsExpiredFamiliesAndClientCredentials(): void
+    {
+        $revoked = $this->connect('revoked');
+        $this->storage->saveClient($revoked->withRevokedAt($this->clock->now()));
+        $this->connect('expired');
+        $this->clock->advance(366 * 86400);
+        $live = $this->connect('live');
+        $cc = Fixtures::client(['name' => 'Machine']);
+        $this->storage->saveClient($cc);
+        $this->issuer->issue($cc, '42', SubjectType::Client, Fixtures::resources()->defaultResource(), ['content:read'], 'cc', false);
+
+        $this->assertSame(['live'], array_map(fn($c) => $c->familyId, $this->service->connections($this->ada)));
+        $this->assertSame($live->id, $this->service->connections($this->ada)[0]->client->id);
     }
 
     public function testConnectedAtIsTheFamilyStartAfterRotation(): void
