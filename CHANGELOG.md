@@ -98,7 +98,7 @@ CakePHP plugin) and to a database created from one.
 - Names: client names (dynamic registration, `ClientRegistrar::create()`) and personal token names
   must contain a letter, number, punctuation or symbol and reject control characters, line and paragraph
   separators, bidirectional controls and every other format character (`Cf`) except the soft hyphen,
-  tag characters only inside an emoji tag sequence (subdivision flags) and U+200C/U+200D between two
+  the tag characters of the flags of England, Scotland and Wales and U+200C/U+200D between two
   visible characters (Persian, Indic scripts, emoji sequences); also characters that draw nothing
   (U+034F, fillers, U+FFFC, unassigned default-ignorable code points) and runs of more than four
   combining marks (format characters do not break a run). A metadata document name that fails these
@@ -264,9 +264,10 @@ CakePHP plugin) and to a database created from one.
   (the code stays out of the trace of `HttpResponder::redirect()`), and pins the attribute by reflection
   on the parameters no failure can reach today (`RedirectUrl::build()`, `HttpResponder::redirect()`,
   `page()` and `json()`, the two view constructors, the hidden field helper).
-- Names: a flag tag sequence keeps at most seven tag characters (U+1F3F4, one to seven of U+E0020 to
-  U+E007E, U+E007F; seven is the longest Unicode subdivision id). The flags of England, Scotland and
-  Wales stay accepted; a longer sequence, which could carry a hidden text, is refused.
+- Names: tag characters are accepted only in the three RGI subdivision flags (U+1F3F4, the tags
+  spelling `gbeng`, `gbsct` or `gbwls`, U+E007F: England, Scotland, Wales). Every other tag sequence is
+  refused, however short: a cap on its length still let a flag spell `IGN OR!`, and several flags in one
+  name could carry about 190 hidden ASCII characters.
 - Configuration: a non-empty list where a map is expected is refused with an `InvalidArgumentException`
   naming the setting, in `resources`, `lifetimes`, `registration`, `cimd`, `rateLimit`, a resource's
   settings, its `scopes` and its `implies` (`'scopes' => ['content:read', 'content:write']` used to

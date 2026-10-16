@@ -19,6 +19,14 @@ final class ClientMetadata
      * character, the musical null notehead, and the unassigned default-ignorable code points
      * (U+2065, U+FFF0 to U+FFF8, U+E0000, U+E0002 to U+E001F, U+E0080 to U+E0FFF).
      */
+    /**
+     * The three RGI emoji tag sequences (subdivision flags): U+1F3F4, the tag characters spelling `gbeng`,
+     * `gbsct` or `gbwls`, and the cancel tag U+E007F (England, Scotland, Wales). They are the only sequences
+     * that keep tag characters: any other one, however short, can spell a hidden text.
+     */
+    private const RGI_FLAG = '/(\x{1F3F4})\x{E0067}\x{E0062}'
+        . '(?:\x{E0065}\x{E006E}\x{E0067}|\x{E0073}\x{E0063}\x{E0074}|\x{E0077}\x{E006C}\x{E0073})\x{E007F}/u';
+
     private const INVISIBLE = '/[\x{034F}\x{115F}\x{1160}\x{17B4}\x{17B5}\x{180B}-\x{180F}\x{2065}\x{2800}'
         . '\x{3164}\x{FFA0}\x{FFF0}-\x{FFF8}\x{FFFC}\x{1D159}\x{E0000}\x{E0002}-\x{E001F}'
         . '\x{E0080}-\x{E0FFF}]/u';
@@ -29,17 +37,16 @@ final class ClientMetadata
      * controls or any other format character (`Cf`), nor characters that draw nothing (fillers, a lone
      * combining grapheme joiner, the object replacement character, unassigned default-ignorable code points)
      * or runs of more than four combining marks (format characters between the marks do not break a run).
-     * Allowed although they are format characters: the soft hyphen, tag characters only inside an emoji tag
-     * sequence (a subdivision flag: U+1F3F4, one to seven tags, U+E007F; seven is the longest Unicode
-     * subdivision id, and the cap keeps a flag from carrying a hidden text), and U+200C and U+200D between
-     * two visible characters (Persian, Indic scripts, emoji sequences). Variation selectors are allowed after
-     * a letter, number, punctuation or symbol.
+     * Allowed although they are format characters: the soft hyphen, the tag characters of the three RGI
+     * subdivision flags (England, Scotland, Wales; every other tag character is refused, because a tag
+     * sequence spells ASCII invisibly), and U+200C and U+200D between two visible characters (Persian, Indic
+     * scripts, emoji sequences). Variation selectors are allowed after a letter, number, punctuation or
+     * symbol.
      */
     public static function isUsableName(string $name): bool
     {
-        // Tag characters are an ASCII-smuggling carrier: only a flag sequence may keep them, and only as many
-        // as a subdivision code needs.
-        $work = preg_replace('/(\x{1F3F4})[\x{E0020}-\x{E007E}]{1,7}\x{E007F}/u', '$1', $name);
+        // Tag characters are an ASCII-smuggling carrier: only the three RGI flags keep them.
+        $work = preg_replace(self::RGI_FLAG, '$1', $name);
         if ($work === null || preg_match('/\p{Cc}|\p{Zl}|\p{Zp}/u', $work) !== 0) {
             return false;
         }

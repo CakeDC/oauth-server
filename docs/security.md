@@ -158,11 +158,11 @@ that, set it to `0`. Then a lost response costs one re-authorization.
   a client called `claude.ai` cannot produce the title or heading of the real one, and a name
   containing quote characters cannot close the quote. Client and token names must contain a letter,
   number, punctuation or symbol and reject control characters, line and paragraph separators,
-  bidirectional controls, every other format character (`Cf`) except the soft hyphen, tag characters
-  inside an emoji tag sequence (a subdivision flag, at most seven tag characters, so a flag cannot carry
-  a hidden text) and U+200C/U+200D between two visible characters
-  (Persian, Indic scripts, emoji sequences), characters that draw nothing (fillers, U+034F, U+FFFC,
-  unassigned default-ignorable code points) and runs of more than four combining marks.
+  bidirectional controls, every other format character (`Cf`) except the soft hyphen, the tag
+  characters of the flags of England, Scotland and Wales (the only RGI emoji tag sequences; any other
+  tag character is refused, because tags spell ASCII invisibly) and U+200C/U+200D between two visible
+  characters (Persian, Indic scripts, emoji sequences), characters that draw nothing (fillers, U+034F,
+  U+FFFC, unassigned default-ignorable code points) and runs of more than four combining marks.
   A name that looks like a host is accepted: it never headlines the page. Length limits count
   characters.
 - Nothing checks `canAuthorize()` after `/authorize`. When your policy changes, revoke the person's

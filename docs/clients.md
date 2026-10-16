@@ -92,7 +92,7 @@ create(
 
 | Argument | Meaning |
 | --- | --- |
-| `name` | 1 to 255 characters (counted as characters, not bytes), with a letter, number, punctuation or symbol, and no control, bidirectional or other invisible characters (see [security](security.md#authorization-codes-and-consent)); the joiners U+200C and U+200D between visible characters, tag characters inside a flag sequence (at most seven) and the soft hyphen are allowed |
+| `name` | 1 to 255 characters (counted as characters, not bytes), with a letter, number, punctuation or symbol, and no control, bidirectional or other invisible characters (see [security](security.md#authorization-codes-and-consent)); the joiners U+200C and U+200D between visible characters, the tag characters of the flags of England, Scotland and Wales (no other tag character) and the soft hyphen are allowed |
 | `redirectUris` | Up to 10. May be empty only without the authorization code grant |
 | `confidential` | `true` gives the client a secret (`<prefix>_cs_...`) and `client_secret_basic` authentication. `false` makes it public |
 | `grantTypes` | Any of `GrantType::AUTHORIZATION_CODE`, `GrantType::REFRESH_TOKEN`, `GrantType::CLIENT_CREDENTIALS` |
