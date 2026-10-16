@@ -13,6 +13,8 @@ interface AuthorizationCodeRepositoryInterface
 {
     /**
      * Inserts a code.
+     *
+     * @throws \RuntimeException When a code with this id already exists; the stored row is left unchanged.
      */
     public function saveCode(AuthorizationCode $code): void;
 

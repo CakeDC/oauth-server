@@ -14,6 +14,8 @@ interface TokenRepositoryInterface
 {
     /**
      * Inserts a token.
+     *
+     * @throws \RuntimeException When a token with this id already exists; the stored row is left unchanged.
      */
     public function saveToken(Token $token): void;
 

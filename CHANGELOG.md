@@ -4,6 +4,8 @@
 
 First release.
 
+- Storage contract: saving a code or a token whose id already exists throws and leaves the stored row
+  unchanged (`InMemoryStorage` used to overwrite it).
 - OAuth 2.1 authorization server library for PHP 8.2 and newer, built on PSR-7, PSR-15, PSR-14,
   PSR-16, PSR-17, PSR-20 and PSR-3.
 - Authorization code flow with mandatory PKCE (S256), exact redirect URI matching and loopback

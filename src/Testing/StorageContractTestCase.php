@@ -19,6 +19,7 @@ use CakeDC\OAuth\Server\Token\TokenType;
 use DateTimeImmutable;
 use DateTimeZone;
 use PHPUnit\Framework\TestCase;
+use RuntimeException;
 
 /**
  * The behaviour every storage implementation must have. Extend it and implement createStorage().
@@ -227,6 +228,81 @@ abstract class StorageContractTestCase extends TestCase
         $this->assertEquals($this->at(5), $used?->usedAt);
         $this->assertSame('00000000-0000-4000-8000-0000000000f1', $used?->familyId);
         $this->assertNull($storage->findCodeByHash('unknown'));
+    }
+
+    /**
+     * Saving a code whose id exists fails and leaves the stored row as it was.
+     */
+    public function testSavingACodeWithAnExistingIdFailsAndKeepsTheStoredRow(): void
+    {
+        $storage = $this->createStorage();
+        $client = $this->makeClient();
+        $storage->saveClient($client);
+        $code = $this->makeCode($client);
+        $storage->saveCode($code);
+        $other = new AuthorizationCode(
+            id: $code->id,
+            codeHash: TokenGenerator::hash(Uuid::v4()),
+            clientInternalId: $client->id,
+            subject: 'someone-else',
+            redirectUri: 'https://app.example.com/cb',
+            resource: 'https://example.com/mcp',
+            scopes: ['content:write'],
+            codeChallenge: str_repeat('b', 43),
+            expiresAt: $this->at(600),
+            createdAt: $this->at(),
+        );
+
+        try {
+            $storage->saveCode($other);
+            $this->fail('A second code with the same id must be refused.');
+        } catch (RuntimeException) {
+            // Expected: a PDOException is a RuntimeException too.
+        }
+
+        $this->assertEquals($code, $storage->findCodeByHash($code->codeHash));
+        $this->assertNull($storage->findCodeByHash($other->codeHash));
+        $this->assertTrue($storage->consumeCode($code->id, $this->at(5), '00000000-0000-4000-8000-0000000000f1'));
+    }
+
+    /**
+     * Saving a token whose id exists fails and leaves the stored row as it was.
+     */
+    public function testSavingATokenWithAnExistingIdFailsAndKeepsTheStoredRow(): void
+    {
+        $storage = $this->createStorage();
+        $client = $this->makeClient();
+        $storage->saveClient($client);
+        $token = $this->makeToken($client, TokenType::Refresh);
+        $storage->saveToken($token);
+        $other = new Token(
+            id: $token->id,
+            tokenHash: TokenGenerator::hash(Uuid::v4()),
+            type: TokenType::Access,
+            familyId: Uuid::v4(),
+            clientInternalId: $client->id,
+            subject: 'someone-else',
+            subjectType: SubjectType::User,
+            resource: 'https://example.com/mcp',
+            scopes: ['content:write'],
+            createdAt: $this->at(),
+            expiresAt: $this->at(7200),
+            name: null,
+            parentId: null,
+        );
+
+        try {
+            $storage->saveToken($other);
+            $this->fail('A second token with the same id must be refused.');
+        } catch (RuntimeException) {
+            // Expected: a PDOException is a RuntimeException too.
+        }
+
+        $this->assertEquals($token, $storage->findTokenById($token->id));
+        $this->assertEquals($token, $storage->findTokenByHash($token->tokenHash));
+        $this->assertNull($storage->findTokenByHash($other->tokenHash));
+        $this->assertCount(1, $storage->findTokensByFamily($token->familyId));
+        $this->assertSame([], $storage->findTokensByFamily($other->familyId));
     }
 
     /**

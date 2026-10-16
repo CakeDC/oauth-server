@@ -13,6 +13,7 @@ use CakeDC\OAuth\Server\Storage\StorageInterface;
 use CakeDC\OAuth\Server\Support\Time;
 use CakeDC\OAuth\Server\Token\Token;
 use DateTimeImmutable;
+use RuntimeException;
 
 /**
  * Storage in PHP arrays, for tests and examples. Nothing survives the request.
@@ -102,6 +103,9 @@ final class InMemoryStorage implements StorageInterface
      */
     public function saveCode(AuthorizationCode $code): void
     {
+        if (isset($this->codes[$code->id])) {
+            throw new RuntimeException(sprintf('An authorization code with id "%s" already exists.', $code->id));
+        }
         $this->codes[$code->id] = $code;
     }
 
@@ -140,6 +144,9 @@ final class InMemoryStorage implements StorageInterface
      */
     public function saveToken(Token $token): void
     {
+        if (isset($this->tokens[$token->id])) {
+            throw new RuntimeException(sprintf('A token with id "%s" already exists.', $token->id));
+        }
         $this->tokens[$token->id] = $token;
     }
 
