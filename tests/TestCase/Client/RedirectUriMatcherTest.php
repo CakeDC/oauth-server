@@ -67,6 +67,13 @@ class RedirectUriMatcherTest extends TestCase
                 'not allowed',
             ],
             'private scheme web' => ['cursor://anysphere.cursor/oauth', ApplicationType::Web, true, 'web clients'],
+            'percent-encoded host' => [
+                'https://claude.ai%2eevil.example/cb',
+                ApplicationType::Web,
+                true,
+                'plain host name',
+            ],
+            'decimal host' => ['https://2130706433/cb', ApplicationType::Web, true, 'plain host name'],
             'relative' => ['/cb', ApplicationType::Web, true, 'absolute URI'],
             'spaces' => ['https://app.example.com/a b', ApplicationType::Web, true, 'spaces'],
             'trailing newline' => ["https://app.example.com/cb\n", ApplicationType::Web, true, 'control characters'],

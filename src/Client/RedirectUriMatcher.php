@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace CakeDC\OAuth\Server\Client;
 
 use CakeDC\OAuth\Server\Resource\ResourceIdentifier;
+use CakeDC\OAuth\Server\Support\HostName;
 
 /**
  * Redirect URI rules: what may be registered, and how a requested URI matches a registered one.
@@ -45,7 +46,11 @@ final class RedirectUriMatcher
         }
         $host = parse_url($uri, PHP_URL_HOST);
         if ($scheme === 'https') {
-            return is_string($host) && $host !== '' ? null : 'must name a host';
+            if (!is_string($host) || $host === '') {
+                return 'must name a host';
+            }
+
+            return HostName::isValid($host) ? null : 'must use a plain host name or IP address';
         }
         if ($scheme === 'http') {
             return is_string($host) && ResourceIdentifier::isLoopbackHost($host)

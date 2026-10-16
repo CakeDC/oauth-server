@@ -4,6 +4,8 @@ declare(strict_types=1);
 namespace CakeDC\OAuth\Server\Client\Cimd;
 
 use CakeDC\OAuth\Server\Exception\OAuthException;
+use CakeDC\OAuth\Server\Support\HostName;
+use InvalidArgumentException;
 use RuntimeException;
 
 /**
@@ -32,6 +34,9 @@ final class MetadataDocumentFetcher
         private readonly int $maxBytes = 10240,
         private readonly ?array $allowedHosts = null,
     ) {
+        if ($timeout < 1 || $maxBytes < 1) {
+            throw new InvalidArgumentException('The timeout and the maximum size must be at least 1.');
+        }
     }
 
     /**
@@ -39,7 +44,7 @@ final class MetadataDocumentFetcher
      */
     public static function isMetadataDocumentId(string $clientId): bool
     {
-        return str_starts_with($clientId, 'https://') && preg_match(self::URL_CHARACTERS, $clientId) === 1;
+        return str_starts_with($clientId, 'https://') && self::parse($clientId) !== null;
     }
 
     /**
@@ -50,21 +55,11 @@ final class MetadataDocumentFetcher
      */
     public function fetch(string $clientId): array
     {
-        $parts = preg_match(self::URL_CHARACTERS, $clientId) === 1 ? parse_url($clientId) : false;
-        $path = is_array($parts) ? ($parts['path'] ?? '') : '';
-        if (
-            !is_array($parts)
-            || ($parts['scheme'] ?? '') !== 'https'
-            || !isset($parts['host'])
-            || isset($parts['user'])
-            || isset($parts['pass'])
-            || str_contains($clientId, '#')
-            || $path === ''
-            || $path === '/'
-        ) {
+        $parts = self::parse($clientId);
+        if ($parts === null) {
             throw OAuthException::invalidClient('The client_id is not a valid metadata document URL.');
         }
-        $host = strtolower($parts['host']);
+        $host = strtolower((string)$parts['host']);
         if ($this->allowedHosts !== null && !in_array($host, array_map('strtolower', $this->allowedHosts), true)) {
             throw OAuthException::invalidClient(sprintf('Clients from %s are not accepted.', $host));
         }
@@ -81,16 +76,15 @@ final class MetadataDocumentFetcher
         try {
             $response = $this->transport->get($clientId, $addresses[0], $this->timeout, $this->maxBytes);
         } catch (RuntimeException $e) {
-            throw OAuthException::invalidClient(
-                'The client metadata document could not be fetched: ' . $e->getMessage(),
-            );
+            throw OAuthException::invalidClient('The client metadata document could not be fetched.');
         }
         if ($response->status !== 200) {
             throw OAuthException::invalidClient(
                 sprintf('The client metadata document answered HTTP %d.', $response->status),
             );
         }
-        if (!str_contains(strtolower($response->headers['content-type'] ?? ''), 'application/json')) {
+        $mediaType = strtolower(trim(explode(';', $response->headers['content-type'] ?? '')[0]));
+        if ($mediaType !== 'application/json') {
             throw OAuthException::invalidClient('The client metadata document must be application/json.');
         }
         $document = json_decode($response->body, true);
@@ -101,6 +95,41 @@ final class MetadataDocumentFetcher
 
         /** @var array<string, mixed> $document */
         return ['document' => $document, 'maxAge' => self::maxAge($response->headers['cache-control'] ?? null)];
+    }
+
+    /**
+     * The parts of a clean https client_id URL, or null: only URI characters, a strict host, no userinfo,
+     * fragment, empty or dot-segment path.
+     *
+     * @return array<string, mixed>|null
+     */
+    private static function parse(string $clientId): ?array
+    {
+        if (preg_match(self::URL_CHARACTERS, $clientId) !== 1 || str_contains($clientId, '#')) {
+            return null;
+        }
+        $parts = parse_url($clientId);
+        if (
+            !is_array($parts)
+            || ($parts['scheme'] ?? '') !== 'https'
+            || !isset($parts['host'])
+            || !HostName::isValid($parts['host'])
+            || isset($parts['user'])
+            || isset($parts['pass'])
+        ) {
+            return null;
+        }
+        $path = $parts['path'] ?? '';
+        if ($path === '' || $path === '/') {
+            return null;
+        }
+        foreach (explode('/', $path) as $segment) {
+            if (in_array(rawurldecode($segment), ['.', '..'], true)) {
+                return null;
+            }
+        }
+
+        return $parts;
     }
 
     /**
@@ -146,7 +175,7 @@ final class MetadataDocumentFetcher
         if (str_contains($cacheControl, 'no-store') || str_contains($cacheControl, 'no-cache')) {
             return 0;
         }
-        if (preg_match('/max-age=(\d+)/', $cacheControl, $matches) === 1) {
+        if (preg_match('/(?:^|[,\s])max-age=(\d{1,10})(?:$|[,\s;])/', $cacheControl, $matches) === 1) {
             return (int)$matches[1];
         }
 

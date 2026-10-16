@@ -9,13 +9,16 @@ namespace CakeDC\OAuth\Server\Client\Cimd;
  */
 final class IpGuard
 {
-    private const DENIED = [
+    private const DENIED_V4 = [
         '0.0.0.0/8', '10.0.0.0/8', '100.64.0.0/10', '127.0.0.0/8', '169.254.0.0/16', '172.16.0.0/12',
         '192.0.0.0/24', '192.0.2.0/24', '192.88.99.0/24', '192.168.0.0/16', '198.18.0.0/15',
-        '198.51.100.0/24', '203.0.113.0/24', '224.0.0.0/4', '240.0.0.0/4',
-        '::/128', '::1/128', '::ffff:0:0/96', '64:ff9b::/96', '64:ff9b:1::/48', '100::/64', '2001::/23',
-        '2001:db8::/32', '2002::/16', 'fc00::/7', 'fe80::/10', 'fec0::/10', 'ff00::/8',
+        '198.51.100.0/24', '203.0.113.0/24', '224.0.0.0/4', '240.0.0.0/4', '255.255.255.255/32',
     ];
+
+    /**
+     * IPv6 is an allowlist: only global unicast 2000::/3 minus these special ranges.
+     */
+    private const DENIED_V6 = ['2001::/23', '2001:db8::/32', '2002::/16', '3fff::/20'];
 
     /**
      * Whether $ip is a valid, globally routable address.
@@ -29,19 +32,33 @@ final class IpGuard
         if ($address === false) {
             return false;
         }
-        foreach (self::DENIED as $range) {
+        if (strlen($address) === 16) {
+            if (!self::inRange($address, (string)inet_pton('2000::'), 3)) {
+                return false;
+            }
+
+            return !self::inAny($address, self::DENIED_V6);
+        }
+
+        return !self::inAny($address, self::DENIED_V4);
+    }
+
+    /**
+     * Whether the packed $address is inside any of the CIDR $ranges.
+     *
+     * @param list<string> $ranges CIDR ranges of the same family as $address.
+     */
+    private static function inAny(string $address, array $ranges): bool
+    {
+        foreach ($ranges as $range) {
             [$network, $bits] = explode('/', $range);
             $prefix = inet_pton($network);
-            if (
-                $prefix !== false
-                && strlen($prefix) === strlen($address)
-                && self::inRange($address, $prefix, (int)$bits)
-            ) {
-                return false;
+            if ($prefix !== false && self::inRange($address, $prefix, (int)$bits)) {
+                return true;
             }
         }
 
-        return true;
+        return false;
     }
 
     /**

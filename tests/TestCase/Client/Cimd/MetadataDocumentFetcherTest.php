@@ -8,6 +8,7 @@ use CakeDC\OAuth\Server\Client\Cimd\MetadataDocumentFetcher;
 use CakeDC\OAuth\Server\Exception\OAuthException;
 use CakeDC\OAuth\Server\Test\Support\FakeDns;
 use CakeDC\OAuth\Server\Test\Support\FakeTransport;
+use InvalidArgumentException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
@@ -98,6 +99,13 @@ class MetadataDocumentFetcherTest extends TestCase
             'space' => ['https://client.example/a b.json'],
             'newline' => ["https://client.example/client.json\n"],
             'control char' => ["https://client.example/\x00client.json"],
+            'percent-encoded host' => ['https://x%41.attacker.example/client.json'],
+            'decimal host' => ['https://2130706433/x'],
+            'hex host' => ['https://0x7f.0.0.1/x'],
+            'trailing dot' => ['https://client.example./client.json'],
+            'single label' => ['https://localhost/client.json'],
+            'dot segment' => ['https://client.example/a/../client.json'],
+            'encoded dot segment' => ['https://client.example/a/%2e%2e/client.json'],
             'non-ascii host' => ['https://clíent.example/client.json'],
         ];
     }
@@ -129,7 +137,59 @@ class MetadataDocumentFetcherTest extends TestCase
 
     public function testRejectsPrivateAddressLiterals(): void
     {
+        $this->assertRejected('non-public address', 'https://[::1]/x');
+        $this->assertRejected('non-public address', 'https://[::ffff:127.0.0.1]/x');
         $this->assertRejected('non-public address', 'https://169.254.169.254/latest/meta-data');
+    }
+
+    public function testAllowlistIsNotFooledBySimilarHosts(): void
+    {
+        $this->dns->answers['evil-client.example'] = ['93.184.216.34'];
+        $this->dns->answers['a.client.example'] = ['93.184.216.34'];
+        $this->assertRejected('not accepted', 'https://evil-client.example/c.json', ['client.example']);
+        $this->assertRejected('not accepted', 'https://a.client.example/c.json', ['client.example']);
+    }
+
+    public function testRejectsJsonpAndAcceptsParameters(): void
+    {
+        $this->transport->responses[self::URL] = new FetchedResponse(
+            200,
+            ['content-type' => 'application/jsonp'],
+            (string)json_encode($this->document()),
+        );
+        $this->assertRejected('application/json');
+        $this->transport->responses[self::URL] = new FetchedResponse(
+            200,
+            ['content-type' => ' Application/JSON ; charset=utf-8'],
+            (string)json_encode($this->document()),
+        );
+        $this->assertSame('Example', $this->fetcher()->fetch(self::URL)['document']['client_name']);
+    }
+
+    public function testSMaxAgeIsNotMaxAge(): void
+    {
+        $this->transport->serve(self::URL, $this->document(), 's-maxage=999');
+        $this->assertNull($this->fetcher()->fetch(self::URL)['maxAge']);
+        $this->transport->serve(self::URL, $this->document(), 'public, s-maxage=9, max-age=42');
+        $this->assertSame(42, $this->fetcher()->fetch(self::URL)['maxAge']);
+    }
+
+    public function testTransportErrorsAreGeneric(): void
+    {
+        $this->transport->responses[self::URL] = new RuntimeException('internal curl detail');
+        try {
+            $this->fetcher()->fetch(self::URL);
+            $this->fail('Accepted');
+        } catch (OAuthException $e) {
+            $this->assertStringNotContainsString('internal', $e->getMessage());
+        }
+    }
+
+    public function testRejectsNonPositiveLimits(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        new MetadataDocumentFetcher($this->dns, $this->transport, 0);
     }
 
     public function testRejectsBadResponses(): void
