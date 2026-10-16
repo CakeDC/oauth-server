@@ -20,4 +20,24 @@ class ParamsTest extends TestCase
     {
         $this->assertSame([[], []], Params::parse(''));
     }
+
+    public function testMalformedPercentEncodingIsKeptLiterally(): void
+    {
+        $this->assertSame([['a' => '%zz', 'b%' => '1'], []], Params::parse('a=%zz&b%=1'));
+    }
+
+    public function testEmptyNames(): void
+    {
+        $this->assertSame([['' => 'x'], []], Params::parse('=x'));
+    }
+
+    public function testBracketedNamesAreLiteralAndRepeat(): void
+    {
+        $this->assertSame([['a[]' => '1'], ['a[]']], Params::parse('a[]=1&a[]=2'));
+    }
+
+    public function testPlusIsASpaceInValues(): void
+    {
+        $this->assertSame([['q' => 'a b+c'], []], Params::parse('q=a+b%2Bc'));
+    }
 }

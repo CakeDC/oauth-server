@@ -3,12 +3,16 @@ declare(strict_types=1);
 
 namespace CakeDC\OAuth\Server\Test\TestCase\Grant;
 
+use CakeDC\OAuth\Server\Client\Cimd\FetchedResponse;
+use CakeDC\OAuth\Server\Client\Cimd\MetadataDocumentFetcher;
 use CakeDC\OAuth\Server\Client\Client;
 use CakeDC\OAuth\Server\Client\ClientResolver;
 use CakeDC\OAuth\Server\Grant\AuthorizationError;
 use CakeDC\OAuth\Server\Grant\AuthorizationRequestValidator;
 use CakeDC\OAuth\Server\Grant\Pkce;
 use CakeDC\OAuth\Server\Storage\InMemory\InMemoryStorage;
+use CakeDC\OAuth\Server\Test\Support\FakeDns;
+use CakeDC\OAuth\Server\Test\Support\FakeTransport;
 use CakeDC\OAuth\Server\Test\Support\Fixtures;
 use CakeDC\OAuth\Server\Testing\FrozenClock;
 use DateTimeImmutable;
@@ -172,5 +176,71 @@ class AuthorizationRequestValidatorTest extends TestCase
 
         $e = $this->error($this->params(['client_id' => 'machine']));
         $this->assertSame('unauthorized_client', $e->error->error);
+    }
+
+    public function testAResolverFailureIsNeverRedirected(): void
+    {
+        $url = 'https://client.example.org/metadata.json';
+        $transport = new FakeTransport();
+        $transport->responses[$url] = new FetchedResponse(404, [], 'Not found');
+        $validator = new AuthorizationRequestValidator(
+            new ClientResolver(
+                $this->storage,
+                new FrozenClock(),
+                new MetadataDocumentFetcher(new FakeDns(), $transport),
+            ),
+            Fixtures::resources(),
+        );
+
+        try {
+            $validator->validate($this->params(['client_id' => $url]));
+            $this->fail('Accepted');
+        } catch (AuthorizationError $e) {
+            $this->assertFalse($e->isRedirectable());
+            $this->assertNull($e->redirectUri);
+            $this->assertNull($e->state);
+            $this->assertSame('invalid_client', $e->error->error);
+        }
+    }
+
+    /**
+     * @return array<string, array{string, string|null}>
+     */
+    public static function boundFields(): array
+    {
+        return [
+            'client' => ['client_id', 'other'],
+            'redirect uri' => ['redirect_uri', 'http://127.0.0.1/cb'],
+            'state' => ['state', 'abc'],
+            'resource' => ['resource', Fixtures::API],
+            'scopes' => ['scope', 'content:read offline_access'],
+            'offline access' => ['scope', 'content:write'],
+            'code challenge' => ['code_challenge', 'A' . str_repeat('b', 42)],
+        ];
+    }
+
+    #[DataProvider('boundFields')]
+    public function testFingerprintChangesWithEachBoundField(string $field, ?string $value): void
+    {
+        $this->storage->saveClient(Fixtures::client([
+            'clientId' => 'other',
+            'redirectUris' => ['https://app.example.com/cb', 'http://127.0.0.1/cb'],
+        ]));
+        $changes = [$field => $value];
+        if ($field === 'resource') {
+            $changes['scope'] = null;
+        }
+        $original = $this->validator->validate($this->params());
+        $changed = $this->validator->validate($this->params($changes));
+
+        $this->assertNotSame($original->fingerprint(), $changed->fingerprint());
+    }
+
+    public function testFormFieldsRoundTripKeepTheFingerprint(): void
+    {
+        $original = $this->validator->validate($this->params());
+        $again = $this->validator->validate($original->formFields());
+
+        $this->assertSame($original->fingerprint(), $again->fingerprint());
     }
 }
