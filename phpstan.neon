@@ -2,9 +2,3 @@ parameters:
     level: 8
     paths:
         - src/
-    ignoreErrors:
-        # Read by the connections handler factory of Task 21; remove this entry then.
-        -
-            identifier: property.onlyWritten
-            message: '#AuthorizationServer::\$connectionsRenderer is never read#'
-            path: src/AuthorizationServer.php

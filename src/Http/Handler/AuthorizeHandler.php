@@ -15,6 +15,7 @@ use CakeDC\OAuth\Server\Grant\RedirectUrl;
 use CakeDC\OAuth\Server\Http\FormBody;
 use CakeDC\OAuth\Server\Http\HttpResponder;
 use CakeDC\OAuth\Server\Http\Params;
+use CakeDC\OAuth\Server\Http\RequestPath;
 use CakeDC\OAuth\Server\Owner\ResourceOwner;
 use CakeDC\OAuth\Server\Owner\UserContextInterface;
 use CakeDC\OAuth\Server\Owner\UserProviderInterface;
@@ -116,7 +117,7 @@ final class AuthorizeHandler implements RequestHandlerInterface
         if ($method !== 'GET' && $method !== 'POST') {
             return $this->responder->methodNotAllowed('GET, POST');
         }
-        $path = $this->safePath($request);
+        $path = RequestPath::safe($request);
         if ($method === 'GET') {
             [$params, $repeated] = Params::parse($request->getUri()->getQuery());
         } else {
@@ -232,23 +233,6 @@ final class AuthorizeHandler implements RequestHandlerInterface
         $query = $request->getUri()->getQuery();
 
         return $path . ($query === '' ? '' : '?' . $query);
-    }
-
-    /**
-     * The request path as a single-slash absolute path, so it can never read as a protocol-relative URL;
-     * control characters and backslashes are refused.
-     *
-     * @throws \CakeDC\OAuth\Server\Exception\OAuthException When the path contains a control character or backslash.
-     */
-    private function safePath(ServerRequestInterface $request): string
-    {
-        $path = $request->getUri()->getPath();
-        // Browsers drop tab, CR and LF from URLs and read a backslash as a slash.
-        if (preg_match('/[\x00-\x1F\x7F\\\\]/', $path) === 1) {
-            throw OAuthException::invalidRequest('The request path is not valid.');
-        }
-
-        return '/' . ltrim($path, '/');
     }
 
     /**

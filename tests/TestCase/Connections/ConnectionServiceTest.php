@@ -157,6 +157,13 @@ class ConnectionServiceTest extends TestCase
         $this->assertSame(30, $this->service->maxPersonalDays());
     }
 
+    public function testClientTypedOwnersCannotCreateAnything(): void
+    {
+        $impostor = new ResourceOwner('42', 'Impostor', [], SubjectType::Client);
+
+        $this->assertSame([], $this->service->creatableScopes($impostor));
+    }
+
     public function testAcceptsTheMaximumLifetimeAndSetsAFutureExpiry(): void
     {
         $result = $this->service->createPersonalToken($this->ada, 'CI', Fixtures::MCP, ['content:read'], 30);

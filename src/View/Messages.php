@@ -30,6 +30,7 @@ final class Messages
         'connections.lastUsed' => 'Last used',
         'connections.never' => 'Never',
         'connections.revoke' => 'Revoke',
+        'connections.unverified' => 'Unverified: this application registered itself.',
         'tokens.title' => 'Personal access tokens',
         'tokens.empty' => 'You have no personal access tokens.',
         'tokens.name' => 'Name',

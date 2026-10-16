@@ -21,6 +21,7 @@ use CakeDC\OAuth\Server\Grant\ConsentService;
 use CakeDC\OAuth\Server\Http\ClientIp;
 use CakeDC\OAuth\Server\Http\Handler\AuthorizationServerMetadataHandler;
 use CakeDC\OAuth\Server\Http\Handler\AuthorizeHandler;
+use CakeDC\OAuth\Server\Http\Handler\ConnectionsHandler;
 use CakeDC\OAuth\Server\Http\Handler\IntrospectHandler;
 use CakeDC\OAuth\Server\Http\Handler\RegisterHandler;
 use CakeDC\OAuth\Server\Http\Handler\RevokeHandler;
@@ -41,6 +42,7 @@ use CakeDC\OAuth\Server\Token\TokenValidator;
 use CakeDC\OAuth\Server\View\ConnectionsRendererInterface;
 use CakeDC\OAuth\Server\View\ConsentRendererInterface;
 use CakeDC\OAuth\Server\View\ErrorPageRendererInterface;
+use CakeDC\OAuth\Server\View\Html\HtmlConnectionsRenderer;
 use CakeDC\OAuth\Server\View\Html\HtmlConsentRenderer;
 use CakeDC\OAuth\Server\View\Html\HtmlErrorPageRenderer;
 use CakeDC\OAuth\Server\View\Messages;
@@ -490,5 +492,22 @@ final class AuthorizationServer
         );
     }
 
-    // Task 21: connectionsHandler(); Task 22: bearerMiddleware(), mcpTokenValidator().
+    // Task 22: bearerMiddleware(), mcpTokenValidator().
+
+    /**
+     * GET and POST {routePrefix}/connections: the connections page.
+     */
+    public function connectionsHandler(): ConnectionsHandler
+    {
+        return new ConnectionsHandler(
+            $this->config,
+            $this->connectionService(),
+            $this->userContext,
+            $this->formToken(),
+            $this->responder,
+            $this->connectionsRenderer ?? new HtmlConnectionsRenderer($this->messages),
+            $this->errorPageRenderer(),
+            $this->logger,
+        );
+    }
 }

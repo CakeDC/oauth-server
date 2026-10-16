@@ -123,6 +123,9 @@ final class ConnectionService
      */
     public function creatableScopes(ResourceOwner $owner): array
     {
+        if ($owner->type !== SubjectType::User) {
+            return [];
+        }
         $creatable = [];
         foreach ($this->resources->all() as $resource) {
             $allowed = $resource->expand($this->users->scopesFor($owner, $resource) ?? $resource->scopeNames());
