@@ -42,13 +42,17 @@ First release.
   `ConsentView::clientHost()` of earlier code were spoofable for dynamic clients; use
   `ConsentView::clientLabel()` (empty for a private-use redirect, show a fixed text then) and
   `declaredName()`. `clientHost()` is now the host the answer goes to for a self-registered client.
-  New `Client::hostLabel()` does the same for the connections page.
+  On the connections page a self-registered client is labelled by the hosts of its registered redirect
+  URIs (new `Client::webHosts()` and `hasNonWebRedirect()`), plus "and an application on this computer"
+  (`connections.hostsAndLocal`) when it also has a private-use redirect URI, or just the fixed text when
+  it has none other.
 - Names: client names (dynamic registration, `ClientRegistrar::create()`) and personal token names
   must contain a letter, number, punctuation or symbol and reject control characters, line and paragraph
   separators, bidirectional controls and every other format character (`Cf`) except the soft hyphen,
-  tag characters and U+200C/U+200D between two visible characters (Persian, Indic scripts, emoji
-  sequences); also characters that draw nothing (U+034F, fillers, U+FFFC) and runs of more than four
-  combining marks. A metadata document name that fails these checks falls back to the host of its
+  tag characters only inside an emoji tag sequence (subdivision flags) and U+200C/U+200D between two
+  visible characters (Persian, Indic scripts, emoji sequences); also characters that draw nothing
+  (U+034F, fillers, U+FFFC, unassigned default-ignorable code points) and runs of more than four
+  combining marks (format characters do not break a run). A metadata document name that fails these checks falls back to the host of its
   `client_id`. Length limits count characters, not bytes. Names that look like host names stay
   accepted, because no page headlines a name.
 - One host classification: new `Support\HostClass` covers loopback, unspecified (`0.0.0.0`, `::`) and

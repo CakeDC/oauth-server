@@ -107,8 +107,8 @@ interface ConsentRendererInterface
 | `formAction` | The path the form must post to |
 | `fields` | Hidden fields to post back, as `name => value` |
 | `clientHost()` | The host that names the client: the `client_id` host of a metadata document, the host the answer goes to for a self-registered client (empty for a private-use scheme), the first redirect URI host for an administrator's client |
-| `clientLabel()` | What the title and heading call the client: its name for a registered client, a host for the others |
-| `declaredName()` | The name a dynamic client declared, to show as an unverified line, or `null` |
+| `clientLabel()` | What the title and heading call the client: its name for an administrator's client, a host for the others. Empty for a self-registered client that redirects to a private-use scheme: show a fixed text then (the built-in pages use the `client.local` message) |
+| `declaredName()` | The name a self-registered client declared, to show as a quoted unverified line, or `null`. Always set for a private-use redirect, otherwise only when it differs from the host |
 | `redirectHost()` | The host of the redirect URI (the scheme for a private-use URI), the same rule as `RedirectNoticeView::redirectHost()` |
 | `isUnverified()` | `true` for a dynamically registered client |
 | `isLoopbackOnly()` | `true` when the answer goes to this computer (loopback or unspecified address, `.localhost` name, private-use scheme) |
@@ -255,7 +255,8 @@ Every key, with its default text:
 | `consent.heading` | {client} wants to access {resource} | `{client}`, `{resource}` |
 | `consent.from` | The request comes from {host}. Your answer is sent to {redirect}. | `{host}`, `{redirect}` |
 | `client.local` | An application on this computer |  |
-| `consent.declaredName` | It calls itself {name}. Anyone can choose that name. | `{name}` (the page puts the escaped name in a `<q>` element) |
+| `connections.hostsAndLocal` | {hosts} and an application on this computer | `{hosts}` |
+| `consent.declaredName` | It calls itself {name}. Anyone can choose that name. | `{name}` (the page puts the escaped name in a `<q>` element; a text without `{name}` gets the name appended in one) |
 | `consent.unverified` | This application registered itself; its name is not verified. |  |
 | `consent.loopback` | Only continue if you just started this from an application on this computer: any program on this computer can use this address. |  |
 | `consent.approvedBefore` | You approved this application before. It is asked again because its identity cannot be confirmed: only continue if you started this yourself. |  |

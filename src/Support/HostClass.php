@@ -78,7 +78,8 @@ final class HostClass
 
     /**
      * What names the destination of a redirect to $uri: the host of an http(s) URI, the scheme of a
-     * private-use one (what follows it is chosen by the app), the whole string when it has neither.
+     * private-use one (the scheme is chosen by the client, and so is what follows it), the whole string when it
+     * has neither.
      */
     public static function redirectTarget(string $uri): string
     {

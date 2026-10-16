@@ -10,6 +10,7 @@ use CakeDC\OAuth\Server\Owner\ResourceOwner;
 use CakeDC\OAuth\Server\Test\Support\Fixtures;
 use CakeDC\OAuth\Server\View\ConnectionsView;
 use CakeDC\OAuth\Server\View\ConsentView;
+use CakeDC\OAuth\Server\View\Html\Html;
 use CakeDC\OAuth\Server\View\Html\HtmlConnectionsRenderer;
 use CakeDC\OAuth\Server\View\Html\HtmlConsentRenderer;
 use CakeDC\OAuth\Server\View\Html\HtmlErrorPageRenderer;
@@ -223,6 +224,19 @@ class HtmlRenderersTest extends TestCase
         }
     }
 
+    public function testATemplateWithoutThePlaceholderStillShowsTheName(): void
+    {
+        $this->assertSame(
+            'Calls itself &lt;x&gt; <q>A &amp; B</q>',
+            Html::withQuotedName('Calls itself <x>', 'A & B'),
+        );
+        $this->assertSame('a <q>N</q> b', Html::withQuotedName('a {name} b', 'N'));
+
+        $page = (new HtmlConsentRenderer(new Messages(['consent.declaredName' => 'Self-declared'])))
+            ->render($this->view());
+        $this->assertStringContainsString('Self-declared <q>&lt;b&gt;Evil&lt;/b&gt; App</q>', $page);
+    }
+
     public function testANameCannotCloseItsQuoteAndSpeakForTheServer(): void
     {
         $name = 'Claude". Verified publisher. "';
@@ -270,8 +284,10 @@ class HtmlRenderersTest extends TestCase
         $this->assertStringContainsString('<td>An application on this computer<br>', $local);
         $this->assertStringContainsString('<q>claude.ai</q>', $local);
 
-        $mixed = $page(['name' => 'Claude', 'redirectUris' => ['https://claude.ai/cb', 'claude.ai:/callback']]);
-        $this->assertStringContainsString('<td>An application on this computer<br>', $mixed);
+        $mixed = $page(['name' => 'Claude', 'redirectUris' => ['https://example.com/cb', 'claude.ai:/callback']]);
+        $this->assertStringContainsString('<td>example.com and an application on this computer<br>', $mixed);
+        $this->assertStringContainsString('<q>Claude</q>', $mixed);
+        $this->assertStringContainsString('registered itself', $mixed);
     }
 
     public function testBothViewsNameTheRedirectTargetTheSameWay(): void
@@ -341,7 +357,7 @@ class HtmlRenderersTest extends TestCase
         $this->assertStringContainsString('approved this application before', (new HtmlConsentRenderer())->render($again));
     }
 
-    public function testAnEmptyClientHostFallsBackToTheRedirectTarget(): void
+    public function testAPrivateSchemeIsShownAsTheDestinationAndNeverAsTheRequester(): void
     {
         $html = (new HtmlConsentRenderer())->render($this->view(ClientType::Dynamic, ['com.example.app:/cb']));
 

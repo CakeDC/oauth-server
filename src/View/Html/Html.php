@@ -29,15 +29,17 @@ final class Html
     /**
      * $template (a message with a `{name}` placeholder) escaped, with $name inside a `<q>` element: the
      * boundary of a name that anyone can choose is drawn in markup, so no character in it can close a quote
-     * and go on as if the server were speaking.
+     * and go on as if the server were speaking. When $template lacks the placeholder the name is appended in
+     * its own `<q>` element, never dropped.
      */
     public static function withQuotedName(string $template, string $name): string
     {
         $parts = explode('{name}', $template, 2);
 
+        // A template without the placeholder (a translation that dropped it) must not hide the name.
         return count($parts) === 2
             ? self::e($parts[0]) . '<q>' . self::e($name) . '</q>' . self::e($parts[1])
-            : self::e($template);
+            : self::e($template) . ' <q>' . self::e($name) . '</q>';
     }
 
     /**

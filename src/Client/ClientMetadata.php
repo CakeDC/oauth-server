@@ -13,31 +13,37 @@ final class ClientMetadata
     /**
      * Characters that draw nothing or alter nothing visible, which a name could use to look different
      * from what it is: the combining grapheme joiner, Hangul and Khmer fillers, Mongolian free variation
-     * selectors, the braille blank, the halfwidth Hangul filler, the object replacement character,
-     * the musical null notehead and the supplementary variation selectors.
+     * selectors (including U+180F), the braille blank, the halfwidth Hangul filler, the object replacement
+     * character, the musical null notehead, and the unassigned default-ignorable code points
+     * (U+2065, U+FFF0 to U+FFF8, U+E0000, U+E0002 to U+E001F, U+E0080 to U+E0FFF).
      */
-    private const INVISIBLE = '/[\x{034F}\x{115F}\x{1160}\x{17B4}\x{17B5}\x{180B}-\x{180D}\x{2800}\x{3164}'
-        . '\x{FFA0}\x{FFFC}\x{1D159}\x{E0100}-\x{E01EF}]/u';
+    private const INVISIBLE = '/[\x{034F}\x{115F}\x{1160}\x{17B4}\x{17B5}\x{180B}-\x{180F}\x{2065}\x{2800}'
+        . '\x{3164}\x{FFA0}\x{FFF0}-\x{FFF8}\x{FFFC}\x{1D159}\x{E0000}\x{E0002}-\x{E001F}'
+        . '\x{E0080}-\x{E0FFF}]/u';
 
     /**
      * Whether $name is usable as a display name. It must be valid UTF-8 and contain a letter, number,
      * punctuation or symbol. It must not contain control characters, line or paragraph separators, bidirectional
      * controls or any other format character (`Cf`), nor characters that draw nothing (fillers, a lone
-     * combining grapheme joiner, the object replacement character) or runs of more than four combining marks.
-     * Allowed although they are format characters: the soft hyphen, tag characters (subdivision flags), and
-     * U+200C and U+200D between two visible characters (Persian, Indic scripts, emoji sequences). Variation
-     * selectors are allowed after a letter, number, punctuation or symbol.
+     * combining grapheme joiner, the object replacement character, unassigned default-ignorable code points)
+     * or runs of more than four combining marks (format characters between the marks do not break a run).
+     * Allowed although they are format characters: the soft hyphen, tag characters only inside an emoji tag
+     * sequence (a subdivision flag: U+1F3F4, tags, U+E007F), and U+200C and U+200D between two visible
+     * characters (Persian, Indic scripts, emoji sequences). Variation selectors are allowed after a letter,
+     * number, punctuation or symbol.
      */
     public static function isUsableName(string $name): bool
     {
-        if (preg_match('/\p{Cc}|\p{Zl}|\p{Zp}/u', $name) !== 0) {
+        // Tag characters are an ASCII-smuggling carrier: only a flag sequence may keep them.
+        $work = preg_replace('/(\x{1F3F4})[\x{E0020}-\x{E007E}]+\x{E007F}/u', '$1', $name);
+        if ($work === null || preg_match('/\p{Cc}|\p{Zl}|\p{Zp}/u', $work) !== 0) {
             return false;
         }
-        // Every format character except the soft hyphen, tag characters and the joiners checked below.
-        if (preg_match('/(?![\x{00AD}\x{200C}\x{200D}\x{E0020}-\x{E007F}])\p{Cf}/u', $name) !== 0) {
+        // Every format character except the soft hyphen and the joiners checked below.
+        if (preg_match('/(?![\x{00AD}\x{200C}\x{200D}])\p{Cf}/u', $work) !== 0) {
             return false;
         }
-        if (preg_match(self::INVISIBLE, $name) !== 0) {
+        if (preg_match(self::INVISIBLE, $work) !== 0) {
             return false;
         }
         $rest = preg_replace(
@@ -46,13 +52,16 @@ final class ClientMetadata
                 '/(?<=[\p{L}\p{N}\p{P}\p{S}])[\x{FE00}-\x{FE0F}]/u',
             ],
             '',
-            $name,
+            $work,
         );
         if ($rest === null || preg_match('/[\x{200C}\x{200D}\x{FE00}-\x{FE0F}]/u', $rest) !== 0) {
             return false;
         }
+        $drawn = preg_replace('/\p{Cf}/u', '', $work);
 
-        return preg_match('/\p{M}{5,}/u', $name) === 0 && preg_match('/[\p{L}\p{N}\p{P}\p{S}]/u', $name) === 1;
+        return $drawn !== null
+            && preg_match('/\p{M}{5,}/u', $drawn) === 0
+            && preg_match('/[\p{L}\p{N}\p{P}\p{S}]/u', $work) === 1;
     }
 
     /**

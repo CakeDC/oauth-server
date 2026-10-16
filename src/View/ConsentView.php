@@ -55,8 +55,8 @@ final class ConsentView
     }
 
     /**
-     * The host the answer is sent to; for a private-use scheme, the scheme, since what follows it is
-     * chosen by the app. The same rule as {@see \CakeDC\OAuth\Server\View\RedirectNoticeView::redirectHost()}.
+     * The host the answer is sent to; for a private-use scheme, the scheme (chosen by the client, like
+     * what follows it, so it only says where the answer goes and never who is asking). The same rule as {@see \CakeDC\OAuth\Server\View\RedirectNoticeView::redirectHost()}.
      */
     public function redirectHost(): string
     {

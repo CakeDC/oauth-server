@@ -38,6 +38,7 @@ final class Messages
         'connections.lastUsed' => 'Last used',
         'connections.never' => 'Never',
         'connections.revoke' => 'Revoke',
+        'connections.hostsAndLocal' => '{hosts} and an application on this computer',
         'connections.unverified' => 'Unverified: this application registered itself.',
         'tokens.title' => 'Personal access tokens',
         'tokens.empty' => 'You have no personal access tokens.',
