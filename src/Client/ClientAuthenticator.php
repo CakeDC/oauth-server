@@ -11,6 +11,9 @@ use Psr\Http\Message\ServerRequestInterface;
 /**
  * Authenticates the client of a token, revocation or introspection request with the method it
  * registered.
+ *
+ * @internal Built through the AuthorizationServer factories, not by you: get it from the server.
+ * Its constructor may change in any 1.x release.
  */
 final class ClientAuthenticator
 {

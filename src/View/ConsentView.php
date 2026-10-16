@@ -10,6 +10,9 @@ use CakeDC\OAuth\Server\Resource\ProtectedResource;
 
 /**
  * What the consent page shows and posts back.
+ *
+ * @internal Built by the handlers and passed to your renderer: read its properties, never construct it.
+ * Its constructor may change in any 1.x release.
  */
 final class ConsentView
 {

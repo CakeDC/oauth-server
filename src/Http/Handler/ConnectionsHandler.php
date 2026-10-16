@@ -23,6 +23,9 @@ use Throwable;
 
 /**
  * The page where a signed-in person sees and revokes connections and personal tokens.
+ *
+ * @internal Built through the AuthorizationServer factories, not by you: get it from the server.
+ * Its constructor may change in any 1.x release.
  */
 final class ConnectionsHandler implements RequestHandlerInterface
 {

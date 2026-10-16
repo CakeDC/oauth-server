@@ -7,6 +7,9 @@ use CakeDC\OAuth\Server\Owner\ResourceOwner;
 
 /**
  * What the connections page shows.
+ *
+ * @internal Built by the handlers and passed to your renderer: read its properties, never construct it.
+ * Its constructor may change in any 1.x release.
  */
 final class ConnectionsView
 {

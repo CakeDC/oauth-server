@@ -24,6 +24,9 @@ use Psr\EventDispatcher\EventDispatcherInterface;
  * no longer exists (a removed person, or a client without an identity) is refused with invalid_grant
  * before it is marked used, and nothing is revoked, so a reactivated person's connection works again
  * without a new consent.
+ *
+ * @internal Built through the AuthorizationServer factories, not by you: get it from the server.
+ * Its constructor may change in any 1.x release.
  */
 final class RefreshTokenRotator
 {

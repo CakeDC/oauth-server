@@ -18,6 +18,9 @@ use stdClass;
 
 /**
  * Dynamic client registration (RFC 7591).
+ *
+ * @internal Built through the AuthorizationServer factories, not by you: get it from the server.
+ * Its constructor may change in any 1.x release.
  */
 final class RegisterHandler implements RequestHandlerInterface
 {

@@ -16,6 +16,9 @@ use Psr\EventDispatcher\EventDispatcherInterface;
 
 /**
  * Registers clients: dynamically (RFC 7591) or by hand.
+ *
+ * @internal Built through the AuthorizationServer factories, not by you: get it from the server.
+ * Its constructor may change in any 1.x release.
  */
 final class ClientRegistrar
 {

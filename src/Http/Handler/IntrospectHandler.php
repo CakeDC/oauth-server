@@ -30,6 +30,9 @@ use Psr\Log\LoggerInterface;
 
 /**
  * Token introspection (RFC 7662), for other services that need to check this server's tokens.
+ *
+ * @internal Built through the AuthorizationServer factories, not by you: get it from the server.
+ * Its constructor may change in any 1.x release.
  */
 final class IntrospectHandler implements RequestHandlerInterface
 {

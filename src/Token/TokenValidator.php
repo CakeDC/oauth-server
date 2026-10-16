@@ -15,6 +15,9 @@ use Throwable;
 
 /**
  * Validates access and personal tokens presented to a protected resource.
+ *
+ * @internal Built through the AuthorizationServer factories, not by you: get it from the server.
+ * Its constructor may change in any 1.x release.
  */
 final class TokenValidator
 {

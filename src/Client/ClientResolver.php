@@ -18,6 +18,9 @@ use Throwable;
 /**
  * Finds the client of a `client_id`: stored clients, and metadata document clients fetched and
  * cached as rows.
+ *
+ * @internal Built through the AuthorizationServer factories, not by you: get it from the server.
+ * Its constructor may change in any 1.x release.
  */
 final class ClientResolver
 {
