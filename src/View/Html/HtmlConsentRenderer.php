@@ -1,0 +1,65 @@
+<?php
+declare(strict_types=1);
+
+namespace CakeDC\OAuth\Server\View\Html;
+
+use CakeDC\OAuth\Server\View\ConsentRendererInterface;
+use CakeDC\OAuth\Server\View\ConsentView;
+use CakeDC\OAuth\Server\View\Messages;
+
+/**
+ * The built-in consent page.
+ */
+final class HtmlConsentRenderer implements ConsentRendererInterface
+{
+    /**
+     * @param \CakeDC\OAuth\Server\View\Messages $messages Texts.
+     */
+    public function __construct(private readonly Messages $messages = new Messages())
+    {
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function render(ConsentView $view): string
+    {
+        $m = $this->messages;
+        $items = '';
+        foreach ($view->scopes as $description) {
+            $items .= '<li>' . Html::e($description) . '</li>';
+        }
+        if ($view->offlineAccess) {
+            $items .= '<li>' . Html::e($m->get('consent.offline')) . '</li>';
+        }
+        $notes = '';
+        if ($view->isUnverified()) {
+            $notes .= '<p class="warning">' . Html::e($m->get('consent.unverified')) . '</p>';
+        }
+        if ($view->isLoopbackOnly()) {
+            $notes .= '<p class="warning">' . Html::e($m->get('consent.loopback')) . '</p>';
+        }
+        $fields = '';
+        foreach ($view->fields as $name => $value) {
+            $fields .= sprintf('<input type="hidden" name="%s" value="%s">', Html::e($name), Html::e($value));
+        }
+        $body = '<h1>' . Html::e($m->get('consent.heading', [
+                'client' => $view->client->name,
+                'resource' => $view->resource->name,
+            ])) . '</h1>'
+            . '<p class="muted">' . Html::e($m->get('consent.from', [
+                'host' => $view->clientHost() !== '' ? $view->clientHost() : $view->redirectHost(),
+                'redirect' => $view->redirectHost(),
+            ])) . '</p>'
+            . $notes
+            . '<p>' . Html::e($m->get('consent.user', ['user' => $view->owner->displayName])) . '</p>'
+            . '<p>' . Html::e($m->get('consent.scopes')) . '</p><ul>' . $items . '</ul>'
+            . '<form method="post" action="' . Html::e($view->formAction) . '">' . $fields
+            . '<button type="submit" name="decision" value="approve">'
+            . Html::e($m->get('consent.approve')) . '</button> '
+            . '<button type="submit" name="decision" value="deny" class="secondary">'
+            . Html::e($m->get('consent.deny')) . '</button></form>';
+
+        return Html::page($m->get('consent.title', ['client' => $view->client->name]), $body);
+    }
+}

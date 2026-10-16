@@ -3,9 +3,10 @@ parameters:
     paths:
         - src/
     ignoreErrors:
-        # Read by the handler factories of Tasks 18 to 22; remove this block once they exist.
+        # Read by the connections handler factory of Task 21; remove this entry then.
         -
             identifier: property.onlyWritten
+            message: '#AuthorizationServer::\$connectionsRenderer is never read#'
             path: src/AuthorizationServer.php
         # Only tests use the trait until the JSON handlers (Tasks 19-20) do; PHPStan scans src/ only.
         -

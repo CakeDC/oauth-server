@@ -20,6 +20,7 @@ use CakeDC\OAuth\Server\Grant\CodeIssuer;
 use CakeDC\OAuth\Server\Grant\ConsentService;
 use CakeDC\OAuth\Server\Http\ClientIp;
 use CakeDC\OAuth\Server\Http\Handler\AuthorizationServerMetadataHandler;
+use CakeDC\OAuth\Server\Http\Handler\AuthorizeHandler;
 use CakeDC\OAuth\Server\Http\HttpResponder;
 use CakeDC\OAuth\Server\Maintenance\Pruner;
 use CakeDC\OAuth\Server\Owner\UserContextInterface;
@@ -36,6 +37,8 @@ use CakeDC\OAuth\Server\Token\TokenValidator;
 use CakeDC\OAuth\Server\View\ConnectionsRendererInterface;
 use CakeDC\OAuth\Server\View\ConsentRendererInterface;
 use CakeDC\OAuth\Server\View\ErrorPageRendererInterface;
+use CakeDC\OAuth\Server\View\Html\HtmlConsentRenderer;
+use CakeDC\OAuth\Server\View\Html\HtmlErrorPageRenderer;
 use CakeDC\OAuth\Server\View\Messages;
 use Closure;
 use LogicException;
@@ -379,6 +382,38 @@ final class AuthorizationServer
         return new AuthorizationServerMetadataHandler($this->config, $this->responder);
     }
 
-    // Task 18: authorizeHandler(); Task 19: tokenHandler(); Task 20: registerHandler(), revokeHandler(),
+    /**
+     * The error page renderer.
+     */
+    public function errorPageRenderer(): ErrorPageRendererInterface
+    {
+        return $this->errorPageRenderer ?? new HtmlErrorPageRenderer($this->messages);
+    }
+
+    /**
+     * GET and POST {routePrefix}/authorize: the authorization endpoint.
+     */
+    public function authorizeHandler(): AuthorizeHandler
+    {
+        return new AuthorizeHandler(
+            $this->config,
+            $this->authorizationRequestValidator(),
+            $this->userContext,
+            $this->users,
+            $this->scopeResolver(),
+            $this->consentService(),
+            $this->codeIssuer(),
+            $this->formToken(),
+            $this->responder,
+            $this->consentRenderer ?? new HtmlConsentRenderer($this->messages),
+            $this->errorPageRenderer(),
+            $this->rateLimiter(),
+            $this->events,
+            $this->logger,
+            $this->clientIp,
+        );
+    }
+
+    // Task 19: tokenHandler(); Task 20: registerHandler(), revokeHandler(),
     // introspectHandler(); Task 21: connectionsHandler(); Task 22: bearerMiddleware(), mcpTokenValidator().
 }
