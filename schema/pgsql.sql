@@ -69,6 +69,7 @@ CREATE INDEX IF NOT EXISTS oauth_tokens_subject_subject_type ON oauth_tokens (su
 CREATE INDEX IF NOT EXISTS oauth_tokens_oauth_client_id ON oauth_tokens (oauth_client_id);
 
 CREATE INDEX IF NOT EXISTS oauth_tokens_expires_at ON oauth_tokens (expires_at);
+
 CREATE INDEX IF NOT EXISTS oauth_tokens_revoked_at ON oauth_tokens (revoked_at);
 
 CREATE TABLE IF NOT EXISTS oauth_consents (

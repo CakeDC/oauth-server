@@ -69,11 +69,11 @@ many people. Give the `token` limit enough room for that.
 
 Never run the OAuth endpoints inside a request-wide database transaction (a framework or middleware
 setting that wraps every request in `BEGIN ... COMMIT`). The library relies on single statements that
-commit at once: of two requests racing for the same authorization code or refresh token only one may
-win, and a revocation must be visible to the next request immediately. Inside a long transaction the
-winner is not visible to the other request until commit, so a code can be used twice, and a rollback after
-an error can undo tokens that were already handed out in a response. Exclude the OAuth routes from such a
-wrapper, or run the storage on its own connection.
+commit at once. Two reasons: a rollback after an error can undo tokens that were already handed out in
+a response, and under snapshot reads the checks that follow an atomic update (for example the look at
+the family after a rotation) read from the transaction's snapshot and can be stale. Racing requests are
+still serialized by the row lock of the conditional `UPDATE`, so this is not about a code being used
+twice. Exclude the OAuth routes from such a wrapper, or run the storage on its own connection.
 
 ## The rate limit cache
 
