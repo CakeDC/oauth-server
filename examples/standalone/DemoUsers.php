@@ -56,6 +56,8 @@ final class DemoUsers implements UserProviderInterface, UserContextInterface
      */
     public function currentOwner(ServerRequestInterface $request): ?ResourceOwner
     {
+        // DEMO ONLY: with OAUTH_EXAMPLE_AUTO_LOGIN=1 every visitor is alice. Never run it on a host
+        // anyone else can reach.
         if (getenv('OAUTH_EXAMPLE_AUTO_LOGIN') === '1') {
             return $this->findBySubject('alice');
         }

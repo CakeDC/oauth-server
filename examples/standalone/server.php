@@ -5,12 +5,16 @@ declare(strict_types=1);
  * A plain PHP front controller. Run: php -S 127.0.0.1:8090 examples/standalone/server.php
  */
 
+use CakeDC\OAuth\Server\Example\LocalPath;
 use CakeDC\OAuth\Server\Owner\ResourceOwner;
 use Nyholm\Psr7\Response;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 
+ini_set('display_errors', '0');
+ini_set('log_errors', '1');
+session_set_cookie_params(['httponly' => true, 'samesite' => 'Lax', 'path' => '/']);
 session_start();
 ['server' => $server, 'factory' => $factory, 'issuer' => $issuer] = require __DIR__ . '/bootstrap.php';
 
@@ -51,12 +55,12 @@ $response = match (true) {
     $path === '/api/me' => $server->bearerMiddleware($issuer . '/api')->process($request, $me),
     $path === '/login' && $request->getMethod() === 'POST' => (function () use ($request): ResponseInterface {
         $body = (array)$request->getParsedBody();
+        // A new session id on login, so an id planted before it is worthless.
+        session_regenerate_id(true);
         $_SESSION['user'] = (string)($body['user'] ?? '');
         $return = (string)($request->getQueryParams()['return'] ?? '/oauth/connections');
-        // Only local paths: "//host" and "/\host" would leave the site.
-        $local = preg_match('#\A/(?![/\\\\])#', $return) === 1;
 
-        return new Response(302, ['Location' => $local ? $return : '/']);
+        return new Response(302, ['Location' => LocalPath::orHome($return)]);
     })(),
     $path === '/login' => new Response(200, ['Content-Type' => 'text/html'], '<form method="post">'
         . '<select name="user"><option value="alice">Alice</option><option value="bob">Bob</option></select>'

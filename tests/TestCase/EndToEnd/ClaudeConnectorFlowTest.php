@@ -4,13 +4,10 @@ declare(strict_types=1);
 namespace CakeDC\OAuth\Server\Test\TestCase\EndToEnd;
 
 use CakeDC\OAuth\Server\Grant\Pkce;
+use CakeDC\OAuth\Server\Test\Support\EchoApi;
 use CakeDC\OAuth\Server\Test\Support\Fixtures;
 use CakeDC\OAuth\Server\Test\Support\ServerHarness;
-use Nyholm\Psr7\Response;
 use PHPUnit\Framework\TestCase;
-use Psr\Http\Message\ResponseInterface;
-use Psr\Http\Message\ServerRequestInterface;
-use Psr\Http\Server\RequestHandlerInterface;
 
 /**
  * What claude.ai does with a custom connector, step by step, with Claude's real metadata document.
@@ -33,12 +30,7 @@ class ClaudeConnectorFlowTest extends TestCase
             'token_endpoint_auth_method' => 'none',
         ]);
         $server = $harness->server;
-        $api = new class implements RequestHandlerInterface {
-            public function handle(ServerRequestInterface $request): ResponseInterface
-            {
-                return new Response(200, [], 'tools');
-            }
-        };
+        $api = new EchoApi();
         $protected = fn(string $token) => $server->bearerMiddleware(Fixtures::MCP)->process(
             $harness->request('POST', Fixtures::MCP, ['Authorization' => 'Bearer ' . $token]),
             $api,
@@ -95,9 +87,14 @@ class ClaudeConnectorFlowTest extends TestCase
             'resource' => Fixtures::MCP,
         ])));
         $this->assertArrayHasKey('refresh_token', $tokens);
+        $this->assertSame('content:write', $tokens['scope']);
 
-        // 6. The MCP endpoint accepts the token.
+        // 6. The MCP endpoint accepts the token and sees the person and the granted scopes.
         $this->assertSame(200, $protected($tokens['access_token'])->getStatusCode());
+        $this->assertSame('42', $api->owner?->subject);
+        $this->assertContains('content:write', (array)$api->scopes);
+        $this->assertContains('content:read', (array)$api->scopes);
+        $this->assertNotContains('content:publish', (array)$api->scopes);
 
         // 7. An hour later Claude refreshes, sending the resource again.
         $harness->clock->advance(3600);
@@ -123,9 +120,20 @@ class ClaudeConnectorFlowTest extends TestCase
             'form_token' => $fields['form_token'],
         ]));
         $this->assertSame(401, $protected($refreshed['access_token'])->getStatusCode());
+        $dead = $harness->json($server->tokenHandler()->handle($harness->form('https://example.com/oauth/token', [
+            'grant_type' => 'refresh_token',
+            'refresh_token' => $refreshed['refresh_token'],
+            'client_id' => self::CLIENT_ID,
+            'resource' => Fixtures::MCP,
+        ])));
+        $this->assertSame('invalid_grant', $dead['error']);
 
-        // 9. Connecting again asks for consent again.
+        // 9. Connecting again asks for consent again, naming the client and the scopes.
         $again = $server->authorizeHandler()->handle($harness->request('GET', $authorizeUrl));
         $this->assertSame(200, $again->getStatusCode());
+        $againHtml = (string)$again->getBody();
+        $this->assertStringContainsString('claude.ai wants to access Example MCP', $againHtml);
+        $this->assertStringContainsString('Edit drafts', $againHtml);
+        $this->assertArrayHasKey('consent_token', ServerHarness::formFields($againHtml));
     }
 }

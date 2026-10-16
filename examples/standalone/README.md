@@ -17,7 +17,7 @@ php -S 127.0.0.1:8090 examples/standalone/server.php
 Open http://127.0.0.1:8090/oauth/connections, sign in as Alice or Bob and manage the connections
 and personal access tokens.
 
-`setup.php [name]` registers a public client with the redirect URI `http://127.0.0.1/callback`
+`setup.php [name]` registers a NEW public client on every run (each run prints a different client id) with the redirect URI `http://127.0.0.1/callback`
 (any port) and records Alice's consent for the default scopes of the demo API, so she is not asked
 again.
 
@@ -28,7 +28,7 @@ again.
 | `OAUTH_EXAMPLE_DB` | `examples/standalone/oauth.sqlite` | SQLite file |
 | `OAUTH_EXAMPLE_ISSUER` | `http://127.0.0.1:8090` | Issuer URL; change it with the port |
 | `OAUTH_EXAMPLE_SECRET` | demo value | Signs the consent and connections forms (32 bytes minimum) |
-| `OAUTH_EXAMPLE_AUTO_LOGIN` | unset | `1` signs Alice in without the login form |
+| `OAUTH_EXAMPLE_AUTO_LOGIN` | unset | DEMO ONLY: `1` makes every visitor Alice, without the login form. Never run it on a host anyone else can reach |
 
 ## Routes
 
@@ -36,7 +36,7 @@ again.
 | --- | --- |
 | `/.well-known/oauth-authorization-server` | Authorization server metadata (RFC 8414) |
 | `/oauth/authorize` | Authorization endpoint with the consent page |
-| `/oauth/token` | Token endpoint (code, refresh, client credentials) |
+| `/oauth/token` | Token endpoint (authorization code and refresh; client credentials are not available in the demo because `DemoUsers::forClient()` returns null) |
 | `/oauth/register` | Dynamic client registration (RFC 7591) |
 | `/oauth/revoke` | Token revocation (RFC 7009) |
 | `/oauth/introspect` | Token introspection (RFC 7662) |
@@ -45,3 +45,31 @@ again.
 | `/login` | Demo login form |
 
 Bob can only receive the `read` scope; Alice can receive every scope of the demo API.
+
+## Getting a token for `/api/me`
+
+1. Run `setup.php` and note the client id (`CLIENT` below). Start the server and sign in at `/login`.
+2. Open this URL in the browser (the challenge is the S256 of the verifier used in step 4):
+
+   ```
+   http://127.0.0.1:8090/oauth/authorize?response_type=code&client_id=CLIENT&redirect_uri=http://127.0.0.1/callback&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256&resource=http://127.0.0.1:8090/api
+   ```
+
+   Alice already consented, so the browser goes straight to `http://127.0.0.1/callback?code=...`
+   (the page fails to load; copy the `code` from the address bar). Bob is asked to consent first.
+3. Exchange the code within 60 seconds:
+
+   ```bash
+   curl -s http://127.0.0.1:8090/oauth/token \
+     -d grant_type=authorization_code -d code=CODE -d client_id=CLIENT \
+     -d redirect_uri=http://127.0.0.1/callback \
+     -d code_verifier=dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk \
+     -d resource=http://127.0.0.1:8090/api
+   ```
+4. Call the API: `curl -H "Authorization: Bearer ACCESS_TOKEN" http://127.0.0.1:8090/api/me`.
+
+## Demo limits
+
+- There is no CORS layer: browser preflights to `/api/me` are refused.
+- The login form has no CSRF protection (demo only).
+- Keep the SQLite file outside the web root, with restrictive permissions (for example `chmod 600`).

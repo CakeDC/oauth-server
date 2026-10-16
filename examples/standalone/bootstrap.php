@@ -9,6 +9,7 @@ use Nyholm\Psr7\Factory\Psr17Factory;
 
 require dirname(__DIR__, 2) . '/vendor/autoload.php';
 require __DIR__ . '/DemoUsers.php';
+require __DIR__ . '/LocalPath.php';
 
 // DEMO ONLY: this fixed secret signs the consent and connections forms. Set OAUTH_EXAMPLE_SECRET to
 // your own random value of at least 32 bytes for anything beyond a local try-out.

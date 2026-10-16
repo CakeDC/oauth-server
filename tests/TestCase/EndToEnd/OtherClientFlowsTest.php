@@ -6,26 +6,13 @@ namespace CakeDC\OAuth\Server\Test\TestCase\EndToEnd;
 use CakeDC\OAuth\Server\Grant\Pkce;
 use CakeDC\OAuth\Server\Owner\ResourceOwner;
 use CakeDC\OAuth\Server\Owner\SubjectType;
+use CakeDC\OAuth\Server\Test\Support\EchoApi;
 use CakeDC\OAuth\Server\Test\Support\Fixtures;
 use CakeDC\OAuth\Server\Test\Support\ServerHarness;
-use Nyholm\Psr7\Response;
 use PHPUnit\Framework\TestCase;
-use Psr\Http\Message\ResponseInterface;
-use Psr\Http\Message\ServerRequestInterface;
-use Psr\Http\Server\RequestHandlerInterface;
 
 class OtherClientFlowsTest extends TestCase
 {
-    private function ok(): RequestHandlerInterface
-    {
-        return new class implements RequestHandlerInterface {
-            public function handle(ServerRequestInterface $request): ResponseInterface
-            {
-                return new Response(200);
-            }
-        };
-    }
-
     public function testDynamicRegistrationThenIntrospectionByAnotherService(): void
     {
         $harness = new ServerHarness();
@@ -41,6 +28,9 @@ class OtherClientFlowsTest extends TestCase
                 'token_endpoint_auth_method' => 'none',
             ]),
         )));
+        $this->assertNotEmpty($registered['client_id']);
+        $this->assertSame(['cursor://anysphere.cursor/oauth'], $registered['redirect_uris']);
+        $this->assertSame('none', $registered['token_endpoint_auth_method']);
         $client = $harness->storage->findClientByClientId($registered['client_id']);
         $this->assertNotNull($client);
 
@@ -54,6 +44,9 @@ class OtherClientFlowsTest extends TestCase
         )));
         $this->assertTrue($introspection['active']);
         $this->assertSame(Fixtures::API, $introspection['aud']);
+        $this->assertSame('42', $introspection['sub']);
+        $this->assertSame('api', $introspection['scope']);
+        $this->assertSame($client->clientId, $introspection['client_id']);
     }
 
     public function testClaudeCodeWithALoopbackCallbackOnARandomPort(): void
@@ -85,6 +78,7 @@ class OtherClientFlowsTest extends TestCase
             ServerHarness::formFields($page) + ['decision' => 'approve'],
         ));
         $this->assertStringStartsWith($callback . '?', $decision->getHeaderLine('Location'));
+        $this->assertSame(51234, parse_url($decision->getHeaderLine('Location'), PHP_URL_PORT));
 
         $response = $harness->server->tokenHandler()->handle($harness->form('https://example.com/oauth/token', [
             'grant_type' => 'authorization_code',
@@ -113,11 +107,15 @@ class OtherClientFlowsTest extends TestCase
             ['Authorization' => 'Basic ' . base64_encode('nightly-report:job-secret')],
         )));
 
+        $api = new EchoApi();
         $response = $harness->server->bearerMiddleware(Fixtures::MCP, null, ['content:read'])->process(
             $harness->request('GET', Fixtures::MCP, ['Authorization' => 'Bearer ' . $tokens['access_token']]),
-            $this->ok(),
+            $api,
         );
         $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame('nightly-report', $api->owner?->subject);
+        $this->assertSame(SubjectType::Client, $api->owner->type);
+        $this->assertSame(['content:read'], $api->scopes);
     }
 
     public function testPersonalTokenFromTheConnectionsPage(): void
@@ -135,10 +133,13 @@ class OtherClientFlowsTest extends TestCase
         preg_match('/<code>([^<]+)<\/code>/', (string)$page->getBody(), $matches);
         $this->assertArrayHasKey(1, $matches);
 
+        $api = new EchoApi();
         $response = $harness->server->bearerMiddleware(Fixtures::MCP)->process(
             $harness->request('GET', Fixtures::MCP, ['Authorization' => 'Bearer ' . $matches[1]]),
-            $this->ok(),
+            $api,
         );
         $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame('42', $api->owner?->subject);
+        $this->assertSame(['content:read'], $api->scopes);
     }
 }
