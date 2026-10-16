@@ -31,10 +31,10 @@ First release.
 - A standalone example in `examples/standalone/` and a run of the official MCP conformance suite for
   authorization servers (`tests/Conformance/run.sh`).
 - Documentation in `docs/`.
-- Classes marked `@internal` (the HTTP handlers, `ClientResolver`, `ClientAuthenticator`,
-  `ClientRegistrar`, `CodeIssuer`, `TokenIssuer`, `RefreshTokenRotator`, `TokenRevoker`,
-  `TokenValidator` and the view models) are built through the `AuthorizationServer` factories. Their
-  constructors and members may change in any 1.x release. The public surface is `AuthorizationServer`,
-  `ServerConfig`, the storage interfaces and implementations, the owner interfaces, events, renderers,
-  `Messages`, `BearerTokenMiddleware`, the MCP bridge, `Pruner` and the value objects they return.
+- `@internal`: `ClientResolver`, `ClientAuthenticator`, `CodeIssuer`, `TokenIssuer` and
+  `RefreshTokenRotator` are internal classes that may change in any 1.x release. The constructors of the
+  other service, handler and view classes (`TokenRevoker`, `ClientRegistrar`, `TokenValidator`, the HTTP
+  handlers, `ConsentService`, `ConnectionService`, `AuthorizationRequestValidator`,
+  `MetadataDocumentFetcher`, `ConsentView`, `ConnectionsView`) are internal: build them through
+  `AuthorizationServer`. Their documented methods and properties follow semantic versioning.
 - Schema changes after 1.0.0 ship as SQL files under `schema/upgrades/`; see `docs/storage.md`.

@@ -38,13 +38,11 @@ use Throwable;
 
 /**
  * The authorization endpoint: login hand-off, consent page and the decision.
- *
- * @internal Built through the AuthorizationServer factories, not by you: get it from the server.
- * Its constructor may change in any 1.x release.
  */
 final class AuthorizeHandler implements RequestHandlerInterface
 {
     /**
+     * @internal Build it through the AuthorizationServer; its constructor may change in any 1.x release.
      * @param \CakeDC\OAuth\Server\Config\ServerConfig $config Settings.
      * @param \CakeDC\OAuth\Server\Grant\AuthorizationRequestValidator $validator Request validation.
      * @param \CakeDC\OAuth\Server\Owner\UserContextInterface $userContext The signed-in person.

@@ -18,9 +18,6 @@ use stdClass;
 
 /**
  * Dynamic client registration (RFC 7591).
- *
- * @internal Built through the AuthorizationServer factories, not by you: get it from the server.
- * Its constructor may change in any 1.x release.
  */
 final class RegisterHandler implements RequestHandlerInterface
 {
@@ -31,6 +28,7 @@ final class RegisterHandler implements RequestHandlerInterface
     private const MAX_DEPTH = 32;
 
     /**
+     * @internal Build it through the AuthorizationServer; its constructor may change in any 1.x release.
      * @param \CakeDC\OAuth\Server\Config\ServerConfig $config Settings.
      * @param \CakeDC\OAuth\Server\Client\ClientRegistrar $registrar Registration.
      * @param \CakeDC\OAuth\Server\RateLimit\RateLimiter $rateLimiter Rate limiting.

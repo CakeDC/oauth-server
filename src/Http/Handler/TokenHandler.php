@@ -34,15 +34,13 @@ use Throwable;
 
 /**
  * The token endpoint: authorization code, refresh token and client credentials grants.
- *
- * @internal Built through the AuthorizationServer factories, not by you: get it from the server.
- * Its constructor may change in any 1.x release.
  */
 final class TokenHandler implements RequestHandlerInterface
 {
     use GuardsErrors;
 
     /**
+     * @internal Build it through the AuthorizationServer; its constructor may change in any 1.x release.
      * @param \CakeDC\OAuth\Server\Config\ServerConfig $config Settings.
      * @param \CakeDC\OAuth\Server\Client\ClientAuthenticator $clientAuthenticator Client authentication.
      * @param \CakeDC\OAuth\Server\Storage\AuthorizationCodeRepositoryInterface $codes Codes.

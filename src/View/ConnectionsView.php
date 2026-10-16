@@ -7,13 +7,11 @@ use CakeDC\OAuth\Server\Owner\ResourceOwner;
 
 /**
  * What the connections page shows.
- *
- * @internal Built by the handlers and passed to your renderer: read its properties, never construct it.
- * Its constructor may change in any 1.x release.
  */
 final class ConnectionsView
 {
     /**
+     * @internal Build it through the AuthorizationServer; its constructor may change in any 1.x release.
      * @param \CakeDC\OAuth\Server\Owner\ResourceOwner $owner The signed-in owner.
      * @param list<\CakeDC\OAuth\Server\Connections\Connection> $connections Live connections.
      * @param list<\CakeDC\OAuth\Server\Token\Token> $personalTokens Live personal tokens.

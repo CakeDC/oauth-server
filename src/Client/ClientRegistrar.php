@@ -16,15 +16,13 @@ use Psr\EventDispatcher\EventDispatcherInterface;
 
 /**
  * Registers clients: dynamically (RFC 7591) or by hand.
- *
- * @internal Built through the AuthorizationServer factories, not by you: get it from the server.
- * Its constructor may change in any 1.x release.
  */
 final class ClientRegistrar
 {
     private const MAX_REDIRECT_URIS = 10;
 
     /**
+     * @internal Build it through the AuthorizationServer; its constructor may change in any 1.x release.
      * @param \CakeDC\OAuth\Server\Storage\ClientRepositoryInterface $clients Storage.
      * @param \CakeDC\OAuth\Server\Token\TokenGenerator $generator Ids and secrets.
      * @param \Psr\Clock\ClockInterface $clock Clock.

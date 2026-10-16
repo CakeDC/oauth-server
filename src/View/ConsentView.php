@@ -10,13 +10,11 @@ use CakeDC\OAuth\Server\Resource\ProtectedResource;
 
 /**
  * What the consent page shows and posts back.
- *
- * @internal Built by the handlers and passed to your renderer: read its properties, never construct it.
- * Its constructor may change in any 1.x release.
  */
 final class ConsentView
 {
     /**
+     * @internal Build it through the AuthorizationServer; its constructor may change in any 1.x release.
      * @param \CakeDC\OAuth\Server\Client\Client $client The client.
      * @param \CakeDC\OAuth\Server\Owner\ResourceOwner $owner The signed-in owner.
      * @param \CakeDC\OAuth\Server\Resource\ProtectedResource $resource The resource.

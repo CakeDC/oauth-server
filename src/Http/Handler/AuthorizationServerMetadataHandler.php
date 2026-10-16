@@ -12,13 +12,11 @@ use Psr\Http\Server\RequestHandlerInterface;
 
 /**
  * Serves the authorization server metadata (RFC 8414). Mount it at ServerConfig::metadataPath().
- *
- * @internal Built through the AuthorizationServer factories, not by you: get it from the server.
- * Its constructor may change in any 1.x release.
  */
 final class AuthorizationServerMetadataHandler implements RequestHandlerInterface
 {
     /**
+     * @internal Build it through the AuthorizationServer; its constructor may change in any 1.x release.
      * @param \CakeDC\OAuth\Server\Config\ServerConfig $config Settings.
      * @param \CakeDC\OAuth\Server\Http\HttpResponder $responder Responses.
      */

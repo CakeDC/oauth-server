@@ -17,15 +17,13 @@ use Psr\Log\LoggerInterface;
 
 /**
  * Token revocation (RFC 7009).
- *
- * @internal Built through the AuthorizationServer factories, not by you: get it from the server.
- * Its constructor may change in any 1.x release.
  */
 final class RevokeHandler implements RequestHandlerInterface
 {
     use GuardsErrors;
 
     /**
+     * @internal Build it through the AuthorizationServer; its constructor may change in any 1.x release.
      * @param \CakeDC\OAuth\Server\Client\ClientAuthenticator $clientAuthenticator Client authentication.
      * @param \CakeDC\OAuth\Server\Token\TokenRevoker $revoker Revoker.
      * @param \CakeDC\OAuth\Server\RateLimit\RateLimiter $rateLimiter Rate limiting.

@@ -16,6 +16,7 @@ use CakeDC\OAuth\Server\Scope\Scopes;
 final class AuthorizationRequestValidator
 {
     /**
+     * @internal Build it through the AuthorizationServer; its constructor may change in any 1.x release.
      * @param \CakeDC\OAuth\Server\Client\ClientResolver $clients Client lookup.
      * @param \CakeDC\OAuth\Server\Resource\ResourceRegistry $resources Resources.
      */

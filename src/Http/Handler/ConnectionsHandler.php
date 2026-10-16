@@ -23,15 +23,13 @@ use Throwable;
 
 /**
  * The page where a signed-in person sees and revokes connections and personal tokens.
- *
- * @internal Built through the AuthorizationServer factories, not by you: get it from the server.
- * Its constructor may change in any 1.x release.
  */
 final class ConnectionsHandler implements RequestHandlerInterface
 {
     private const CONTEXT = 'connections';
 
     /**
+     * @internal Build it through the AuthorizationServer; its constructor may change in any 1.x release.
      * @param \CakeDC\OAuth\Server\Config\ServerConfig $config Settings.
      * @param \CakeDC\OAuth\Server\Connections\ConnectionService $connections Connections.
      * @param \CakeDC\OAuth\Server\Owner\UserContextInterface $userContext The signed-in person.

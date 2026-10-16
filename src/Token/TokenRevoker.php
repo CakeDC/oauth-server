@@ -12,13 +12,11 @@ use Psr\EventDispatcher\EventDispatcherInterface;
 
 /**
  * Revokes tokens.
- *
- * @internal Built through the AuthorizationServer factories, not by you: get it from the server.
- * Its constructor may change in any 1.x release.
  */
 final class TokenRevoker
 {
     /**
+     * @internal Build it through the AuthorizationServer; its constructor may change in any 1.x release.
      * @param \CakeDC\OAuth\Server\Storage\TokenRepositoryInterface $tokens Storage.
      * @param \Psr\Clock\ClockInterface $clock Clock.
      * @param \Psr\EventDispatcher\EventDispatcherInterface $events Events.

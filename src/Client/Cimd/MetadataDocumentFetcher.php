@@ -21,6 +21,7 @@ final class MetadataDocumentFetcher
     public const URL_CHARACTERS = '/^[A-Za-z0-9\-._~:\/?\[\]@!$&\'()*+,;=%]+\z/';
 
     /**
+     * @internal Build it through the AuthorizationServer; its constructor may change in any 1.x release.
      * @param \CakeDC\OAuth\Server\Client\Cimd\DnsResolverInterface $dns Resolver.
      * @param \CakeDC\OAuth\Server\Client\Cimd\HttpTransportInterface $transport Transport.
      * @param int $timeout Seconds.

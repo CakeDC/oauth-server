@@ -15,13 +15,11 @@ use Throwable;
 
 /**
  * Validates access and personal tokens presented to a protected resource.
- *
- * @internal Built through the AuthorizationServer factories, not by you: get it from the server.
- * Its constructor may change in any 1.x release.
  */
 final class TokenValidator
 {
     /**
+     * @internal Build it through the AuthorizationServer; its constructor may change in any 1.x release.
      * @param \CakeDC\OAuth\Server\Storage\TokenRepositoryInterface $tokens Token storage.
      * @param \CakeDC\OAuth\Server\Storage\ClientRepositoryInterface $clients Client storage.
      * @param \CakeDC\OAuth\Server\Owner\UserProviderInterface $users The application's people.

@@ -24,6 +24,7 @@ use Psr\Clock\ClockInterface;
 final class ConnectionService
 {
     /**
+     * @internal Build it through the AuthorizationServer; its constructor may change in any 1.x release.
      * @param \CakeDC\OAuth\Server\Storage\TokenRepositoryInterface $tokens Tokens.
      * @param \CakeDC\OAuth\Server\Storage\ClientRepositoryInterface $clients Clients.
      * @param \CakeDC\OAuth\Server\Storage\ConsentRepositoryInterface $consents Consents.
