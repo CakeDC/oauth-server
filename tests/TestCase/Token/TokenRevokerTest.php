@@ -13,6 +13,7 @@ use CakeDC\OAuth\Server\Testing\FrozenClock;
 use CakeDC\OAuth\Server\Token\TokenGenerator;
 use CakeDC\OAuth\Server\Token\TokenIssuer;
 use CakeDC\OAuth\Server\Token\TokenRevoker;
+use DateTimeImmutable;
 use PHPUnit\Framework\TestCase;
 
 class TokenRevokerTest extends TestCase
@@ -77,5 +78,67 @@ class TokenRevokerTest extends TestCase
             fn(TokenRevoked $e): string => $e->reason,
             $this->events->ofType(TokenRevoked::class),
         ));
+    }
+
+    public function testAForeignClientsRefreshTokenDoesNothing(): void
+    {
+        $owner = Fixtures::client();
+        $other = Fixtures::client();
+        $issued = $this->issuer->issue(
+            $owner,
+            '42',
+            SubjectType::User,
+            Fixtures::resources()->defaultResource(),
+            [],
+            'f',
+            true,
+        );
+
+        $this->revoker->revokeForClient($other, (string)$issued->refreshToken);
+
+        $this->assertNull($this->storage->findTokenById($issued->access->id)?->revokedAt);
+        $this->assertNull($this->storage->findTokenById((string)$issued->refresh?->id)?->revokedAt);
+        $this->assertSame([], $this->events->ofType(TokenRevoked::class));
+    }
+
+    public function testAnAlreadyRevokedAccessTokenSendsNoEvent(): void
+    {
+        $client = Fixtures::client();
+        $issued = $this->issuer->issue(
+            $client,
+            '42',
+            SubjectType::User,
+            Fixtures::resources()->defaultResource(),
+            [],
+            'f',
+            false,
+        );
+
+        $this->revoker->revokeForClient($client, $issued->accessToken);
+        $this->revoker->revokeForClient($client, $issued->accessToken);
+
+        $this->assertCount(1, $this->events->ofType(TokenRevoked::class));
+    }
+
+    public function testRevokesAListOfTokensAndCountsOnlyNewRevocations(): void
+    {
+        $client = Fixtures::client();
+        $issued = $this->issuer->issue(
+            $client,
+            '42',
+            SubjectType::User,
+            Fixtures::resources()->defaultResource(),
+            [],
+            'f',
+            true,
+        );
+        $this->storage->revokeToken($issued->access->id, new DateTimeImmutable());
+
+        $count = $this->revoker->revokeTokens([$issued->access, $issued->refresh], 'grace');
+
+        $this->assertSame(1, $count);
+        $this->assertSame(1, $this->events->ofType(TokenRevoked::class)[0]->count);
+        $this->assertSame(0, $this->revoker->revokeTokens([$issued->access, $issued->refresh], 'grace'));
+        $this->assertCount(1, $this->events->ofType(TokenRevoked::class));
     }
 }

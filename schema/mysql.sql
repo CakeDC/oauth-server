@@ -61,6 +61,7 @@ CREATE TABLE IF NOT EXISTS oauth_tokens (
     used_at DATETIME NULL,
     revoked_at DATETIME NULL,
     last_used_at DATETIME NULL,
+    family_started_at DATETIME NULL,
     created DATETIME NOT NULL,
     modified DATETIME NOT NULL,
     PRIMARY KEY (id),

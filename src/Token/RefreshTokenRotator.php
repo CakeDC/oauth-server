@@ -5,7 +5,6 @@ namespace CakeDC\OAuth\Server\Token;
 
 use CakeDC\OAuth\Server\Client\Client;
 use CakeDC\OAuth\Server\Event\RefreshTokenReused;
-use CakeDC\OAuth\Server\Event\TokenRevoked;
 use CakeDC\OAuth\Server\Exception\OAuthException;
 use CakeDC\OAuth\Server\Resource\ProtectedResource;
 use CakeDC\OAuth\Server\Resource\ResourceRegistry;
@@ -57,32 +56,95 @@ final class RefreshTokenRotator
         ?string $resource,
         array $requestedScopes,
     ): IssuedTokens {
+        if ($client->isRevoked()) {
+            throw OAuthException::invalidClient('The client was revoked.');
+        }
         $now = $this->clock->now();
         $token = $this->tokens->findTokenByHash(TokenGenerator::hash($refreshToken));
         if ($token === null || $token->type !== TokenType::Refresh || $token->clientInternalId !== $client->id) {
             throw OAuthException::invalidGrant('The refresh token is invalid.');
         }
-        if ($token->revokedAt !== null || $token->isExpired($now)) {
+        if ($token->revokedAt !== null) {
+            $this->revokedPresented($client, $token, $now);
+        }
+        // Replays are judged before anything else, so a bad scope or resource cannot dodge detection.
+        if ($token->usedAt !== null) {
+            return $this->reused($client, $token, $resource, $requestedScopes, $now);
+        }
+        if ($token->isExpired($now)) {
             throw OAuthException::invalidGrant('The refresh token is no longer valid.');
         }
+        [$target, $scopes] = $this->prepare($client, $token, $resource, $requestedScopes);
+        if ($this->tokens->markTokenUsed($token->id, $now)) {
+            return $this->pair($client, $token, $target, $scopes);
+        }
+        $current = $this->tokens->findTokenById($token->id) ?? $token;
+        if ($current->revokedAt !== null) {
+            $this->revokedPresented($client, $current, $now);
+        }
+
+        return $this->reused($client, $current, $resource, $requestedScopes, $now);
+    }
+
+    /**
+     * Handles a revoked refresh token. When its family still has a live token somebody else holds a
+     * newer pair, which is treated as reuse (a takeover); otherwise the token is simply dead.
+     *
+     * @throws \CakeDC\OAuth\Server\Exception\OAuthException
+     */
+    private function revokedPresented(Client $client, Token $token, DateTimeImmutable $now): never
+    {
+        foreach ($this->tokens->findTokensByFamily($token->familyId) as $member) {
+            if ($member->isActive($now)) {
+                $this->detectedReuse($client, $token);
+            }
+        }
+
+        throw OAuthException::invalidGrant('The refresh token is no longer valid.');
+    }
+
+    /**
+     * Revokes the family of a replayed token and answers invalid_grant.
+     *
+     * @throws \CakeDC\OAuth\Server\Exception\OAuthException
+     */
+    private function detectedReuse(Client $client, Token $token): never
+    {
+        $this->revoker->revokeFamily($token->familyId, 'refresh_reuse', $token);
+        $this->events->dispatch(new RefreshTokenReused($token, $client));
+
+        throw OAuthException::invalidGrant('The refresh token was already used.');
+    }
+
+    /**
+     * Checks resource and scopes and works out the scopes of the new pair.
+     *
+     * @param list<string> $requestedScopes Requested scopes.
+     * @return array{0: \CakeDC\OAuth\Server\Resource\ProtectedResource, 1: list<string>}
+     * @throws \CakeDC\OAuth\Server\Exception\OAuthException
+     */
+    private function prepare(Client $client, Token $token, ?string $resource, array $requestedScopes): array
+    {
         $target = $this->resources->get($token->resource);
         if ($target === null) {
             throw OAuthException::invalidGrant('The resource of this token no longer exists.');
         }
-        $asked = $resource === null || $resource === '' ? null : $this->resources->get($resource);
-        if ($resource !== null && $resource !== '' && $asked?->identifier !== $target->identifier) {
-            throw OAuthException::invalidTarget('The refresh token was issued for another resource.');
+        if ($resource !== null && $resource !== '') {
+            $asked = $this->resources->get($resource);
+            if ($asked?->identifier !== $target->identifier) {
+                throw OAuthException::invalidTarget('The refresh token was issued for another resource.');
+            }
         }
         $scopes = $this->grantable(
             $client,
             $target,
             $this->scopes->narrow($target, $token->scopes, $requestedScopes),
         );
-        if ($token->usedAt === null && $this->tokens->markTokenUsed($token->id, $now)) {
-            return $this->pair($client, $token, $target, $scopes);
+        if ($scopes === []) {
+            throw OAuthException::invalidScope('None of the scopes of this token can be granted any more.');
         }
 
-        return $this->reused($client, $this->tokens->findTokenById($token->id) ?? $token, $target, $scopes, $now);
+        return [$target, $scopes];
     }
 
     /**
@@ -105,56 +167,77 @@ final class RefreshTokenRotator
     /**
      * Handles a refresh token presented after it was rotated.
      *
-     * @param list<string> $scopes Scopes for a new pair.
+     * Inside the grace window the rotation counts as complete only once a refresh token issued by it
+     * exists; until then (a rotation in flight, or an exhausted family) the answer is invalid_grant and
+     * nothing is revoked. The one caller that atomically marks that refresh child used revokes the
+     * rotation's children and issues the fresh pair. A caller that loses the mark finds the child used
+     * (rotated by the client, or taken by another retry) and is treated as reuse: the two cases cannot
+     * be told apart from storage, and failing closed costs one re-authorization.
+     *
+     * @param list<string> $requestedScopes Requested scopes.
      * @throws \CakeDC\OAuth\Server\Exception\OAuthException
      */
     private function reused(
         Client $client,
         Token $token,
-        ProtectedResource $target,
-        array $scopes,
+        ?string $resource,
+        array $requestedScopes,
         DateTimeImmutable $now,
     ): IssuedTokens {
         $usedAt = $token->usedAt ?? $now;
         if ($this->grace > 0 && $now->getTimestamp() - $usedAt->getTimestamp() <= $this->grace) {
             $children = array_values(array_filter(
                 $this->tokens->findTokensByFamily($token->familyId),
-                fn(Token $child): bool => $child->parentId === $token->id && $child->revokedAt === null,
+                fn(Token $child): bool => $child->parentId === $token->id,
             ));
-            if ($children === []) {
+            $refreshChildren = array_values(array_filter(
+                $children,
+                fn(Token $child): bool => $child->type === TokenType::Refresh && $child->revokedAt === null,
+            ));
+            $hasRefreshChild = array_filter($children, fn(Token $child): bool => $child->type === TokenType::Refresh);
+            if ($hasRefreshChild === []) {
                 throw OAuthException::invalidGrant('The refresh token is being rotated; try again.');
             }
-            $used = array_filter(
-                $children,
-                fn(Token $child): bool => $child->usedAt !== null || $child->lastUsedAt !== null,
-            );
-            if ($used === []) {
-                foreach ($children as $child) {
-                    $this->tokens->revokeToken($child->id, $now);
-                }
-                $this->events->dispatch(
-                    new TokenRevoked('grace', count($children), $token, $token->familyId),
-                );
+            if ($refreshChildren !== [] && !$this->anyUsed($children)) {
+                [$target, $scopes] = $this->prepare($client, $token, $resource, $requestedScopes);
+                $child = $refreshChildren[count($refreshChildren) - 1];
+                if ($this->tokens->markTokenUsed($child->id, $now)) {
+                    $this->revoker->revokeTokens($children, 'grace', $token);
 
-                return $this->pair($client, $token, $target, $scopes);
+                    return $this->pair($client, $token, $target, $scopes);
+                }
             }
         }
-        $this->revoker->revokeFamily($token->familyId, 'refresh_reuse', $token);
-        $this->events->dispatch(new RefreshTokenReused($token, $client));
-
-        throw OAuthException::invalidGrant('The refresh token was already used.');
+        $this->detectedReuse($client, $token);
     }
 
     /**
-     * Issues the pair that replaces $token.
+     * Whether the tokens of a rotation were put to use. A refresh child that was rotated counts while it
+     * is not revoked (a revoked, used one was superseded by an earlier grace re-issue); any child that
+     * was presented to a resource counts even if it is revoked.
+     *
+     * @param list<\CakeDC\OAuth\Server\Token\Token> $children Tokens issued by the rotation.
+     */
+    private function anyUsed(array $children): bool
+    {
+        foreach ($children as $child) {
+            if ($child->lastUsedAt !== null || ($child->usedAt !== null && $child->revokedAt === null)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Issues the pair that replaces $token, unless $token was revoked meanwhile.
      *
      * @param list<string> $scopes Scopes.
+     * @throws \CakeDC\OAuth\Server\Exception\OAuthException
      */
     private function pair(Client $client, Token $token, ProtectedResource $target, array $scopes): IssuedTokens
     {
-        $family = $this->tokens->findTokensByFamily($token->familyId);
-
-        return $this->issuer->issue(
+        $issued = $this->issuer->issue(
             $client,
             $token->subject,
             $token->subjectType,
@@ -163,7 +246,18 @@ final class RefreshTokenRotator
             $token->familyId,
             true,
             $token->id,
-            $family === [] ? $token->createdAt : $family[0]->createdAt,
+            $token->familyStartedAt ?? $token->createdAt,
         );
+        if ($this->tokens->findTokenById($token->id)?->revokedAt !== null) {
+            $this->revoker->revokeTokens(
+                $issued->refresh === null ? [$issued->access] : [$issued->access, $issued->refresh],
+                'refresh_reuse',
+                $token,
+            );
+
+            throw OAuthException::invalidGrant('The refresh token was revoked.');
+        }
+
+        return $issued;
     }
 }

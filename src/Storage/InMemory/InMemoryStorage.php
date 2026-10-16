@@ -171,7 +171,7 @@ final class InMemoryStorage implements StorageInterface
     public function markTokenUsed(string $id, DateTimeImmutable $at): bool
     {
         $token = $this->tokens[$id] ?? null;
-        if ($token === null || $token->usedAt !== null) {
+        if ($token === null || $token->usedAt !== null || $token->revokedAt !== null) {
             return false;
         }
         $this->tokens[$id] = $this->withToken($token, ['usedAt' => $at]);

@@ -251,6 +251,7 @@ abstract class StorageContractTestCase extends TestCase
             expiresAt: $this->at(100),
             name: null,
             parentId: Uuid::v4(),
+            familyStartedAt: $this->at(-50),
         );
         $storage->saveToken($token);
         $personal = $this->makeToken(null, TokenType::Personal, null, null);
@@ -276,6 +277,22 @@ abstract class StorageContractTestCase extends TestCase
         $this->assertTrue($storage->markTokenUsed($token->id, $this->at(3)));
         $this->assertFalse($storage->markTokenUsed($token->id, $this->at(4)));
         $this->assertEquals($this->at(3), $storage->findTokenById($token->id)?->usedAt);
+    }
+
+    /**
+     * A revoked token cannot be marked used, so a revocation beats a rotation in flight.
+     */
+    public function testRevokedTokensCannotBeMarkedUsed(): void
+    {
+        $storage = $this->createStorage();
+        $client = $this->makeClient();
+        $storage->saveClient($client);
+        $token = $this->makeToken($client, TokenType::Refresh);
+        $storage->saveToken($token);
+        $storage->revokeToken($token->id, $this->at(1));
+
+        $this->assertFalse($storage->markTokenUsed($token->id, $this->at(2)));
+        $this->assertNull($storage->findTokenById($token->id)?->usedAt);
     }
 
     /**

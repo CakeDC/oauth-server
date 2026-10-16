@@ -28,7 +28,8 @@ interface TokenRepositoryInterface
     public function findTokenById(string $id): ?Token;
 
     /**
-     * Marks a refresh token used, atomically: of two concurrent calls only one returns true.
+     * Marks a refresh token used, atomically: of two concurrent calls only one returns true. A revoked
+     * token is never marked (returns false), so a revocation beats a rotation in flight.
      */
     public function markTokenUsed(string $id, DateTimeImmutable $at): bool;
 

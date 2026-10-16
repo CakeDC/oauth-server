@@ -62,6 +62,7 @@ final class TokenIssuer
     ): IssuedTokens {
         $scopes = array_values(array_unique($scopes));
         $now = $this->clock->now();
+        $familyStartedAt ??= $now;
         $accessValue = $this->generator->accessToken();
         $access = $this->store(new Token(
             id: Uuid::v4(),
@@ -76,11 +77,12 @@ final class TokenIssuer
             createdAt: $now,
             expiresAt: Time::plus($now, $this->lifetimes->access),
             parentId: $parentId,
+            familyStartedAt: $familyStartedAt,
         ), $client);
         if (!$withRefresh) {
             return new IssuedTokens($access, $accessValue);
         }
-        $familyEnd = Time::plus($familyStartedAt ?? $now, $this->lifetimes->family);
+        $familyEnd = Time::plus($familyStartedAt, $this->lifetimes->family);
         $refreshEnd = Time::plus($now, $this->lifetimes->refresh);
         $expiresAt = $refreshEnd < $familyEnd ? $refreshEnd : $familyEnd;
         if ($expiresAt <= $now) {
@@ -100,6 +102,7 @@ final class TokenIssuer
             createdAt: $now,
             expiresAt: $expiresAt,
             parentId: $parentId,
+            familyStartedAt: $familyStartedAt,
         ), $client);
 
         return new IssuedTokens($access, $accessValue, $refresh, $refreshValue);

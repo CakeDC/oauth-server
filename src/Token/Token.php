@@ -28,6 +28,7 @@ final class Token
      * @param \DateTimeImmutable|null $usedAt When a refresh token was rotated.
      * @param \DateTimeImmutable|null $revokedAt Revocation.
      * @param \DateTimeImmutable|null $lastUsedAt Last use against a resource (updated at most once a minute).
+     * @param \DateTimeImmutable|null $familyStartedAt When the token's family began; null means $createdAt.
      */
     public function __construct(
         public readonly string $id,
@@ -46,6 +47,7 @@ final class Token
         public readonly ?DateTimeImmutable $usedAt = null,
         public readonly ?DateTimeImmutable $revokedAt = null,
         public readonly ?DateTimeImmutable $lastUsedAt = null,
+        public readonly ?DateTimeImmutable $familyStartedAt = null,
     ) {
     }
 

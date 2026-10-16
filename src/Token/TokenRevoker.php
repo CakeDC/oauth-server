@@ -62,6 +62,32 @@ final class TokenRevoker
     }
 
     /**
+     * Revokes the given tokens that are not revoked yet and announces them in one event.
+     *
+     * @param list<\CakeDC\OAuth\Server\Token\Token> $tokens The tokens.
+     * @param string $reason The event reason.
+     * @param \CakeDC\OAuth\Server\Token\Token|null $token The token named in the request, if any.
+     * @return int How many tokens this call revoked.
+     */
+    public function revokeTokens(array $tokens, string $reason, ?Token $token = null): int
+    {
+        $count = 0;
+        $now = $this->clock->now();
+        foreach ($tokens as $candidate) {
+            if ($this->tokens->findTokenById($candidate->id)?->revokedAt !== null) {
+                continue;
+            }
+            $this->tokens->revokeToken($candidate->id, $now);
+            $count++;
+        }
+        if ($count > 0) {
+            $this->events->dispatch(new TokenRevoked($reason, $count, $token, $token?->familyId));
+        }
+
+        return $count;
+    }
+
+    /**
      * Revokes every live token of a subject, for example after a password change.
      */
     public function revokeAllForSubject(string $subject, SubjectType $type = SubjectType::User): int

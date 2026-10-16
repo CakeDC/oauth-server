@@ -13,11 +13,21 @@ class RecordingEventDispatcher implements EventDispatcherInterface
     public array $events = [];
 
     /**
+     * Called with every event before it is recorded; lets a test interleave another request.
+     *
+     * @var (callable(object): void)|null
+     */
+    public $hook = null;
+
+    /**
      * @inheritDoc
      */
     public function dispatch(object $event): object
     {
         $this->events[] = $event;
+        if ($this->hook !== null) {
+            ($this->hook)($event);
+        }
 
         return $event;
     }

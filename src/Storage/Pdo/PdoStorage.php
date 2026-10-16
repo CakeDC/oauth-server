@@ -259,6 +259,7 @@ final class PdoStorage implements StorageInterface
             'used_at' => self::time($token->usedAt),
             'revoked_at' => self::time($token->revokedAt),
             'last_used_at' => self::time($token->lastUsedAt),
+            'family_started_at' => self::time($token->familyStartedAt),
             'created' => Time::format($token->createdAt),
             'modified' => Time::format($token->createdAt),
         ]);
@@ -290,7 +291,8 @@ final class PdoStorage implements StorageInterface
     public function markTokenUsed(string $id, DateTimeImmutable $at): bool
     {
         return $this->execute(
-            "UPDATE {$this->tokens} SET used_at = ?, modified = ? WHERE id = ? AND used_at IS NULL",
+            "UPDATE {$this->tokens} SET used_at = ?, modified = ?"
+            . ' WHERE id = ? AND used_at IS NULL AND revoked_at IS NULL',
             [Time::format($at), Time::format($at), $id],
         ) === 1;
     }
@@ -606,6 +608,7 @@ final class PdoStorage implements StorageInterface
             usedAt: self::date($row['used_at']),
             revokedAt: self::date($row['revoked_at']),
             lastUsedAt: self::date($row['last_used_at']),
+            familyStartedAt: self::date($row['family_started_at']),
         );
     }
 

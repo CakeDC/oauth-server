@@ -161,4 +161,20 @@ class TokenValidatorTest extends TestCase
 
         $this->validator->validate('x', 'https://other.example/mcp');
     }
+
+    public function testTouchesTheClientWhenItTouchesTheToken(): void
+    {
+        $client = Fixtures::client();
+        $token = $this->token(['content:read'], $client);
+
+        $this->validator->validate($token, Fixtures::MCP);
+        $first = $this->storage->findClientById($client->id)?->lastUsedAt;
+        $this->assertEquals($this->clock->now(), $first);
+        $this->clock->advance(30);
+        $this->validator->validate($token, Fixtures::MCP);
+        $this->assertEquals($first, $this->storage->findClientById($client->id)?->lastUsedAt);
+        $this->clock->advance(30);
+        $this->validator->validate($token, Fixtures::MCP);
+        $this->assertEquals($this->clock->now(), $this->storage->findClientById($client->id)?->lastUsedAt);
+    }
 }

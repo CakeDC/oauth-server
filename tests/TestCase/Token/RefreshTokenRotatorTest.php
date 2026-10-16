@@ -6,6 +6,7 @@ namespace CakeDC\OAuth\Server\Test\TestCase\Token;
 use CakeDC\OAuth\Server\Client\Client;
 use CakeDC\OAuth\Server\Config\Lifetimes;
 use CakeDC\OAuth\Server\Event\RefreshTokenReused;
+use CakeDC\OAuth\Server\Event\TokenIssued;
 use CakeDC\OAuth\Server\Exception\OAuthException;
 use CakeDC\OAuth\Server\Owner\SubjectType;
 use CakeDC\OAuth\Server\Scope\ScopeResolver;
@@ -19,7 +20,9 @@ use CakeDC\OAuth\Server\Token\Token;
 use CakeDC\OAuth\Server\Token\TokenGenerator;
 use CakeDC\OAuth\Server\Token\TokenIssuer;
 use CakeDC\OAuth\Server\Token\TokenRevoker;
+use CakeDC\OAuth\Server\Token\TokenType;
 use PHPUnit\Framework\TestCase;
+use Throwable;
 
 class RefreshTokenRotatorTest extends TestCase
 {
@@ -221,5 +224,257 @@ class RefreshTokenRotatorTest extends TestCase
 
         $this->assertInvalidGrant(fn() => $this->rotator(0)->rotate($this->client, (string)$initial->refreshToken, null, []));
         $this->assertSame([], $this->live());
+    }
+
+    /**
+     * Runs $action the first time a rotation saves its access token, as another request would.
+     */
+    private function duringNextRotation(callable $action): void
+    {
+        $fired = false;
+        $this->events->hook = function (object $event) use (&$fired, $action): void {
+            if (
+                !$fired && $event instanceof TokenIssued && $event->token->type === TokenType::Access
+                && $event->token->parentId !== null
+            ) {
+                $fired = true;
+                $action();
+            }
+        };
+    }
+
+    /**
+     * Refresh tokens issued by rotating $parent that still work.
+     *
+     * @return list<\CakeDC\OAuth\Server\Token\Token>
+     */
+    private function liveChildrenOf(Token $parent): array
+    {
+        return array_values(array_filter(
+            $this->storage->findTokensByFamily('family-1'),
+            fn(Token $t): bool => $t->type === TokenType::Refresh && $t->parentId === $parent->id
+                && $t->isActive($this->clock->now()) && $t->usedAt === null,
+        ));
+    }
+
+    public function testALoserArrivingBeforeTheRefreshChildExistsRevokesNothing(): void
+    {
+        $initial = $this->initial();
+        $message = null;
+        $this->duringNextRotation(function () use ($initial, &$message): void {
+            try {
+                $this->rotator()->rotate($this->client, (string)$initial->refreshToken, null, []);
+            } catch (OAuthException $e) {
+                $message = $e->getMessage();
+            }
+        });
+
+        $winner = $this->rotator()->rotate($this->client, (string)$initial->refreshToken, null, []);
+
+        $this->assertStringContainsString('try again', (string)$message);
+        $this->assertNull($this->storage->findTokenById($winner->access->id)?->revokedAt);
+        $children = $this->liveChildrenOf($initial->refresh);
+        $this->assertSame([(string)$winner->refresh?->id], array_map(fn(Token $t): string => $t->id, $children));
+        $this->assertSame([], $this->events->ofType(RefreshTokenReused::class));
+    }
+
+    public function testWithoutGraceALoserInTheGapCannotLeaveTheWinnersRefreshTokenAlive(): void
+    {
+        $initial = $this->initial();
+        $this->duringNextRotation(function () use ($initial): void {
+            try {
+                $this->rotator(0)->rotate($this->client, (string)$initial->refreshToken, null, []);
+            } catch (OAuthException) {
+            }
+        });
+
+        $this->assertInvalidGrant(fn() => $this->rotator(0)->rotate($this->client, (string)$initial->refreshToken, null, []));
+
+        $this->assertSame([], $this->live());
+    }
+
+    public function testTwoGracePresentationsNeverLeaveTwoLiveRefreshTokens(): void
+    {
+        $initial = $this->initial();
+        $this->rotator()->rotate($this->client, (string)$initial->refreshToken, null, []);
+        $this->clock->advance(5);
+        $this->duringNextRotation(function () use ($initial): void {
+            try {
+                $this->rotator()->rotate($this->client, (string)$initial->refreshToken, null, []);
+            } catch (OAuthException) {
+            }
+        });
+
+        $this->assertInvalidGrant(fn() => $this->rotator()->rotate($this->client, (string)$initial->refreshToken, null, []));
+
+        $this->assertLessThanOrEqual(1, count($this->liveChildrenOf($initial->refresh)));
+        $this->assertSame([], $this->live());
+        $this->assertCount(1, $this->events->ofType(RefreshTokenReused::class));
+    }
+
+    public function testAGracePresentationRacingTheClientsRotationOfTheChildLeavesNoLiveToken(): void
+    {
+        $initial = $this->initial();
+        $winner = $this->rotator()->rotate($this->client, (string)$initial->refreshToken, null, []);
+        $this->clock->advance(5);
+        $this->duringNextRotation(function () use ($winner): void {
+            try {
+                $this->rotator()->rotate($this->client, (string)$winner->refreshToken, null, []);
+            } catch (OAuthException) {
+            }
+        });
+
+        $this->assertInvalidGrant(fn() => $this->rotator()->rotate($this->client, (string)$initial->refreshToken, null, []));
+
+        $this->assertSame([], $this->live());
+    }
+
+    public function testARevocationDuringARotationRevokesTheNewPair(): void
+    {
+        $initial = $this->initial();
+        $this->duringNextRotation(fn() => $this->storage->revokeTokenFamily('family-1', $this->clock->now()));
+
+        $this->assertInvalidGrant(fn() => $this->rotator()->rotate($this->client, (string)$initial->refreshToken, null, []));
+
+        $this->assertSame([], $this->live());
+        $this->assertSame([], array_filter(
+            $this->storage->findTokensByFamily('family-1'),
+            fn(Token $t): bool => $t->revokedAt === null,
+        ));
+    }
+
+    public function testTheFamilyLifetimeSurvivesPruning(): void
+    {
+        $lifetimes = new Lifetimes();
+        $start = $this->clock->now();
+        $current = $this->initial();
+        $lastExpiry = $current->refresh?->expiresAt;
+        $days = 0;
+        while ($current->refresh !== null && $days < 400) {
+            $this->clock->advance(86400);
+            $days++;
+            try {
+                $current = $this->rotator()->rotate($this->client, (string)$current->refreshToken, null, []);
+            } catch (OAuthException) {
+                break;
+            }
+            $this->storage->prune($this->clock->now(), 7 * 86400, 86400);
+            if ($current->refresh !== null) {
+                $lastExpiry = $current->refresh->expiresAt;
+            }
+        }
+
+        $this->assertLessThan(400, $days);
+        $this->assertLessThanOrEqual($start->getTimestamp() + $lifetimes->family, $lastExpiry?->getTimestamp());
+    }
+
+    public function testPresentingARevokedTokenWhileTheFamilyStillLivesIsATakeover(): void
+    {
+        $initial = $this->initial();
+        $winner = $this->rotator()->rotate($this->client, (string)$initial->refreshToken, null, []);
+        $this->clock->advance(5);
+        $this->rotator()->rotate($this->client, (string)$initial->refreshToken, null, []);
+
+        $this->assertInvalidGrant(fn() => $this->rotator()->rotate($this->client, (string)$winner->refreshToken, null, []));
+
+        $this->assertSame([], $this->live());
+        $this->assertCount(1, $this->events->ofType(RefreshTokenReused::class));
+    }
+
+    public function testPresentingARevokedTokenOfADeadFamilyIsPlainInvalidGrant(): void
+    {
+        $initial = $this->initial();
+        $this->storage->revokeTokenFamily('family-1', $this->clock->now());
+
+        $this->assertInvalidGrant(fn() => $this->rotator()->rotate($this->client, (string)$initial->refreshToken, null, []));
+
+        $this->assertSame([], $this->events->ofType(RefreshTokenReused::class));
+    }
+
+    public function testAnAccessChildThatWasUsedCountsEvenIfRevoked(): void
+    {
+        $initial = $this->initial();
+        $winner = $this->rotator()->rotate($this->client, (string)$initial->refreshToken, null, []);
+        $this->storage->touchToken($winner->access->id, $this->clock->now());
+        $this->storage->revokeToken($winner->access->id, $this->clock->now());
+        $this->clock->advance(5);
+
+        $this->assertInvalidGrant(fn() => $this->rotator()->rotate($this->client, (string)$initial->refreshToken, null, []));
+
+        $this->assertSame([], $this->live());
+        $this->assertCount(1, $this->events->ofType(RefreshTokenReused::class));
+    }
+
+    public function testTheGraceWindowIncludesExactlyGraceSecondsAndTheGracePairHasTheParent(): void
+    {
+        $initial = $this->initial();
+        $this->rotator()->rotate($this->client, (string)$initial->refreshToken, null, []);
+        $this->clock->advance(30);
+
+        $loser = $this->rotator()->rotate($this->client, (string)$initial->refreshToken, null, []);
+
+        $this->assertSame($initial->refresh?->id, $loser->refresh?->parentId);
+        $this->assertSame($initial->refresh?->id, $loser->access->parentId);
+
+        $second = $this->initialInOtherFamily();
+        $this->rotator()->rotate($this->client, $second, null, []);
+        $this->clock->advance(31);
+        $this->assertInvalidGrant(fn() => $this->rotator()->rotate($this->client, $second, null, []));
+    }
+
+    private function initialInOtherFamily(): string
+    {
+        return (string)$this->issuer->issue(
+            $this->client,
+            '42',
+            SubjectType::User,
+            Fixtures::resources()->defaultResource(),
+            ['content:write'],
+            'family-2',
+            true,
+        )->refreshToken;
+    }
+
+    public function testAReplayWithABadScopeOrResourceStillTriggersDetection(): void
+    {
+        $initial = $this->initial();
+        $this->rotator()->rotate($this->client, (string)$initial->refreshToken, null, []);
+        $this->clock->advance(31);
+
+        try {
+            $this->rotator()->rotate($this->client, (string)$initial->refreshToken, Fixtures::API, ['nonsense']);
+            $this->fail('Rotated');
+        } catch (OAuthException $e) {
+            $this->assertSame('invalid_grant', $e->error);
+        }
+
+        $this->assertSame([], $this->live());
+        $this->assertCount(1, $this->events->ofType(RefreshTokenReused::class));
+    }
+
+    public function testRefusesToIssueAScopelessPair(): void
+    {
+        $initial = $this->initial(['legacy:scope']);
+
+        try {
+            $this->rotator()->rotate($this->client, (string)$initial->refreshToken, null, []);
+            $this->fail('Rotated');
+        } catch (Throwable $e) {
+            $this->assertInstanceOf(OAuthException::class, $e);
+            $this->assertSame('invalid_scope', $e->error);
+        }
+    }
+
+    public function testARevokedClientCannotRotate(): void
+    {
+        $initial = $this->initial();
+        $revoked = $this->client->withRevokedAt($this->clock->now());
+
+        try {
+            $this->rotator()->rotate($revoked, (string)$initial->refreshToken, null, []);
+            $this->fail('Rotated');
+        } catch (OAuthException $e) {
+            $this->assertSame('invalid_client', $e->error);
+        }
     }
 }
