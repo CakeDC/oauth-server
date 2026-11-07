@@ -11,6 +11,7 @@ use CakeDC\OAuth\Server\Resource\ProtectedResource;
 use CakeDC\OAuth\Server\Storage\TokenRepositoryInterface;
 use CakeDC\OAuth\Server\Support\Time;
 use CakeDC\OAuth\Server\Support\Uuid;
+use Closure;
 use DateTimeImmutable;
 use Psr\Clock\ClockInterface;
 use Psr\EventDispatcher\EventDispatcherInterface;
@@ -53,6 +54,8 @@ final class TokenIssuer
      * @param \DateTimeImmutable|null $familyStartedAt When the family began; now by default.
      * @param list<string>|null $refreshScopes Scopes of the refresh token when they differ from the access
      *   token's: a refresh keeps the grant while the access token is narrowed. Null: the same as $scopes.
+     * @param (\Closure(string, string): string)|null $seal For a rotation: seals the access and refresh token
+     *   values; the result is stored on the refresh token (Token::$rotationSeal).
      */
     public function issue(
         ?Client $client,
@@ -65,6 +68,7 @@ final class TokenIssuer
         ?string $parentId = null,
         ?DateTimeImmutable $familyStartedAt = null,
         ?array $refreshScopes = null,
+        ?Closure $seal = null,
     ): IssuedTokens {
         $scopes = array_values(array_unique($scopes));
         $refreshScopes = $refreshScopes === null ? $scopes : array_values(array_unique($refreshScopes));
@@ -110,6 +114,7 @@ final class TokenIssuer
             expiresAt: $expiresAt,
             parentId: $parentId,
             familyStartedAt: $familyStartedAt,
+            rotationSeal: $seal === null ? null : $seal($accessValue, $refreshValue),
         ), $client);
 
         return new IssuedTokens($access, $accessValue, $refresh, $refreshValue);

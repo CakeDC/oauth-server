@@ -65,7 +65,7 @@ These are the texts `/token` sends with `invalid_grant`:
 | `The refresh token is invalid.` | Unknown token, a token of another client, or not a refresh token |
 | `The refresh token is no longer valid.` | Expired, or revoked |
 | `The refresh token was already used.` | A replay outside the grace window. The family was revoked |
-| `The refresh token is being rotated; try again.` | A retry arrived while the first request was still running |
+| `The refresh token is being rotated; try again.` | Another request is rotating this token and did not store its pair within two seconds (it failed, or the database is very slow). Nothing was revoked |
 | `The refresh token was revoked.` | It was revoked while the new pair was being issued |
 | `The resource of this token no longer exists.` | The resource was removed from the configuration |
 | `The owner of this refresh token no longer has access.` | `findBySubject()` or `forClient()` returned `null`. Nothing was revoked, so the connection works again when access returns |
@@ -79,7 +79,7 @@ authentication is required.` instead; it concerns no client.
 
 A failed metadata document download (network error, timeout, TLS problem, a document that is too
 large) is reported only as `The client metadata document could not be fetched.`, and a DNS lookup that
-got no answer (timeout, SERVFAIL) as `The client_id host could not be looked up right now.` Both are
+got no answer within `cimd.timeout` (or a SERVFAIL) as `The client_id host could not be looked up right now.` Both are
 temporary: they are not remembered as a rejection. The text never carries the low level error, so it
 cannot be used to probe your network. Other problems with a
 document name the rule that was broken. See [troubleshooting](troubleshooting.md#cimd-fetch-failures).

@@ -435,6 +435,7 @@ abstract class StorageContractTestCase extends TestCase
             name: null,
             parentId: Uuid::v4(),
             familyStartedAt: $this->at(-50),
+            rotationSeal: base64_encode(str_repeat("\x9f", 140)),
         );
         $storage->saveToken($token);
         $personal = $this->makeToken(null, TokenType::Personal, null, null);
@@ -460,6 +461,24 @@ abstract class StorageContractTestCase extends TestCase
         $this->assertTrue($storage->markTokenUsed($token->id, $this->at(3)));
         $this->assertFalse($storage->markTokenUsed($token->id, $this->at(4)));
         $this->assertEquals($this->at(3), $storage->findTokenById($token->id)?->usedAt);
+    }
+
+    /**
+     * Marking a refresh token used clears its rotation seal, which is only needed until then.
+     */
+    public function testMarkingATokenUsedClearsItsRotationSeal(): void
+    {
+        $storage = $this->createStorage();
+        $client = $this->makeClient();
+        $storage->saveClient($client);
+        $base = $this->makeToken($client, TokenType::Refresh);
+        $token = new Token(...array_merge(get_object_vars($base), ['rotationSeal' => base64_encode('sealed pair')]));
+        $storage->saveToken($token);
+        $this->assertSame(base64_encode('sealed pair'), $storage->findTokenById($token->id)?->rotationSeal);
+
+        $this->assertTrue($storage->markTokenUsed($token->id, $this->at(3)));
+
+        $this->assertNull($storage->findTokenByHash($token->tokenHash)?->rotationSeal);
     }
 
     /**

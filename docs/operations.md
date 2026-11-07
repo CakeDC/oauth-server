@@ -194,7 +194,7 @@ Wire a PSR-14 dispatcher ([events](events.md)) and watch these:
 
 | Signal | Why it matters |
 | --- | --- |
-| `RefreshTokenReused` rising | Possible token theft, or a buggy client that refreshes in parallel |
+| `RefreshTokenReused` rising | Possible token theft, or a buggy client that keeps an old refresh token after rotating it |
 | `TokenRevoked` with `code_reuse` | A code was replayed. Often an attack, sometimes a double click |
 | `AuthorizationDenied` with `not_allowed` | People blocked by `canAuthorize()`. Check your policy |
 | `ClientRegistered` bursts | Someone is filling registration. Consider `token` mode |

@@ -91,7 +91,7 @@ storage would have a security bug in production.
 | Operation | Rule | Why |
 | --- | --- | --- |
 | `consumeCode($id, $at, $familyId)` | Marks the code used and records the family, in one step. Of two concurrent calls only one returns `true` | A code must work once, even when two requests race |
-| `markTokenUsed($id, $at)` | Marks a refresh token used in one step; `true` for one caller only. A revoked token is never marked (`false`) | Refresh rotation must have one winner, and a revocation beats a rotation in flight |
+| `markTokenUsed($id, $at)` | Marks a refresh token used in one step; `true` for one caller only. A revoked token is never marked (`false`). Clears the token's `rotationSeal` | Refresh rotation must have one winner, and a revocation beats a rotation in flight |
 | `revokeToken`, `revokeTokenFamily`, `revokeTokensBySubject`, `revokeTokensByClient` | Only change rows that are not revoked yet, and return how many they changed | Counts in events must be exact, and the first revocation time must not be overwritten |
 | `deleteCodesBySubject($subject, $clientInternalId = null)`, `deleteCodesByClient($clientInternalId)` | Delete the codes that were not used yet (expired or not) of a subject, optionally only of one client, or of a client, in one statement, and return how many. Used codes stay. The subject compares exactly | Revoking a person, a connection or a client must also stop the codes issued just before. A code consumed at that moment is either deleted first (so `consumeCode()` fails) or kept as used |
 | `saveCode`, `saveToken` | Insert only. A code or token whose id already exists makes the call throw a `RuntimeException` (a `PDOException` is one) and leaves the stored row unchanged | A stored token must never be overwritten by another one with the same id |
@@ -153,6 +153,9 @@ Other rules the contract pins:
   `client_id_hash`, a SHA-256 of the `client_id`.
 - Tokens keep `family_started_at`, the time the family began. The family lifetime depends on it and it
   must survive rows being pruned.
+- A refresh token issued by a rotation keeps `rotation_seal` (`Token::$rotationSeal`), opaque text that
+  storage saves and returns as it is, until the token is marked used. Concurrent refreshes and retries
+  get the same pair through it ([security](security.md#concurrent-refreshes)).
 - `findTokensByFamily` and `findActiveTokensBySubject` return the oldest first.
 
 ## Schema reference
@@ -226,6 +229,7 @@ and `subject` (serves `deleteCodesBySubject()`).
 | `revoked_at` | `DATETIME` null | Revocation |
 | `last_used_at` | `DATETIME` null | Last use at a resource (updated at most once a minute) |
 | `family_started_at` | `DATETIME` null | When the family began |
+| `rotation_seal` | `TEXT` null | On a refresh token issued by a rotation, the values of its pair encrypted with the rotated token; cleared when it is rotated |
 | `created`, `modified` | `DATETIME` | Row times |
 
 Indexes: the unique `token_hash`, and plain indexes on `family_id`, `(subject, subject_type)`,
@@ -258,8 +262,12 @@ itself. The policy:
   changelog of that release says so. Run the files of every version between yours and the new one, in
   order, before deploying the new code.
 - Each upgrade file is meant to run once. Take a backup first.
-- Until `1.0.0` the schema may still change without an upgrade file: recreate the tables of a beta
-  database.
+- A database created by `1.0.0-beta1` lacks the column `rotation_seal` of `oauth_tokens` (with your
+  table prefix if it is not `oauth_`). Add it once, on every driver:
+
+  ```sql
+  ALTER TABLE oauth_tokens ADD COLUMN rotation_seal TEXT NULL;
+  ```
 - A database created from a pre-release commit lacks the index `oauth_authorization_codes_subject`
   (`1.0.0-beta1` added it for the revocation of pending codes). Everything works without it, only
   slower on a large codes table. On SQLite and PostgreSQL, `createTables()` adds it. On MySQL and

@@ -5,6 +5,7 @@ namespace CakeDC\OAuth\Server\Client\Cimd;
 
 use CakeDC\OAuth\Server\Support\HostName;
 use Closure;
+use CurlHandle;
 use RuntimeException;
 
 /**
@@ -12,6 +13,26 @@ use RuntimeException;
  */
 final class CurlTransport implements HttpTransportInterface
 {
+    /**
+     * @var \Closure(\CurlHandle): array{result: string|bool, status: int, error: string, primary: string}
+     */
+    private readonly Closure $execute;
+
+    /**
+     * @param (\Closure(\CurlHandle): array{result: string|bool, status: int, error: string, primary: string})|null $execute
+     *   Runs the configured handle and reports the result, the status, the error and the address curl
+     *   connected to (CURLINFO_PRIMARY_IP). For tests: the default runs curl.
+     */
+    public function __construct(?Closure $execute = null)
+    {
+        $this->execute = $execute ?? static fn(CurlHandle $handle): array => [
+            'result' => curl_exec($handle),
+            'status' => (int)curl_getinfo($handle, CURLINFO_RESPONSE_CODE),
+            'error' => curl_error($handle),
+            'primary' => (string)curl_getinfo($handle, CURLINFO_PRIMARY_IP),
+        ];
+    }
+
     /**
      * @inheritDoc
      */
@@ -37,10 +58,8 @@ final class CurlTransport implements HttpTransportInterface
         if (!curl_setopt_array($handle, $options)) {
             throw new RuntimeException('curl could not be configured.');
         }
-        $result = curl_exec($handle);
-        $status = (int)curl_getinfo($handle, CURLINFO_RESPONSE_CODE);
-        $error = curl_error($handle);
-        $primary = (string)curl_getinfo($handle, CURLINFO_PRIMARY_IP);
+        $outcome = ($this->execute)($handle);
+        ['result' => $result, 'status' => $status, 'error' => $error, 'primary' => $primary] = $outcome;
         unset($handle);
         if ($tooLarge) {
             throw new RuntimeException(sprintf('The document is larger than %d bytes.', $maxBytes));

@@ -95,23 +95,26 @@ Related rules:
   invalid.") whatever scopes it carries. A resource server that introspects must do the same: accept
   only `"token_type": "Bearer"`, never `refresh_token`
   ([introspection](endpoints.md#post-oauthintrospect)).
-- Clients must serialize refreshes per token. See the known issue below.
+- Concurrent refreshes with the same token share one pair. See below.
 
-### Known issue: concurrent refreshes
+### Concurrent refreshes
 
-Two or more refreshes sent at the same time with the same refresh token can revoke the whole family.
-One request wins the rotation. The others find the token used: while the winner has not stored its new
-refresh token yet they get `invalid_grant` ("The refresh token is being rotated; try again."), and once
-it has, the first of them takes the grace path and the rest count as reuse. Measured with 16 parallel
-requests and the same token, the family ended revoked on PostgreSQL every time, and on MySQL and
-MariaDB as soon as the requests were spread over 50 to 300 milliseconds. Nothing unsafe happens (there
-are never two live chains), but the client loses its connection and `RefreshTokenReused` fires as a
-false alarm. Clients treat `invalid_grant` as a dead token.
+A client often has several workers, and when its access token expires they may all refresh at once with
+the same refresh token. One request wins the rotation; every other one, inside the grace window, gets
+the winner's pair: the same access token and the same refresh token, nothing new issued and nothing
+revoked. A request that arrives while the winner is still storing its pair waits for it, up to two
+seconds, and gets `invalid_grant` ("The refresh token is being rotated; try again.") only when the
+winner never finishes (it crashed, or the database is that slow).
 
-This is not fixed in `1.0.0-beta1`. It is being observed with claude.ai before `1.0.0`; if real clients
-refresh in parallel, a later beta will answer concurrent callers inside the grace window with the
-winner's response. Until then, a client must send one refresh at a time per token, and a burst of
-`RefreshTokenReused` from one client that otherwise behaves is a sign of parallel refreshes, not theft.
+Storage keeps hashes, not token values, so the winner leaves the values of its pair on the new refresh
+token, encrypted with the refresh token it rotated and the server `secret` (`rotation_seal`, see
+[storage](storage.md)). Only a caller presenting that rotated token can open it, and the opened values
+are only used when their hashes match the stored tokens. The seal is cleared as soon as that new
+refresh token is rotated in turn.
+
+Verified with 16 processes presenting the same token at the same moment, on SQLite, PostgreSQL, MySQL
+and MariaDB (`ConcurrentRefreshTest`): every process got the same pair and the family stayed live. With
+1.0.0-beta1 most of them lost the connection.
 
 ## The refresh grace window
 
@@ -119,18 +122,19 @@ Networks fail. A client may send a refresh, the server may rotate the token, and
 never arrive. The client then retries with the old token, which looks exactly like a replay.
 
 The grace window (`lifetimes.refreshReuseGrace`, 30 seconds) handles this. If the old token is
-presented again within the window **and the pair issued by the first rotation was never used**, the
-server issues a fresh pair and revokes the first one (event `TokenRevoked` with reason `grace`). Any
-other reuse revokes the family.
+presented again within the window **and the refresh token of the first rotation was not rotated yet**,
+the server answers with that same pair again, as for [concurrent refreshes](#concurrent-refreshes). The
+access token may already be in use. Any other reuse revokes the family.
 
-The window absorbs a retry that follows a lost response. It does not absorb concurrent refreshes: only
-one retry can take the grace path, and the others revoke the family (see
-[the known issue](#known-issue-concurrent-refreshes)).
+Only when the first pair cannot be answered again (it carries no seal, as a rotation made by a
+pre-1.0.0 version, or the seal does not open) does the server fall back to the earlier rule: if the
+pair was never used, it issues a fresh one and revokes the first (event `TokenRevoked` with reason
+`grace`).
 
-The trade-off: for those seconds, a thief who copied the old refresh token could also get a pair. The
-person's real client then holds a revoked token, and its next refresh counts as reuse, so the family is
-revoked and the thief is cut off too. The window bounds the damage to its length. If you cannot accept
-that, set it to `0`. Then a lost response costs one re-authorization.
+The trade-off: for those seconds, a thief who copied the old refresh token gets the same pair as the
+person's client. No second chain is ever created, and once the window has passed the old token revokes
+the family. The window bounds the exposure to its length. If you cannot accept that, set it to `0`.
+Then a lost response, and every concurrent refresh but one, costs a re-authorization.
 
 `RefreshTokenReused` is not proof of theft. Buggy clients cause it too.
 
@@ -244,8 +248,8 @@ point it at your internal network. The fetcher defends in layers:
    check and the connection does not help an attacker.
 5. No proxy, no redirects, https only, the response media type must be `application/json` (parameters
    such as a charset are ignored), and there is a size limit (`cimd.maxBytes`) and a time limit
-   (`cimd.timeout`) on the download. The DNS lookup before it is not covered by `cimd.timeout`; see
-   [the DNS limitation](#known-limitation-dns-lookups).
+   (`cimd.timeout`) on the download. The DNS lookup before it has its own limit of `cimd.timeout`; see
+   [DNS lookups](#dns-lookups).
 6. A failed download gives clients only a generic message, so the error cannot be used to probe your
    network. Other problems name the rule that was broken.
 
@@ -270,17 +274,22 @@ is temporarily unreachable (network error, timeout, a failed DNS lookup, 5xx or 
 name without addresses) apply at once. A revoked client stays revoked: `saveClient()` never clears
 `revokedAt`.
 
-### Known limitation: DNS lookups
+### DNS lookups
 
-`SystemDnsResolver` resolves the `client_id` host with `dns_get_record()`, which uses the system
-resolver's own timeouts and retries (`resolv.conf`), not `cimd.timeout`. A slow authoritative DNS server
-can therefore hold a worker for longer than `cimd.timeout` on each `/authorize` or `/token` that needs a
-download. Random subdomains of a hostile domain are separate `client_id` values, so the failure memory
-does not help; only the `rateLimit.cimd` budget per client address slows such a caller. Mitigations
-until a fix: set `cimd.allowedHosts` if you know your clients, keep the resolver's timeout short
-(`options timeout:1 attempts:2` in `resolv.conf`), or pass a `DnsResolverInterface` of your own with a
-bounded timeout. A lookup that gets no answer (timeout, SERVFAIL) is a temporary failure, as above; a
-name without A or AAAA records is a definite rejection (`The client_id host does not resolve.`).
+The system resolver behind `dns_get_record()` follows its own timeouts and retries, so a slow
+authoritative server of a hostile domain could hold a worker for many seconds on every `/authorize` or
+`/token` that needs a download. By default the server therefore resolves `client_id` hosts with
+`BoundedDnsResolver`: it asks the nameservers of `/etc/resolv.conf` directly (A and AAAA over UDP, TCP
+when an answer is truncated) and gives up after `cimd.timeout` seconds. Packets that do not answer the
+query (another id or question) are ignored, and a nameserver that fails or stays silent hands over to
+the next one. Like `dns_get_record()` it reads neither `/etc/hosts` nor search domains.
+
+Where `/etc/resolv.conf` names no nameserver (Windows), the server falls back to `SystemDnsResolver`,
+whose lookups are not bounded by `cimd.timeout`; pass a `DnsResolverInterface` of your own there, or set
+`cimd.allowedHosts`. A lookup that gets no answer in time (timeout, SERVFAIL) is a temporary failure, as
+above; a name without A or AAAA records, or that does not exist, is a definite rejection (`The client_id
+host does not resolve.`). Random subdomains of a hostile domain are separate `client_id` values, so the
+`rateLimit.cimd` budget per client address is what limits how many lookups one caller can start.
 
 ## Abuse controls
 

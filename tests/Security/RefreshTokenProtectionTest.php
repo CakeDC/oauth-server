@@ -6,6 +6,8 @@ namespace CakeDC\OAuth\Server\Test\Security;
 use CakeDC\OAuth\Server\Event\RefreshTokenReused;
 use CakeDC\OAuth\Server\Test\Support\Fixtures;
 use CakeDC\OAuth\Server\Test\Support\ServerHarness;
+use CakeDC\OAuth\Server\Token\RotationSeal;
+use CakeDC\OAuth\Server\Token\TokenGenerator;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -34,6 +36,60 @@ class RefreshTokenProtectionTest extends TestCase
         $this->assertSame('invalid_grant', $refresh($first['refresh_token'], $client->clientId)['error']);
         $this->assertSame('invalid_grant', $refresh($second['refresh_token'], $client->clientId)['error']);
         $this->assertCount(1, $harness->events->ofType(RefreshTokenReused::class));
+    }
+
+    /**
+     * Concurrent refreshes with the same token (several workers of one client whose access token expired at
+     * once) all receive the winner's pair, and the connection survives.
+     */
+    public function testConcurrentRefreshesShareOnePairAndKeepTheConnection(): void
+    {
+        $harness = new ServerHarness();
+        $client = $harness->publicClient();
+        $first = $harness->json($harness->exchange($client, $harness->authorizationCode($client)));
+        $refresh = fn(string $token) => $harness->json($harness->server->tokenHandler()->handle(
+            $harness->form('https://example.com/oauth/token', [
+                'grant_type' => 'refresh_token',
+                'refresh_token' => $token,
+                'client_id' => $client->clientId,
+            ]),
+        ));
+
+        $answers = [$refresh($first['refresh_token']), $refresh($first['refresh_token']), $refresh($first['refresh_token'])];
+
+        $this->assertSame($answers[0], $answers[1]);
+        $this->assertSame($answers[0], $answers[2]);
+        $this->assertArrayHasKey('access_token', $refresh($answers[0]['refresh_token']));
+        $this->assertSame([], $harness->events->ofType(RefreshTokenReused::class));
+    }
+
+    /**
+     * The pair of a rotation is sealed with the rotated token and the server secret: storage alone, or the
+     * rotated token without the secret, cannot open it.
+     */
+    public function testTheRotationSealNeedsTheServerSecret(): void
+    {
+        $harness = new ServerHarness();
+        $client = $harness->publicClient();
+        $first = $harness->json($harness->exchange($client, $harness->authorizationCode($client)));
+        $second = $harness->json($harness->server->tokenHandler()->handle($harness->form('https://example.com/oauth/token', [
+            'grant_type' => 'refresh_token',
+            'refresh_token' => $first['refresh_token'],
+            'client_id' => $client->clientId,
+        ])));
+        $stored = $harness->storage->findTokenByHash(TokenGenerator::hash($second['refresh_token']));
+        $seal = (string)$stored?->rotationSeal;
+
+        $this->assertNotSame('', $seal);
+        $this->assertStringNotContainsString($second['refresh_token'], (string)base64_decode($seal));
+        $this->assertSame(
+            [$second['access_token'], $second['refresh_token']],
+            (new RotationSeal(str_repeat('k', 32)))->open($first['refresh_token'], $seal),
+        );
+        $this->assertNotSame(
+            [$second['access_token'], $second['refresh_token']],
+            (new RotationSeal(str_repeat('x', 32)))->open($first['refresh_token'], $seal),
+        );
     }
 
     public function testRefreshTokensAreBoundToTheirClient(): void

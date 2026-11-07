@@ -29,6 +29,9 @@ final class Token
      * @param \DateTimeImmutable|null $revokedAt Revocation.
      * @param \DateTimeImmutable|null $lastUsedAt Last use against a resource (updated at most once a minute).
      * @param \DateTimeImmutable|null $familyStartedAt When the token's family began; null means $createdAt.
+     * @param string|null $rotationSeal On a refresh token issued by a rotation: the values of the pair, encrypted
+     *   with the refresh token that was rotated, so that a concurrent caller presenting that token receives the
+     *   same pair. Cleared when this token is rotated in turn.
      */
     public function __construct(
         public readonly string $id,
@@ -48,6 +51,7 @@ final class Token
         public readonly ?DateTimeImmutable $revokedAt = null,
         public readonly ?DateTimeImmutable $lastUsedAt = null,
         public readonly ?DateTimeImmutable $familyStartedAt = null,
+        public readonly ?string $rotationSeal = null,
     ) {
     }
 

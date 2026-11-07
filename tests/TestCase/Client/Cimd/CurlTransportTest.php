@@ -40,6 +40,46 @@ class CurlTransportTest extends TestCase
         }
     }
 
+    /**
+     * The address curl really connected to is checked after the request: a connection that went anywhere
+     * else (a resolver or proxy curl consulted despite the pin) is refused.
+     */
+    public function testRefusesAConnectionToAnotherAddressThanThePin(): void
+    {
+        $transport = new CurlTransport(static fn(): array => [
+            'result' => true,
+            'status' => 200,
+            'error' => '',
+            'primary' => '10.0.0.7',
+        ]);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('The connection did not go to the validated address.');
+        $transport->get('https://client.example/c.json', '93.184.216.34', 1, 100);
+    }
+
+    public function testRefusesAConnectionWithoutAKnownAddress(): void
+    {
+        $transport = new CurlTransport(static fn(): array => ['result' => true, 'status' => 200, 'error' => '', 'primary' => '']);
+
+        $this->expectException(RuntimeException::class);
+        $transport->get('https://client.example/c.json', '93.184.216.34', 1, 100);
+    }
+
+    public function testAcceptsThePinnedAddressInAnotherNotation(): void
+    {
+        $transport = new CurlTransport(static fn(): array => [
+            'result' => true,
+            'status' => 200,
+            'error' => '',
+            'primary' => '2606:4700:0:0:0:0:0:1111',
+        ]);
+
+        $response = $transport->get('https://client.example/c.json', '2606:4700::1111', 1, 100);
+
+        $this->assertSame(200, $response->status);
+    }
+
     public function testOptionsPinTheConnectionAndLockDownCurl(): void
     {
         $options = (new CurlTransport())->options('https://client.example:8443/c.json', '93.184.216.34', 4);

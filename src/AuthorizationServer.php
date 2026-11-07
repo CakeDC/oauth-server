@@ -5,6 +5,7 @@ namespace CakeDC\OAuth\Server;
 
 use CakeDC\OAuth\Server\Bridge\McpSdk\SdkRequirement;
 use CakeDC\OAuth\Server\Bridge\McpSdk\TokenValidator as McpTokenValidator;
+use CakeDC\OAuth\Server\Client\Cimd\BoundedDnsResolver;
 use CakeDC\OAuth\Server\Client\Cimd\CurlTransport;
 use CakeDC\OAuth\Server\Client\Cimd\DnsResolverInterface;
 use CakeDC\OAuth\Server\Client\Cimd\HttpTransportInterface;
@@ -121,7 +122,8 @@ final class AuthorizationServer
      * @param \Psr\Clock\ClockInterface|null $clock Clock.
      * @param \Psr\Log\LoggerInterface|null $logger Logger.
      * @param \CakeDC\OAuth\Server\Client\Cimd\HttpTransportInterface|null $transport Metadata document fetching.
-     * @param \CakeDC\OAuth\Server\Client\Cimd\DnsResolverInterface|null $dns DNS.
+     * @param \CakeDC\OAuth\Server\Client\Cimd\DnsResolverInterface|null $dns DNS. By default the nameservers of
+     *   /etc/resolv.conf, asked within cimd.timeout (BoundedDnsResolver); the system resolver where none are named.
      * @param \CakeDC\OAuth\Server\View\Messages|null $messages Texts of the built-in pages.
      * @param \CakeDC\OAuth\Server\View\ConsentRendererInterface|null $consentRenderer Consent page.
      * @param \CakeDC\OAuth\Server\View\ConnectionsRendererInterface|null $connectionsRenderer Connections page.
@@ -161,7 +163,7 @@ final class AuthorizationServer
                 );
             }
             $this->fetcher = new MetadataDocumentFetcher(
-                $dns ?? new SystemDnsResolver(),
+                $dns ?? BoundedDnsResolver::fromResolvConf($config->cimdTimeout) ?? new SystemDnsResolver(),
                 $transport ?? new CurlTransport(),
                 $config->cimdTimeout,
                 $config->cimdMaxBytes,
@@ -343,6 +345,7 @@ final class AuthorizationServer
             $this->events,
             $this->users,
             $this->config->lifetimes->refreshReuseGrace,
+            $this->config->secret,
         );
     }
 

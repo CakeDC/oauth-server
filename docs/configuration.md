@@ -74,7 +74,7 @@ negative.
 | --- | --- | --- | --- |
 | `enabled` | bool | `true` | Accept `client_id` values that are https URLs |
 | `allowedHosts` | list of strings | `null` (any host) | Only fetch documents from these hosts, for example `['claude.ai']`. Matching ignores case and is exact (no wildcards). The list also applies to clients already cached: removing a host refuses its clients at the next request, with no fetch |
-| `timeout` | int | `5` | Seconds to wait for the document. The DNS lookup of the host comes before and is not covered: it uses the system resolver's own timeouts and retries (see [security](security.md#known-limitation-dns-lookups)) |
+| `timeout` | int | `5` | Seconds to wait for the document, and separately for the DNS lookup of its host before it (see [security](security.md#dns-lookups)) |
 | `maxBytes` | int | `10240` | Largest document accepted |
 | `cacheMin` | int | `300` | Shortest time a fetched document is kept. Between `0` and `cacheMax` |
 | `cacheMax` | int | `86400` | Longest time a document is kept, whatever the host's `Cache-Control` says. Also the extra time a stored client keeps working when its host is temporarily unreachable |

@@ -60,6 +60,7 @@ CREATE TABLE IF NOT EXISTS oauth_tokens (
     revoked_at TIMESTAMP(0) NULL,
     last_used_at TIMESTAMP(0) NULL,
     family_started_at TIMESTAMP(0) NULL,
+    rotation_seal TEXT NULL,
     created TIMESTAMP(0) NOT NULL,
     modified TIMESTAMP(0) NOT NULL
 );

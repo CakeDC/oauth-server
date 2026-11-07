@@ -1,5 +1,42 @@
 # Changelog
 
+## 1.0.0 (2026-11-07)
+
+First stable release. Closes the known issues of 1.0.0-beta1.
+
+- Concurrent refreshes no longer revoke the family. Requests that present the same refresh token at the
+  same time, inside the grace window, all get the winner's pair (the same access and refresh token);
+  nothing new is issued and nothing is revoked. A request that arrives while the winner is still storing
+  its pair waits for it, up to two seconds. A retry after a lost response gets the same pair as well,
+  even when the access token is already in use. To answer with the same values, the winner stores them on
+  the new refresh token encrypted with the rotated token and the server secret (`Token::$rotationSeal`,
+  column `rotation_seal`, internal class `RotationSeal`); `markTokenUsed()` clears it. Verified with 16
+  processes on SQLite, PostgreSQL, MySQL and MariaDB (`ConcurrentRefreshTest`).
+- The earlier grace rule (a fresh pair, the first one revoked with reason `grace`) remains only for a
+  rotation whose pair cannot be answered again: one made by 1.0.0-beta1, or a seal that does not open.
+- Client ID Metadata Document hosts are resolved within `cimd.timeout`: the new `BoundedDnsResolver` asks
+  the nameservers of `/etc/resolv.conf` directly (UDP, TCP for truncated answers) and is the default.
+  Where no nameserver is named (Windows), `SystemDnsResolver` remains the default.
+- `CurlTransport` takes an optional executor, so the check of the address curl really connected to
+  (`CURLINFO_PRIMARY_IP`) is covered by tests.
+- CI pins its GitHub Actions by commit SHA and runs against the released `mcp/sdk` 0.9 (`require-dev`
+  `^0.9` instead of a `dev-main` commit).
+- Docs: concurrent refreshes, the grace window and DNS lookups in `docs/security.md`, the new column in
+  `docs/storage.md`.
+
+### Upgrading from 1.0.0-beta1
+
+- Add the new column to the tokens table (with your table prefix if it is not `oauth_`), on every driver:
+
+  ```sql
+  ALTER TABLE oauth_tokens ADD COLUMN rotation_seal TEXT NULL;
+  ```
+
+- A custom `TokenRepositoryInterface` must save and return `Token::$rotationSeal` and clear it in
+  `markTokenUsed()`. `StorageContractTestCase` checks both.
+- `RefreshTokenRotator` (internal) takes the server secret, the wait and a sleep function as new optional
+  constructor arguments; `TokenIssuer::issue()` (internal) takes an optional seal.
+
 ## 1.0.0-beta1 (2026-10-16)
 
 First release.

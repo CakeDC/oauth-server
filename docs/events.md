@@ -46,7 +46,7 @@ The event fires only when `count` is greater than zero. The `reason` values:
 | `personal` | The person revoked a personal token |
 | `code_reuse` | An authorization code was used twice, so everything issued from it was revoked. Also fires when two requests race for one code and one loses |
 | `refresh_reuse` | A rotated refresh token was replayed, so its family was revoked. Fires together with `RefreshTokenReused` |
-| `grace` | A retry inside the grace window received a new pair, and the tokens of the first rotation were revoked |
+| `grace` | A retry inside the grace window received a new pair, and the tokens of the first rotation were revoked. Only for a first rotation whose pair cannot be answered again (made before 1.0.0, or its seal does not open); otherwise the retry gets the same pair |
 | `rotation_revoked` | A refresh was revoked while its new pair was being issued, so the new pair was revoked at once |
 | `subject` | `TokenRevoker::revokeAllForSubject()` was called |
 | `client_revoked` | `TokenRevoker::revokeAllForClient()` was called |
@@ -84,8 +84,9 @@ family is still live. Its whole family was revoked (a `TokenRevoked` with `refre
 | `token` | `Token` | The reused refresh token |
 | `client` | `Client` | The client that presented it |
 
-This is a signal, not proof of theft. A client that refreshes the same token from two processes, or
-retries badly after a timeout, causes the same event. Alert on a rising rate rather than on single
+This is a signal, not proof of theft. A client that retries long after a timeout, or keeps using a
+refresh token after it rotated it, causes the same event. Refreshes sent at the same time with the same
+token do not: inside the grace window they share one pair. Alert on a rising rate rather than on single
 events. See [security](security.md#the-refresh-grace-window).
 
 ## `AuthorizationDenied`

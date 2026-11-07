@@ -206,7 +206,7 @@ final class InMemoryStorage implements StorageInterface
         if ($token === null || $token->usedAt !== null || $token->revokedAt !== null) {
             return false;
         }
-        $this->tokens[$id] = $this->withToken($token, ['usedAt' => $at]);
+        $this->tokens[$id] = $this->withToken($token, ['usedAt' => $at, 'rotationSeal' => null]);
 
         return true;
     }

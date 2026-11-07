@@ -19,9 +19,7 @@ everything for you.
 composer require "mcp/sdk:^0.9" cakedc/oauth-server nyholm/psr7
 ```
 
-The bridge needs **mcp/sdk 0.9 or newer**. If no 0.9 release of mcp/sdk is published yet when you read
-this, require its main branch instead (`composer require mcp/sdk:dev-main`). mcp/sdk 0.8 has the
-validator interface but not the `Mcp\Server\Authorization\AccessToken` class, and its
+The bridge needs **mcp/sdk 0.9 or newer**. mcp/sdk 0.8 has the validator interface but not the `Mcp\Server\Authorization\AccessToken` class, and its
 `AuthorizationResult::allow()` takes an array, so a bridge built on it would fail on every valid token.
 
 `mcp/sdk` is a suggestion of this package, not a requirement. `mcpTokenValidator()` (and the bridge's

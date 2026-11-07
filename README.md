@@ -9,7 +9,8 @@ endpoint, and route them in the framework you already use.
 ## Features
 
 - OAuth 2.1 authorization code flow with PKCE (S256 only, mandatory for every client)
-- Refresh tokens with rotation and reuse detection, and a configurable grace window for lost responses
+- Refresh tokens with rotation and reuse detection; concurrent refreshes and retries inside a grace window get
+  the same pair
 - Client credentials grant for service to service calls
 - Three ways to know a client: Client ID Metadata Documents (CIMD, preferred), dynamic client
   registration (RFC 7591) and clients you register by hand

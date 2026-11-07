@@ -13,8 +13,11 @@ use CakeDC\OAuth\Server\Owner\ResourceOwner;
 use CakeDC\OAuth\Server\Owner\SubjectType;
 use CakeDC\OAuth\Server\Scope\ScopeResolver;
 use CakeDC\OAuth\Server\Storage\InMemory\InMemoryStorage;
+use CakeDC\OAuth\Server\Storage\TokenRepositoryInterface;
 use CakeDC\OAuth\Server\Test\Support\FakeUsers;
 use CakeDC\OAuth\Server\Test\Support\Fixtures;
+use CakeDC\OAuth\Server\Test\Support\HiddenRotation;
+use CakeDC\OAuth\Server\Test\Support\PassThroughTokens;
 use CakeDC\OAuth\Server\Test\Support\RecordingEventDispatcher;
 use CakeDC\OAuth\Server\Testing\FrozenClock;
 use CakeDC\OAuth\Server\Token\IssuedTokens;
@@ -24,6 +27,7 @@ use CakeDC\OAuth\Server\Token\TokenGenerator;
 use CakeDC\OAuth\Server\Token\TokenIssuer;
 use CakeDC\OAuth\Server\Token\TokenRevoker;
 use CakeDC\OAuth\Server\Token\TokenType;
+use Closure;
 use PHPUnit\Framework\TestCase;
 use ReflectionMethod;
 use Throwable;
@@ -42,6 +46,11 @@ class RefreshTokenRotatorTest extends TestCase
 
     private FakeUsers $users;
 
+    /**
+     * @var list<int> Microseconds the rotator slept, in order.
+     */
+    private array $sleeps = [];
+
     protected function setUp(): void
     {
         $this->storage = new InMemoryStorage();
@@ -52,10 +61,10 @@ class RefreshTokenRotatorTest extends TestCase
         $this->users = new FakeUsers();
     }
 
-    private function rotator(int $grace = 30): RefreshTokenRotator
+    private function rotator(int $grace = 30, ?TokenRepositoryInterface $tokens = null, ?Closure $onSleep = null): RefreshTokenRotator
     {
         return new RefreshTokenRotator(
-            $this->storage,
+            $tokens ?? $this->storage,
             $this->issuer,
             new TokenRevoker($this->storage, $this->storage, $this->clock, $this->events),
             new ScopeResolver(),
@@ -64,6 +73,14 @@ class RefreshTokenRotatorTest extends TestCase
             $this->events,
             $this->users,
             $grace,
+            'rotation-test-secret',
+            200,
+            function (int $microseconds) use ($onSleep): void {
+                $this->sleeps[] = $microseconds;
+                if ($onSleep !== null) {
+                    $onSleep();
+                }
+            },
         );
     }
 
@@ -305,7 +322,7 @@ class RefreshTokenRotatorTest extends TestCase
         $this->assertInvalidGrant(fn() => $this->rotator()->rotate($this->client, (string)$initial->refreshToken, null, []));
     }
 
-    public function testLosingAConcurrentRotationUsesTheGracePath(): void
+    public function testLosingAConcurrentRotationAnswersWithTheWinnersPair(): void
     {
         $initial = $this->initial();
         $winner = $this->rotator()->rotate($this->client, (string)$initial->refreshToken, null, []);
@@ -313,13 +330,79 @@ class RefreshTokenRotatorTest extends TestCase
 
         $loser = $this->rotator()->rotate($this->client, (string)$initial->refreshToken, null, []);
 
-        $this->assertNotNull($this->storage->findTokenById($winner->access->id)?->revokedAt);
-        $this->assertNotNull($this->storage->findTokenById((string)$winner->refresh?->id)?->revokedAt);
+        $this->assertSame($winner->toResponse(), $loser->toResponse());
+        $this->assertSame($winner->access->id, $loser->access->id);
+        $this->assertSame($winner->refresh?->id, $loser->refresh?->id);
         $this->assertSame(
-            [$initial->access->id, $loser->access->id, (string)$loser->refresh?->id],
+            [$initial->access->id, $winner->access->id, (string)$winner->refresh?->id],
             array_map(fn(Token $t): string => $t->id, $this->live()),
         );
         $this->assertSame([], $this->events->ofType(RefreshTokenReused::class));
+        $this->assertCount(4, $this->events->ofType(TokenIssued::class), 'the loser issues nothing');
+    }
+
+    public function testALoserGetsThePairEvenAfterTheWinnersClientUsedTheAccessToken(): void
+    {
+        $initial = $this->initial();
+        $winner = $this->rotator()->rotate($this->client, (string)$initial->refreshToken, null, []);
+        $this->storage->touchToken($winner->access->id, $this->clock->now());
+        $this->clock->advance(1);
+
+        $loser = $this->rotator()->rotate($this->client, (string)$initial->refreshToken, null, []);
+
+        $this->assertSame($winner->toResponse(), $loser->toResponse());
+        $this->assertSame([], $this->events->ofType(RefreshTokenReused::class));
+    }
+
+    public function testASealThatDoesNotOpenFallsBackToTheGraceReissue(): void
+    {
+        $initial = $this->initial();
+        $winner = $this->rotator()->rotate($this->client, (string)$initial->refreshToken, null, []);
+        $this->clock->advance(5);
+        $otherSecret = new RefreshTokenRotator(
+            $this->storage,
+            $this->issuer,
+            new TokenRevoker($this->storage, $this->storage, $this->clock, $this->events),
+            new ScopeResolver(),
+            Fixtures::resources(),
+            $this->clock,
+            $this->events,
+            $this->users,
+            30,
+            'another-secret',
+        );
+
+        $loser = $otherSecret->rotate($this->client, (string)$initial->refreshToken, null, []);
+
+        $this->assertNotSame($winner->refreshToken, $loser->refreshToken);
+        $this->assertNotNull($this->storage->findTokenById((string)$winner->refresh?->id)?->revokedAt);
+        $this->assertSame([], $this->events->ofType(RefreshTokenReused::class));
+    }
+
+    public function testATamperedSealIsNotAnswered(): void
+    {
+        $initial = $this->initial();
+        $winner = $this->rotator()->rotate($this->client, (string)$initial->refreshToken, null, []);
+        $this->clock->advance(5);
+        $tampered = new class ($this->storage) extends PassThroughTokens {
+            public function findTokensByFamily(string $familyId): array
+            {
+                return array_map(function (Token $token): Token {
+                    if ($token->rotationSeal === null) {
+                        return $token;
+                    }
+                    $bytes = (string)base64_decode($token->rotationSeal, true);
+                    $bytes[strlen($bytes) - 1] = chr(ord($bytes[strlen($bytes) - 1]) ^ 1);
+
+                    return new Token(...array_merge(get_object_vars($token), ['rotationSeal' => base64_encode($bytes)]));
+                }, parent::findTokensByFamily($familyId));
+            }
+        };
+
+        $loser = $this->rotator(30, $tampered)->rotate($this->client, (string)$initial->refreshToken, null, []);
+
+        $this->assertNotSame($winner->refreshToken, $loser->refreshToken);
+        $this->assertNotSame(substr((string)$winner->refreshToken, 0, -1), substr((string)$loser->refreshToken, 0, -1));
     }
 
     public function testARotationStillInFlightAsksToRetry(): void
@@ -332,6 +415,24 @@ class RefreshTokenRotatorTest extends TestCase
             'try again',
         );
         $this->assertCount(1, $this->live());
+        $this->assertSame(200000, array_sum($this->sleeps), 'it waits the whole budget before giving up');
+    }
+
+    public function testALoserArrivingMidRotationWaitsForTheWinnersPair(): void
+    {
+        $initial = $this->initial();
+        $winner = $this->rotator()->rotate($this->client, (string)$initial->refreshToken, null, []);
+        $hidden = new HiddenRotation($this->storage, (string)$initial->refresh?->id);
+
+        $loser = $this->rotator(30, $hidden, function () use ($hidden): void {
+            if (count($this->sleeps) === 2) {
+                $hidden->reveal();
+            }
+        })->rotate($this->client, (string)$initial->refreshToken, null, []);
+
+        $this->assertSame($winner->toResponse(), $loser->toResponse());
+        $this->assertCount(2, $this->sleeps);
+        $this->assertSame([], $this->events->ofType(RefreshTokenReused::class));
     }
 
     public function testReuseAfterTheGraceWindowRevokesTheFamily(): void
@@ -431,10 +532,25 @@ class RefreshTokenRotatorTest extends TestCase
         $this->assertSame([], $this->live());
     }
 
-    public function testTwoGracePresentationsNeverLeaveTwoLiveRefreshTokens(): void
+    public function testEveryGracePresentationGetsTheSamePairAndOneRefreshTokenLives(): void
     {
         $initial = $this->initial();
-        $this->rotator()->rotate($this->client, (string)$initial->refreshToken, null, []);
+        $winner = $this->rotator()->rotate($this->client, (string)$initial->refreshToken, null, []);
+        $this->clock->advance(5);
+
+        $second = $this->rotator()->rotate($this->client, (string)$initial->refreshToken, null, []);
+        $third = $this->rotator()->rotate($this->client, (string)$initial->refreshToken, null, []);
+
+        $this->assertSame($winner->toResponse(), $second->toResponse());
+        $this->assertSame($winner->toResponse(), $third->toResponse());
+        $this->assertCount(1, $this->liveChildrenOf($initial->refresh));
+        $this->assertSame([], $this->events->ofType(RefreshTokenReused::class));
+    }
+
+    public function testAGracePresentationAfterTheClientRotatedTheChildIsReuseEvenMidRotation(): void
+    {
+        $initial = $this->initial();
+        $winner = $this->rotator()->rotate($this->client, (string)$initial->refreshToken, null, []);
         $this->clock->advance(5);
         $this->duringNextRotation(function () use ($initial): void {
             try {
@@ -443,28 +559,10 @@ class RefreshTokenRotatorTest extends TestCase
             }
         });
 
-        $this->assertInvalidGrant(fn() => $this->rotator()->rotate($this->client, (string)$initial->refreshToken, null, []));
+        $this->assertInvalidGrant(fn() => $this->rotator()->rotate($this->client, (string)$winner->refreshToken, null, []));
 
-        $this->assertLessThanOrEqual(1, count($this->liveChildrenOf($initial->refresh)));
         $this->assertSame([], $this->live());
         $this->assertCount(1, $this->events->ofType(RefreshTokenReused::class));
-    }
-
-    public function testAGracePresentationRacingTheClientsRotationOfTheChildLeavesNoLiveToken(): void
-    {
-        $initial = $this->initial();
-        $winner = $this->rotator()->rotate($this->client, (string)$initial->refreshToken, null, []);
-        $this->clock->advance(5);
-        $this->duringNextRotation(function () use ($winner): void {
-            try {
-                $this->rotator()->rotate($this->client, (string)$winner->refreshToken, null, []);
-            } catch (OAuthException) {
-            }
-        });
-
-        $this->assertInvalidGrant(fn() => $this->rotator()->rotate($this->client, (string)$initial->refreshToken, null, []));
-
-        $this->assertSame([], $this->live());
     }
 
     public function testARevocationDuringARotationRevokesTheNewPair(): void
@@ -510,8 +608,8 @@ class RefreshTokenRotatorTest extends TestCase
     {
         $initial = $this->initial();
         $winner = $this->rotator()->rotate($this->client, (string)$initial->refreshToken, null, []);
+        $this->storage->revokeToken((string)$winner->refresh?->id, $this->clock->now());
         $this->clock->advance(5);
-        $this->rotator()->rotate($this->client, (string)$initial->refreshToken, null, []);
 
         $this->assertInvalidGrant(fn() => $this->rotator()->rotate($this->client, (string)$winner->refreshToken, null, []));
 

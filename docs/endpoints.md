@@ -206,9 +206,9 @@ curl -s https://auth.example.com/oauth/token \
 ```
 
 Every refresh returns a new pair and retires the old refresh token. Presenting an old one again
-revokes the whole family (see [security](security.md#refresh-token-rotation-and-reuse)). A client must
-not refresh the same token from two places at once: concurrent refreshes can revoke the family
-([known issue](security.md#known-issue-concurrent-refreshes)).
+revokes the whole family (see [security](security.md#refresh-token-rotation-and-reuse)), except inside
+the grace window: refreshes sent at the same time with the same token, or a retry after a lost
+response, all get the same pair ([concurrent refreshes](security.md#concurrent-refreshes)).
 
 The new refresh token keeps the scopes of the one presented (RFC 6749 section 6), minus scopes the
 resource no longer declares. A `scope` parameter narrows only the new access token, so a client that asks

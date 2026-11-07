@@ -31,7 +31,8 @@ interface TokenRepositoryInterface
 
     /**
      * Marks a refresh token used, atomically: of two concurrent calls only one returns true. A revoked
-     * token is never marked (returns false), so a revocation beats a rotation in flight.
+     * token is never marked (returns false), so a revocation beats a rotation in flight. Marking it clears
+     * its rotation seal (Token::$rotationSeal).
      */
     public function markTokenUsed(string $id, DateTimeImmutable $at): bool;
 

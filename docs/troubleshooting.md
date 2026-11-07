@@ -134,7 +134,7 @@ these:
 | The URL is not clean: it has a fragment, user information, an empty path, `.` or `..` segments, odd characters, or a host that is not a plain host name or IP address | Use a plain https URL with a path, such as `https://app.example.com/oauth/client.json` |
 | The host is not in `cimd.allowedHosts` ("Clients from ... are not accepted.") | Add it, or remove the list |
 | The host does not resolve ("The client_id host does not resolve.": the name has no A or AAAA record) | Fix DNS. Check from the machine that runs PHP |
-| The DNS lookup got no answer ("The client_id host could not be looked up right now.": a resolver timeout or SERVFAIL) | Temporary: not remembered, a stored copy of the client keeps working. Check the resolver of the machine that runs PHP. The lookup uses the resolver's own timeouts, not `cimd.timeout` |
+| The DNS lookup got no answer ("The client_id host could not be looked up right now.": a resolver timeout or SERVFAIL) | Temporary: not remembered, a stored copy of the client keeps working. Check the nameservers in `/etc/resolv.conf` of the machine that runs PHP: the lookup asks them directly and gives up after `cimd.timeout` |
 | The host resolves to a private, loopback, link-local or reserved address (also when only one of several addresses is) | The document must be served from a public address. This is the SSRF protection. For tests, serve it publicly or use a fake transport |
 | Timeout or connection error | The default is 5 seconds (`cimd.timeout`). Check egress firewalls and TLS certificates of the client's host |
 | Redirects | The server never follows redirects. Serve the document at the exact `client_id` URL |

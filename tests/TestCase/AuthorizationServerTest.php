@@ -4,6 +4,8 @@ declare(strict_types=1);
 namespace CakeDC\OAuth\Server\Test\TestCase;
 
 use CakeDC\OAuth\Server\AuthorizationServer;
+use CakeDC\OAuth\Server\Client\Cimd\BoundedDnsResolver;
+use CakeDC\OAuth\Server\Client\Cimd\MetadataDocumentFetcher;
 use CakeDC\OAuth\Server\Exception\OAuthException;
 use CakeDC\OAuth\Server\Storage\InMemory\InMemoryStorage;
 use CakeDC\OAuth\Server\Test\Support\FakeDns;
@@ -15,6 +17,7 @@ use CakeDC\OAuth\Server\Test\Support\ServerHarness;
 use Nyholm\Psr7\Factory\Psr17Factory;
 use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\TestCase;
+use ReflectionProperty;
 
 class AuthorizationServerTest extends TestCase
 {
@@ -79,6 +82,32 @@ class AuthorizationServerTest extends TestCase
         $url = 'https://claude.ai/oauth/native';
         $harness->transport->serve($url, ['client_id' => $url, 'client_name' => 'Native', 'redirect_uris' => $uris] + $native);
         $this->assertSame($uris, $harness->server->clientResolver()->resolve($url)?->redirectUris);
+    }
+
+    /**
+     * Without a resolver of its own, a server resolves client_id hosts with the nameservers of
+     * /etc/resolv.conf, within cimd.timeout.
+     */
+    #[RequiresPhpExtension('curl')]
+    public function testTheDefaultResolverIsBoundedByTheCimdTimeout(): void
+    {
+        if (BoundedDnsResolver::fromResolvConf(1) === null) {
+            $this->markTestSkipped('/etc/resolv.conf names no nameserver.');
+        }
+        $factory = new Psr17Factory();
+        $server = new AuthorizationServer(
+            Fixtures::config(['cimd' => ['timeout' => 3]]),
+            new InMemoryStorage(),
+            new FakeUsers(),
+            new FakeUserContext(),
+            $factory,
+            $factory,
+        );
+
+        $fetcher = (new ReflectionProperty(AuthorizationServer::class, 'fetcher'))->getValue($server);
+        $dns = (new ReflectionProperty(MetadataDocumentFetcher::class, 'dns'))->getValue($fetcher);
+        $this->assertInstanceOf(BoundedDnsResolver::class, $dns);
+        $this->assertSame(3.0, (new ReflectionProperty(BoundedDnsResolver::class, 'timeout'))->getValue($dns));
     }
 
     public function testDisabledCimdNeverFetches(): void
